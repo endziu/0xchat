@@ -1,0 +1,10 @@
+node_modules/
+dist/
+bun.lock
+.env
+chat.db*
+.claude/
+src/server/secp256k1.bundle.js
+src/server/wallet.bundle.js
+.server.pid
+plan.md
