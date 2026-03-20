@@ -22,7 +22,7 @@ export function OnboardingView({ onRegister }: OnboardingViewProps) {
 
   return (
     <div className="flex flex-col items-center justify-center h-full p-8 max-w-md mx-auto text-center gap-6">
-      <div className="text-accent text-5xl mb-2 italic font-serif leading-tight">Welcome to eth-chat</div>
+      <div className="text-accent text-5xl mb-2 italic font-serif leading-tight">Welcome to 0xChat</div>
       <p className="text-dim leading-relaxed">
         An end-to-end encrypted, ephemeral chat.
         A burner keypair has been generated locally in your browser.

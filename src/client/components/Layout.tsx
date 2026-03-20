@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks'
 import { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
+import { Backup } from '../hooks/useIdentity'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -10,9 +11,12 @@ interface LayoutProps {
   onLogout: () => void
   onImport?: (keypair: Keypair) => void
   navigate?: (to: string) => void
+  backups?: Backup[]
+  onSwitch?: (ts: number, kp: Keypair) => void
+  onDelete?: (ts: number) => void
 }
 
-export function Layout({ children, identity, onLogout, onImport, navigate }: LayoutProps) {
+export function Layout({ children, identity, onLogout, onImport, navigate, backups, onSwitch, onDelete }: LayoutProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -31,7 +35,7 @@ export function Layout({ children, identity, onLogout, onImport, navigate }: Lay
           onClick={(e) => { e.preventDefault(); navigate?.('/chat') }}
           className="font-serif text-2xl italic hover:text-accent transition-colors"
         >
-          <span className="text-accent not-italic mr-1">⬡</span> eth-chat
+          <span className="text-accent not-italic mr-1">⬡</span> 0xChat
         </a>
         
         {identity && (
@@ -79,12 +83,15 @@ export function Layout({ children, identity, onLogout, onImport, navigate }: Lay
                 <h2 className="text-xl font-serif italic text-accent">Identity Settings</h2>
                 <button onClick={() => setShowSettings(false)} className="text-dim hover:text-text cursor-pointer">Close</button>
               </div>
-              <KeyManagement 
-                identity={identity} 
+              <KeyManagement
+                identity={identity}
                 onImport={(kp) => {
                   onImport?.(kp)
                   setShowSettings(false)
-                }} 
+                }}
+                backups={backups}
+                onSwitch={onSwitch}
+                onDelete={onDelete}
               />
             </div>
           </div>

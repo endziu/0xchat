@@ -1,16 +1,38 @@
 import { useState, useEffect } from 'preact/hooks'
-import { Keypair, loadKeypair, generateKeypair, saveKeypair, clearKeypair, signEIP191 } from '../lib/burner'
+import { Keypair, loadKeypair, generateKeypair, saveKeypair, clearKeypair, signEIP191, saveBackup, loadBackups, deleteBackup as deleteBackupFromStorage, deriveKeypair } from '../lib/burner'
 import { api } from '../lib/api'
+
+export interface Backup {
+  ts: number
+  keypair: Keypair
+}
 
 export function useIdentity() {
   const [identity, setIdentity] = useState<Keypair | null>(null)
   const [isRegistered, setIsRegistered] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [backups, setBackups] = useState<Backup[]>([])
 
   useEffect(() => {
+    // Check for URL-based PK import
+    const hash = window.location.hash.replace('#', '')
+    if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+      const existing = loadKeypair()
+      if (existing) saveBackup(existing)
+      const imported = deriveKeypair(hash)
+      saveKeypair(imported)
+      history.replaceState(null, '', window.location.pathname)
+      setIdentity(imported)
+      setBackups(loadBackups())
+      checkRegistration(imported.address)
+      return
+    }
+
+    // Normal flow
     const loaded = loadKeypair()
     if (loaded) {
       setIdentity(loaded)
+      setBackups(loadBackups())
       checkRegistration(loaded.address)
     } else {
       const generated = generateKeypair()
@@ -59,9 +81,27 @@ export function useIdentity() {
   }
 
   function importIdentity(keypair: Keypair) {
+    const existing = loadKeypair()
+    if (existing && existing.address !== keypair.address) saveBackup(existing)
+    saveKeypair(keypair)
     setIdentity(keypair)
+    setBackups(loadBackups())
     checkRegistration(keypair.address)
   }
 
-  return { identity, isRegistered, loading, register, logout, importIdentity }
+  function switchToBackup(ts: number, kp: Keypair) {
+    const existing = loadKeypair()
+    if (existing) saveBackup(existing)
+    saveKeypair(kp)
+    setIdentity(kp)
+    setBackups(loadBackups())
+    checkRegistration(kp.address)
+  }
+
+  function deleteBackup(ts: number) {
+    deleteBackupFromStorage(ts)
+    setBackups(loadBackups())
+  }
+
+  return { identity, isRegistered, loading, register, logout, importIdentity, backups, switchToBackup, deleteBackup }
 }

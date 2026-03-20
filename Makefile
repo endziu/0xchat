@@ -20,7 +20,7 @@ stop:
 		echo "Server not running"; \
 	fi
 
-restart: stop clear
+restart: stop 
 	bun run build
 	nohup bun run server.ts > /dev/null 2>&1 & \
 	echo $$! > $(PID_FILE); \
