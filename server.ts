@@ -11,6 +11,10 @@ import {
   getSession,
   initDb,
   registerPubkey,
+  deleteAddressSessions,
+  deleteAddressConversations,
+  deleteAddress,
+  getConversationPartners,
 } from './src/server/db.ts';
 import { isRateLimited } from './src/server/rate-limit.ts';
 import { addClient, notify, removeClient } from './src/server/sse.ts';
@@ -508,6 +512,31 @@ const httpServer = Bun.serve({
         last_message_at: c.last_message_at,
       }));
       return json({ conversations: mappedConvs });
+    }
+
+    // DELETE /api/addresses/:addr
+    const deleteAddrMatch = path.match(/^\/api\/addresses\/(.+)$/);
+    if (method === 'DELETE' && deleteAddrMatch) {
+      const address = getSessionAddress(req);
+      if (!address) return json({ error: 'Unauthorized' }, 401);
+
+      const targetAddr = deleteAddrMatch[1].toLowerCase();
+      if (address !== targetAddr) return json({ error: 'Forbidden' }, 403);
+
+      // Get conversation partners before deleting
+      const partners = getConversationPartners(address);
+
+      // Clean up address data
+      deleteAddressSessions(address);
+      deleteAddressConversations(address);
+      deleteAddress(address);
+
+      // Notify conversation partners about the disconnection
+      for (const partner of partners) {
+        notify(partner, 'user:disconnected', { address });
+      }
+
+      return json({ success: true });
     }
 
     // POST /api/events/token — Get short-lived SSE token

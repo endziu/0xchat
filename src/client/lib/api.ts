@@ -100,4 +100,7 @@ export const api = {
 
   getSseToken: (): Promise<{ sse_token: string }> =>
     request('/api/events/token', { method: 'POST' }),
+
+  deleteAddress: (address: string) =>
+    request(`/api/addresses/${address}`, { method: 'DELETE' }),
 }

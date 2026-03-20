@@ -30,7 +30,14 @@ export function ChatView({ recipientAddress, identity, token, navigate }: ChatVi
     }
   }, [recipientAddress, identity.address, refreshConversations, addMessage])
 
-  useSSE(token, handleSSE)
+  const handleDisconnect = useCallback((address: string) => {
+    refreshConversations()
+    if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
+      navigate('/chat')
+    }
+  }, [recipientAddress, navigate, refreshConversations])
+
+  useSSE(token, handleSSE, handleDisconnect)
 
   const handleNewChat = () => {
     setNewChatAddr('')

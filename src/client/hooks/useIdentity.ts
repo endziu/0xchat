@@ -65,11 +65,20 @@ export function useIdentity() {
     }
   }
 
-  function logout() {
+  async function logout() {
+    const current = loadKeypair()
+    if (current) {
+      try {
+        await api.deleteAddress(current.address)
+      } catch (err) {
+        console.error('Failed to delete address:', err)
+      }
+    }
+
     clearKeypair()
     setIdentity(null)
     setIsRegistered(false)
-    
+
     const generated = generateKeypair()
     saveKeypair(generated)
     setIdentity(generated)

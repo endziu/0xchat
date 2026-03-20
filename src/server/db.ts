@@ -184,6 +184,29 @@ export function deleteExpiredMessages(): void {
   db.query('DELETE FROM messages WHERE expires_at < ?').run(Date.now());
 }
 
+export function deleteAddressSessions(address: string): void {
+  db.query('DELETE FROM sessions WHERE address = ?').run(address);
+}
+
+export function deleteAddressConversations(address: string): void {
+  db.query('DELETE FROM messages WHERE sender = ? OR recipient = ?').run(address, address);
+}
+
+export function deleteAddress(address: string): void {
+  db.query('DELETE FROM pubkeys WHERE address = ?').run(address);
+}
+
+export function getConversationPartners(address: string): string[] {
+  const rows = db
+    .query(
+      `SELECT DISTINCT CASE WHEN sender = ? THEN recipient ELSE sender END AS partner
+       FROM messages
+       WHERE sender = ? OR recipient = ?`,
+    )
+    .all(address, address, address) as Array<{ partner: string }>;
+  return rows.map(r => r.partner);
+}
+
 export function getDb(): Database {
   return db;
 }

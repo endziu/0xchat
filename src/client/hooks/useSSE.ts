@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import { api } from '../lib/api'
 
-export function useSSE(token: string | null, onMessage: (data: any) => void) {
+export function useSSE(token: string | null, onMessage: (data: any) => void, onDisconnect?: (address: string) => void) {
   useEffect(() => {
     if (!token) return
 
@@ -25,6 +25,15 @@ export function useSSE(token: string | null, onMessage: (data: any) => void) {
           }
         })
 
+        es.addEventListener('user:disconnected', (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data)
+            onDisconnect?.(data.address)
+          } catch (err) {
+            console.error('Failed to parse disconnect event:', err)
+          }
+        })
+
         es.onerror = (err) => {
           console.error('SSE error:', err)
           // Let EventSource reconnect automatically
@@ -42,5 +51,5 @@ export function useSSE(token: string | null, onMessage: (data: any) => void) {
         es.close()
       }
     }
-  }, [token, onMessage])
+  }, [token, onMessage, onDisconnect])
 }
