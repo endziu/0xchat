@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useState } from 'preact/hooks'
 import { getToken, saveToken, clearToken } from '../lib/session'
 import { Keypair, signEIP191 } from '../lib/burner'
 import { api } from '../lib/api'

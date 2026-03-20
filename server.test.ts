@@ -89,7 +89,7 @@ describe('public routes', () => {
     const res = await fetch(baseUrl + '/api/pubkey/' + addr);
     expect(res.status).toBe(200);
     const data = (await res.json()) as { pubkey: string };
-    expect(data.pubkey).toBe('cc'.repeat(33));
+    expect(data.pubkey).toBe('0x' + 'cc'.repeat(33));
   });
 
   test('unknown API routes return 404 JSON', async () => {

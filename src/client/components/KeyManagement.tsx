@@ -10,20 +10,26 @@ interface KeyManagementProps {
 export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   const [showKey, setShowKey] = useState(false)
   const [importHex, setImportHex] = useState('')
+  const [status, setStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  const setStatusWithTimeout = (type: 'ok' | 'err', text: string) => {
+    setStatus({ type, text })
+    setTimeout(() => setStatus(null), 2000)
+  }
 
   const handleImport = () => {
     if (!importHex.trim()) return
     try {
       const hex = importHex.trim().startsWith('0x') ? importHex.trim() : `0x${importHex.trim()}`
       if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error('Invalid private key format')
-      
+
       const newKeypair = deriveKeypair(hex)
       saveKeypair(newKeypair)
       onImport(newKeypair)
       setImportHex('')
-      alert('Key imported successfully!')
+      setStatusWithTimeout('ok', 'Key imported successfully!')
     } catch (err: any) {
-      alert(err.message)
+      setStatusWithTimeout('err', err.message)
     }
   }
 
@@ -45,12 +51,12 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
           >
             {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
-          <button 
+          <button
             onClick={() => {
               navigator.clipboard.writeText(identity.privateKey)
-              alert('Copied to clipboard!')
+              setStatusWithTimeout('ok', 'Copied to clipboard!')
             }}
-            className="p-1.5 text-dim hover:text-accent transition-colors border border-border rounded"
+            className="p-1.5 text-dim hover:text-accent transition-colors border border-border rounded cursor-pointer"
           >
             <Download size={14} />
           </button>
@@ -68,13 +74,18 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
             onInput={(e: any) => setImportHex(e.target.value)}
             className="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono"
           />
-          <button 
+          <button
             onClick={handleImport}
-            className="p-1.5 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded"
+            className="p-1.5 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded cursor-pointer"
           >
             <Upload size={14} />
           </button>
         </div>
+        {status && (
+          <p className={`text-xs ${status.type === 'ok' ? 'text-accent' : 'text-error'}`}>
+            {status.text}
+          </p>
+        )}
       </div>
     </div>
   )

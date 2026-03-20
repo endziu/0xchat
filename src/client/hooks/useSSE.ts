@@ -1,27 +1,46 @@
 import { useEffect } from 'preact/hooks'
+import { api } from '../lib/api'
 
 export function useSSE(token: string | null, onMessage: (data: any) => void) {
   useEffect(() => {
     if (!token) return
 
-    const es = new EventSource(`/api/events?token=${token}`)
+    let es: EventSource | null = null
+    let mounted = true
 
-    es.addEventListener('message', (e: MessageEvent) => {
+    const setupSSE = async () => {
       try {
-        const data = JSON.parse(e.data)
-        onMessage(data)
-      } catch (err) {
-        console.error('Failed to parse SSE message data:', err)
-      }
-    })
+        // Get a short-lived SSE token
+        const { sse_token } = await api.getSseToken()
+        if (!mounted) return
 
-    es.onerror = (err) => {
-      console.error('SSE error:', err)
-      // Let EventSource reconnect automatically
+        es = new EventSource(`/api/events?token=${sse_token}`)
+
+        es.addEventListener('message', (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data)
+            onMessage(data)
+          } catch (err) {
+            console.error('Failed to parse SSE message data:', err)
+          }
+        })
+
+        es.onerror = (err) => {
+          console.error('SSE error:', err)
+          // Let EventSource reconnect automatically
+        }
+      } catch (err) {
+        console.error('Failed to get SSE token:', err)
+      }
     }
 
+    setupSSE()
+
     return () => {
-      es.close()
+      mounted = false
+      if (es) {
+        es.close()
+      }
     }
   }, [token, onMessage])
 }

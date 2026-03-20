@@ -5,7 +5,7 @@ import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { useSSE } from '../hooks/useSSE'
 import { Keypair } from '../lib/burner'
-import { Plus } from 'lucide-preact'
+import { Plus, X } from 'lucide-preact'
 
 interface ChatViewProps {
   recipientAddress: string | null
@@ -16,45 +16,98 @@ interface ChatViewProps {
 
 export function ChatView({ recipientAddress, identity, token, navigate }: ChatViewProps) {
   const { conversations, refresh: refreshConversations } = useConversations(token)
-  const { messages, sendMessage, refresh: refreshMessages } = useMessages(recipientAddress, identity, token)
+  const { messages, sendMessage, addMessage } = useMessages(recipientAddress, identity, token)
+  const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
+  const [newChatError, setNewChatError] = useState('')
 
   const handleSSE = useCallback((data: any) => {
     refreshConversations()
     if (recipientAddress && (
-      data.sender.toLowerCase() === recipientAddress.toLowerCase() || 
+      data.sender.toLowerCase() === recipientAddress.toLowerCase() ||
       data.sender.toLowerCase() === identity.address.toLowerCase()
     )) {
-      refreshMessages()
+      addMessage(data)
     }
-  }, [recipientAddress, identity.address, refreshConversations, refreshMessages])
+  }, [recipientAddress, identity.address, refreshConversations, addMessage])
 
   useSSE(token, handleSSE)
 
   const handleNewChat = () => {
-    const addr = prompt('Enter Ethereum address:')
-    if (addr && /^0x[0-9a-fA-F]{40}$/.test(addr)) {
-      navigate(`/chat/${addr.toLowerCase()}`)
-    } else if (addr) {
-      alert('Invalid address')
+    setNewChatAddr('')
+    setNewChatError('')
+  }
+
+  const handleNewChatSubmit = () => {
+    if (!newChatAddr) return
+    if (/^0x[0-9a-fA-F]{40}$/.test(newChatAddr)) {
+      navigate(`/chat/${newChatAddr.toLowerCase()}`)
+      setNewChatAddr(null)
+    } else {
+      setNewChatError('Invalid address. Must be 0x followed by 40 hex characters.')
+    }
+  }
+
+  const handleNewChatKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleNewChatSubmit()
+    } else if (e.key === 'Escape') {
+      setNewChatAddr(null)
+      setNewChatError('')
     }
   }
 
   return (
     <div className="flex h-full overflow-hidden relative">
       <div className={`w-80 border-r border-border flex flex-col shrink-0 ${recipientAddress ? 'hidden md:flex' : 'flex w-full'}`}>
-        <div className="p-4 border-b border-border flex justify-between items-center bg-surface/30">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-dim">Conversations</span>
-          <button 
-            onClick={handleNewChat}
-            className="p-1 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded-sm cursor-pointer"
-          >
-            <Plus size={14} />
-          </button>
+        <div className="border-b border-border bg-surface/30">
+          <div className="p-4 flex justify-between items-center">
+            <span className="text-[10px] uppercase tracking-[0.2em] text-dim">Conversations</span>
+            <button
+              onClick={handleNewChat}
+              className="p-1 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded-sm cursor-pointer"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          {newChatAddr !== null && (
+            <div className="px-4 pb-4 flex flex-col gap-2">
+              <input
+                type="text"
+                placeholder="0x..."
+                value={newChatAddr}
+                onInput={(e: any) => {
+                  setNewChatAddr(e.target.value)
+                  setNewChatError('')
+                }}
+                onKeyDown={handleNewChatKeyDown}
+                autoFocus
+                className="bg-surface border border-border rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-accent"
+              />
+              {newChatError && <p className="text-error text-xs">{newChatError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleNewChatSubmit}
+                  className="flex-1 px-3 py-1.5 bg-accent text-bg rounded text-xs font-bold hover:opacity-90 transition-opacity cursor-pointer"
+                >
+                  Start Chat
+                </button>
+                <button
+                  onClick={() => {
+                    setNewChatAddr(null)
+                    setNewChatError('')
+                  }}
+                  className="px-2 py-1.5 text-dim hover:text-accent transition-colors border border-border rounded cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
-          <ConversationList 
-            conversations={conversations} 
-            activeAddress={recipientAddress} 
+          <ConversationList
+            conversations={conversations}
+            activeAddress={recipientAddress}
             onSelect={(addr) => navigate(`/chat/${addr}`)}
           />
         </div>

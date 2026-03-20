@@ -23,6 +23,15 @@ export function App() {
     }
   }, [identity, isRegistered, token, sessionLoading, login])
 
+  // Handle session expiry events
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      idLogout()
+    }
+    window.addEventListener('auth:expired', handleAuthExpired)
+    return () => window.removeEventListener('auth:expired', handleAuthExpired)
+  }, [idLogout])
+
   const navigate = (to: string) => {
     window.history.pushState({}, '', to)
     setPath(to)

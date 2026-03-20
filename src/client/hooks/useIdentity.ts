@@ -35,8 +35,9 @@ export function useIdentity() {
     if (!identity) return
     setLoading(true)
     try {
-      const sig = await signEIP191("ETH-Gate keypair v1", identity.privateKey)
-      await api.register(identity.address, identity.publicKey, sig)
+      const { challenge, nonce } = await api.getRegChallenge(identity.address)
+      const sig = await signEIP191(challenge, identity.privateKey)
+      await api.register(identity.address, identity.publicKey, sig, nonce)
       setIsRegistered(true)
     } catch (err) {
       console.error('Registration failed:', err)

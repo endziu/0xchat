@@ -45,7 +45,6 @@ const SECURITY_HEADERS = {
   ].join('; '),
 } as const;
 
-const KEYPAIR_MSG = 'ETH-Gate keypair v1';
 const VALID_TTLS = new Set([5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]);
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -100,12 +99,34 @@ const authChallenges = new Map<
 // Track address → nonce for per-address challenge limits
 const addressToChallengeNonce = new Map<string, string>();
 
+// Challenge store for registration
+const regChallenges = new Map<
+  string,
+  { challenge: string; address: string; expiresAt: number }
+>();
+// Track address → nonce for per-address registration challenge limits
+const addressToRegNonce = new Map<string, string>();
+
+// Single-use SSE tokens (30-second lifetime)
+const sseTokens = new Map<string, { address: string; expiresAt: number }>();
+
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of authChallenges) {
     if (val.expiresAt < now) {
       authChallenges.delete(key);
       addressToChallengeNonce.delete(val.address);
+    }
+  }
+  for (const [key, val] of regChallenges) {
+    if (val.expiresAt < now) {
+      regChallenges.delete(key);
+      addressToRegNonce.delete(val.address);
+    }
+  }
+  for (const [key, val] of sseTokens) {
+    if (val.expiresAt < now) {
+      sseTokens.delete(key);
     }
   }
 }, 60_000).unref();
@@ -125,6 +146,41 @@ const httpServer = Bun.serve({
 
     // --- API Routes ---
 
+    // POST /api/register/challenge
+    if (method === 'POST' && path === '/api/register/challenge') {
+      let body: { address?: unknown };
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return json({ error: 'Invalid JSON' }, 400);
+      }
+
+      const address = typeof body.address === 'string'
+        ? body.address.trim().toLowerCase() : '';
+
+      if (!isValidAddress(address)) {
+        return json({ error: 'Invalid address' }, 400);
+      }
+
+      const nonce = randomBytes(16).toString('hex');
+      const challenge = `ETH-Gate keypair v1\nAddress: ${address}\nNonce: ${nonce}`;
+
+      // Replace existing challenge for this address (one per address)
+      const oldNonce = addressToRegNonce.get(address);
+      if (oldNonce) {
+        regChallenges.delete(oldNonce);
+      }
+
+      addressToRegNonce.set(address, nonce);
+      regChallenges.set(nonce, {
+        challenge,
+        address,
+        expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+      });
+
+      return json({ challenge, nonce });
+    }
+
     // POST /api/register
     if (method === 'POST' && path === '/api/register') {
       const ip = getClientIp(req, httpServer);
@@ -133,7 +189,7 @@ const httpServer = Bun.serve({
       }
 
       let body: {
-        address?: unknown; pubkey?: unknown; signature?: unknown;
+        address?: unknown; pubkey?: unknown; signature?: unknown; nonce?: unknown;
       };
       try {
         body = (await req.json()) as typeof body;
@@ -147,6 +203,7 @@ const httpServer = Bun.serve({
         ? body.pubkey.trim().toLowerCase() : '';
       if (pubkey.startsWith('0x')) pubkey = pubkey.slice(2);
       const signature = typeof body.signature === 'string' ? body.signature : '';
+      const nonce = typeof body.nonce === 'string' ? body.nonce : '';
 
       if (!isValidAddress(address)) {
         return json({ error: 'invalid address' }, 400);
@@ -160,10 +217,23 @@ const httpServer = Bun.serve({
         return json({ error: 'invalid signature format' }, 400);
       }
 
-      const valid = await verifySig(KEYPAIR_MSG, signature, address);
+      // Validate nonce and challenge
+      const regChallenge = regChallenges.get(nonce);
+      if (!regChallenge) {
+        return json({ error: 'Invalid or expired challenge' }, 401);
+      }
+      if (regChallenge.address !== address) {
+        return json({ error: 'Challenge address mismatch' }, 401);
+      }
+
+      const valid = await verifySig(regChallenge.challenge, signature, address);
       if (!valid) {
         return json({ error: 'signature verification failed' }, 401);
       }
+
+      // Delete used nonce
+      regChallenges.delete(nonce);
+      addressToRegNonce.delete(address);
 
       registerPubkey(address, pubkey);
       return json({ ok: true });
@@ -383,7 +453,10 @@ const httpServer = Bun.serve({
       const now = Date.now();
       const expiresAt = now + ttl * 1000;
       const event = {
-        id, sender, created_at: now, expires_at: expiresAt,
+        id, sender, recipient,
+        ct_recipient: ctRecipient, ephemeral_pub_recipient: ephPubRecipient, iv_recipient: ivRecipient,
+        ct_sender: ctSender, ephemeral_pub_sender: ephPubSender, iv_sender: ivSender,
+        ttl, created_at: now, expires_at: expiresAt,
       };
       notify(recipient, 'message', event);
       notify(sender, 'message', event);
@@ -437,14 +510,34 @@ const httpServer = Bun.serve({
       return json({ conversations: mappedConvs });
     }
 
+    // POST /api/events/token — Get short-lived SSE token
+    if (method === 'POST' && path === '/api/events/token') {
+      const address = getSessionAddress(req);
+      if (!address) return json({ error: 'Unauthorized' }, 401);
+
+      const sseToken = randomBytes(16).toString('hex');
+      sseTokens.set(sseToken, {
+        address,
+        expiresAt: Date.now() + 30_000, // 30 seconds
+      });
+
+      return json({ sse_token: sseToken });
+    }
+
     // GET /api/events — SSE
     if (method === 'GET' && path === '/api/events') {
-      const token = url.searchParams.get('token');
-      if (!token) return json({ error: 'Missing token' }, 401);
+      const sseToken = url.searchParams.get('token');
+      if (!sseToken) return json({ error: 'Missing token' }, 401);
 
-      const session = getSession(token);
-      if (!session) return json({ error: 'Invalid token' }, 401);
-      const address = session.address;
+      const tokenEntry = sseTokens.get(sseToken);
+      if (!tokenEntry || tokenEntry.expiresAt < Date.now()) {
+        sseTokens.delete(sseToken);
+        return json({ error: 'Invalid or expired token' }, 401);
+      }
+
+      const address = tokenEntry.address;
+      // Delete token after validation (single-use)
+      sseTokens.delete(sseToken);
 
       const stream = new ReadableStream({
         start(ctrl) {

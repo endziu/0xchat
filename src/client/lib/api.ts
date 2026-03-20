@@ -32,7 +32,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     clearToken()
     // Trigger a page reload or state update to handle logout
     if (!path.includes('/api/auth/')) {
-      window.location.reload()
+      window.dispatchEvent(new CustomEvent('auth:expired'))
     }
   }
   if (!res.ok) {
@@ -45,10 +45,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  register: (address: string, pubkey: string, signature: string) =>
+  getRegChallenge: (address: string): Promise<{ challenge: string; nonce: string }> =>
+    request('/api/register/challenge', {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
+
+  register: (address: string, pubkey: string, signature: string, nonce: string) =>
     request('/api/register', {
       method: 'POST',
-      body: JSON.stringify({ address, pubkey, signature }),
+      body: JSON.stringify({ address, pubkey, signature, nonce }),
       headers: { 'Content-Type': 'application/json' },
     }),
 
@@ -90,4 +97,7 @@ export const api = {
 
   getConversations: (): Promise<{ conversations: Conversation[] }> =>
     request('/api/conversations'),
+
+  getSseToken: (): Promise<{ sse_token: string }> =>
+    request('/api/events/token', { method: 'POST' }),
 }
