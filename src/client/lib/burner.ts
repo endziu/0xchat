@@ -1,6 +1,7 @@
 import * as secp from '@noble/secp256k1'
 import { keccak256, hexToBytes, bytesToHex, getAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
+import { ensure0x } from './hex'
 
 export interface Keypair {
   privateKey: string
@@ -11,10 +12,6 @@ export interface Keypair {
 export function generateKeypair(): Keypair {
   const privKey = bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
   return deriveKeypair(privKey)
-}
-
-function ensure0x(s: string): `0x${string}` {
-  return s.startsWith('0x') ? s as `0x${string}` : `0x${s}`
 }
 
 export function deriveKeypair(privKey: string): Keypair {

@@ -1,3 +1,5 @@
+import { getToken, clearToken } from './session'
+
 export interface Message {
   id: string
   sender: string
@@ -16,22 +18,21 @@ export interface Message {
 export interface Conversation {
   address: string
   last_message_at: number
-  unread_count: number
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem('eth_chat_token')
+  const token = getToken()
   const headers = new Headers(options.headers)
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  
+
   const res = await fetch(path, { ...options, headers })
   if (res.status === 401) {
-    localStorage.removeItem('eth_chat_token')
+    clearToken()
     // Trigger a page reload or state update to handle logout
     if (!path.includes('/api/auth/')) {
-      window.location.reload() 
+      window.location.reload()
     }
   }
   if (!res.ok) {

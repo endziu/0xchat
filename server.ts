@@ -97,11 +97,16 @@ const authChallenges = new Map<
   string,
   { challenge: string; address: string; expiresAt: number }
 >();
+// Track address → nonce for per-address challenge limits
+const addressToChallengeNonce = new Map<string, string>();
 
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of authChallenges) {
-    if (val.expiresAt < now) authChallenges.delete(key);
+    if (val.expiresAt < now) {
+      authChallenges.delete(key);
+      addressToChallengeNonce.delete(val.address);
+    }
   }
 }, 60_000).unref();
 
@@ -201,11 +206,18 @@ const httpServer = Bun.serve({
         'Nonce: ' + nonce,
       ].join('\n');
 
+      // Replace any existing challenge for this address (1 outstanding per address)
+      const oldNonce = addressToChallengeNonce.get(address);
+      if (oldNonce) {
+        authChallenges.delete(oldNonce);
+      }
+
       authChallenges.set(nonce, {
         challenge,
         address,
         expiresAt: Date.now() + 5 * 60 * 1000,
       });
+      addressToChallengeNonce.set(address, nonce);
 
       return json({ challenge, nonce });
     }
@@ -273,7 +285,7 @@ const httpServer = Bun.serve({
       if (!sender) return json({ error: 'Unauthorized' }, 401);
 
       const ip = getClientIp(req, httpServer);
-      if (isRateLimited(`${ip}:msg`)) {
+      if (isRateLimited(`${ip}:${sender}:msg`)) {
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -421,7 +433,6 @@ const httpServer = Bun.serve({
       const mappedConvs = convs.map(c => ({
         address: c.counterparty,
         last_message_at: c.last_message_at,
-        unread_count: 0, // Not implemented in DB yet
       }));
       return json({ conversations: mappedConvs });
     }
@@ -484,8 +495,16 @@ const httpServer = Bun.serve({
     if (method === 'GET') {
       // Use relative path for joining to avoid 'join' resetting to root
       const relativePath = path.startsWith('/') ? path.slice(1) : path;
-      const file = Bun.file(join(distDir, relativePath));
-      
+      const resolved = join(distDir, relativePath);
+
+      // Verify resolved path is within distDir
+      const sep = '/';
+      if (!resolved.startsWith(distDir + sep) && resolved !== distDir) {
+        return json({ error: 'Not found' }, 404);
+      }
+
+      const file = Bun.file(resolved);
+
       if (await file.exists()) {
         return new Response(file, {
           headers: SECURITY_HEADERS,

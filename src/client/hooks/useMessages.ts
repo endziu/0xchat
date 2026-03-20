@@ -9,6 +9,22 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
   const timerRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
+  const decryptMessage = useCallback(async (msg: Message): Promise<Message & { plaintext: string }> => {
+    if (!identity) throw new Error('Identity not available')
+    const isMine = msg.sender.toLowerCase() === identity.address.toLowerCase()
+    const ciphertext = isMine ? msg.ct_sender : msg.ct_recipient
+    const ephPub = isMine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient
+    const iv = isMine ? msg.iv_sender : msg.iv_recipient
+
+    try {
+      const plaintext = await decrypt(ciphertext, ephPub, iv, identity.privateKey)
+      return { ...msg, plaintext }
+    } catch (err) {
+      console.error('Failed to decrypt message:', err)
+      return { ...msg, plaintext: '[Decryption error]' }
+    }
+  }, [identity])
+
   const loadMessages = useCallback(async () => {
     if (!recipientAddress || !identity || !token) {
       setMessages([])
@@ -22,36 +38,14 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       setRecipientPubkey(pubkey)
 
       const { messages: rawMessages } = await api.getMessages(recipientAddress)
-
-      const decrypted = await Promise.all(
-        rawMessages.map(async (msg) => {
-          try {
-            const isMine = msg.sender.toLowerCase() === identity.address.toLowerCase()
-            const ciphertext = isMine ? msg.ct_sender : msg.ct_recipient
-            const ephPub = isMine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient
-            const iv = isMine ? msg.iv_sender : msg.iv_recipient
-            
-            const plaintext = await decrypt(
-              ciphertext,
-              ephPub,
-              iv,
-              identity.privateKey
-            )
-            return { ...msg, plaintext }
-          } catch (err) {
-            console.error('Failed to decrypt message:', err)
-            return { ...msg, plaintext: '[Decryption error]' }
-          }
-        })
-      )
-
+      const decrypted = await Promise.all(rawMessages.map(decryptMessage))
       setMessages(decrypted.reverse())
     } catch (err) {
       console.error('Failed to load messages:', err)
     } finally {
       setLoading(false)
     }
-  }, [recipientAddress, identity, token])
+  }, [recipientAddress, identity, token, decryptMessage])
 
   useEffect(() => {
     loadMessages()
@@ -127,27 +121,16 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   }
 
   const addMessage = useCallback(async (msg: Message) => {
-    if (!identity) return
     try {
-      const isMine = msg.sender.toLowerCase() === identity.address.toLowerCase()
-      const ciphertext = isMine ? msg.ct_sender : msg.ct_recipient
-      const ephPub = isMine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient
-      const iv = isMine ? msg.iv_sender : msg.iv_recipient
-
-      const plaintext = await decrypt(
-        ciphertext,
-        ephPub,
-        iv,
-        identity.privateKey
-      )
+      const decrypted = await decryptMessage(msg)
       setMessages(prev => {
         if (prev.find(m => m.id === msg.id)) return prev
-        return [...prev, { ...msg, plaintext }]
+        return [...prev, decrypted]
       })
     } catch (err) {
       console.error('Failed to decrypt incoming message:', err)
     }
-  }, [identity])
+  }, [decryptMessage])
 
   return { messages, setMessages, loading, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
 }

@@ -1,14 +1,11 @@
 import * as secp from '@noble/secp256k1'
 import { hexToBytes, bytesToHex } from 'viem'
+import { ensure0x } from './hex'
 
 export interface EncryptedData {
   ciphertext: string
   ephemeral_pubkey: string
   iv: string
-}
-
-function ensure0x(s: string): `0x${string}` {
-  return s.startsWith('0x') ? s as `0x${string}` : `0x${s}`
 }
 
 export async function encrypt(plaintext: string, recipientPubkeyHex: string): Promise<EncryptedData> {

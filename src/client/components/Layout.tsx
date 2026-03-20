@@ -7,7 +7,6 @@ import { KeyManagement } from './KeyManagement'
 interface LayoutProps {
   children: ComponentChildren
   identity: Keypair | null
-  token: string | null
   onLogout: () => void
   onImport?: (keypair: Keypair) => void
   navigate?: (to: string) => void

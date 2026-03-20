@@ -32,11 +32,6 @@ export function ConversationList({ conversations, activeAddress, onSelect }: Con
             <span className="text-[10px] text-dim opacity-60">
               {new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
-            {conv.unread_count > 0 && (
-              <span className="bg-accent text-bg text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                {conv.unread_count}
-              </span>
-            )}
           </div>
         </button>
       ))}

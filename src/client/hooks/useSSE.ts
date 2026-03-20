@@ -17,7 +17,7 @@ export function useSSE(token: string | null, onMessage: (data: any) => void) {
 
     es.onerror = (err) => {
       console.error('SSE error:', err)
-      es.close()
+      // Let EventSource reconnect automatically
     }
 
     return () => {

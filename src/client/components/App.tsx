@@ -7,7 +7,7 @@ import { ChatView } from './ChatView'
 
 export function App() {
   const { identity, isRegistered, loading: idLoading, register, logout: idLogout, importIdentity } = useIdentity()
-  const { token, loading: sessionLoading, login } = useSession(identity)
+  const { token, loading: sessionLoading, error: loginError, login } = useSession(identity)
   const [path, setPath] = useState(window.location.pathname)
 
   useEffect(() => {
@@ -38,13 +38,29 @@ export function App() {
 
   if (!isRegistered) {
     return (
-      <Layout identity={identity} token={token} onLogout={idLogout}>
+      <Layout identity={identity} onLogout={idLogout}>
         <OnboardingView onRegister={register} />
       </Layout>
     )
   }
 
   if (!token) {
+    if (loginError) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="flex flex-col items-center gap-6 max-w-sm">
+            <p className="text-error font-mono text-sm text-center">{loginError}</p>
+            <button
+              onClick={login}
+              disabled={sessionLoading}
+              className="px-8 py-3 border border-accent text-accent hover:bg-accent hover:text-bg transition-colors disabled:opacity-50 uppercase tracking-widest font-bold cursor-pointer"
+            >
+              {sessionLoading ? 'Retrying...' : 'Retry'}
+            </button>
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-accent animate-pulse font-serif italic text-2xl">Connecting...</div>
@@ -55,10 +71,9 @@ export function App() {
   const chatAddress = path.startsWith('/chat/') ? path.slice(6) : null
 
   return (
-    <Layout 
-      identity={identity} 
-      token={token} 
-      onLogout={idLogout} 
+    <Layout
+      identity={identity}
+      onLogout={idLogout}
       onImport={importIdentity}
       navigate={navigate}
     >
