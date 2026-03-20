@@ -5,11 +5,8 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "strict": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["bun-types"]
   },
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.client.json" },
-    { "path": "./tsconfig.server.json" }
-  ]
+  "include": ["server.ts", "src/server/**/*.ts"]
 }

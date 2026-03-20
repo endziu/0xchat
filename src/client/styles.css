@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-serif: "Instrument Serif", Georgia, serif;
+  
+  --color-bg: #0a0a0c;
+  --color-surface: #111115;
+  --color-border: #1e1e26;
+  --color-text: #e8e6e1;
+  --color-dim: #6b6a72;
+  --color-accent: #c4f84a;
+  --color-error: #ff4444;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-bg text-text font-mono antialiased overflow-hidden;
+  }
+}
+
+@utility transition-opacity-5s {
+  transition: opacity 5s ease-out;
+}

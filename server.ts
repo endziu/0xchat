@@ -1,5 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import {
   createMessage,
@@ -18,13 +17,6 @@ import { addClient, notify, removeClient } from './src/server/sse.ts';
 import { verifySig } from './src/server/verify.ts';
 
 const PORT = Number(process.env['PORT'] ?? 3000);
-const rawProjectId = process.env['WALLETCONNECT_PROJECT_ID'];
-if (!rawProjectId) {
-  throw new Error(
-    'WALLETCONNECT_PROJECT_ID env var is required.',
-  );
-}
-const projectId: string = rawProjectId;
 
 initDb();
 
@@ -35,71 +27,27 @@ setInterval(() => {
 }, 30_000).unref();
 
 const dir = import.meta.dir;
-const rawChatHtml = readFileSync(
-  join(dir, 'src/server/views/chat.html'), 'utf-8',
-);
-const rawRegisterHtml = readFileSync(
-  join(dir, 'src/server/views/register.html'), 'utf-8',
-);
-const chatCryptoJs = readFileSync(
-  join(dir, 'src/server/chat-crypto.js'), 'utf-8',
-);
-const chatSessionJs = readFileSync(
-  join(dir, 'src/server/chat-session.js'), 'utf-8',
-);
-const chatClientJs = readFileSync(
-  join(dir, 'src/server/chat-client.js'), 'utf-8',
-);
-const secp256k1Js = readFileSync(
-  join(dir, 'src/server/secp256k1.bundle.js'), 'utf-8',
-);
-const walletJs = readFileSync(
-  join(dir, 'src/server/wallet.bundle.js'), 'utf-8',
-);
-const utilsJs = readFileSync(
-  join(dir, 'src/server/utils.js'), 'utf-8',
-);
-
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'nonce-__CSP_NONCE__' 'sha256-NzvNrqk5jB9YZATwo5BF4JoRlJ02HsnFikbKXgEPdaQ='",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com https://fonts.reown.com",
-  "connect-src 'self' https://api.web3modal.org https://rpc.walletconnect.org https://pulse.walletconnect.org https://echo.walletconnect.com https://verify.walletconnect.com https://verify.walletconnect.org https://secure.walletconnect.org https://secure-mobile.walletconnect.com https://secure-mobile.walletconnect.org wss://relay.walletconnect.org",
-  'frame-src https://secure.walletconnect.org https://secure-mobile.walletconnect.com https://secure-mobile.walletconnect.org',
-  "img-src 'self' https://api.web3modal.org data: blob:",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "object-src 'none'",
-].join('; ');
+const distDir = join(dir, 'dist');
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "connect-src 'self'",
+    "img-src 'self' data: blob:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "object-src 'none'",
+  ].join('; '),
 } as const;
 
 const KEYPAIR_MSG = 'ETH-Gate keypair v1';
 const VALID_TTLS = new Set([30, 300, 3600, 86400]);
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-
-function injectTemplate(
-  template: string, nonce: string,
-): string {
-  return template
-    .replace('__WC_PROJECT_ID__', projectId)
-    .replaceAll('__CSP_NONCE__', nonce);
-}
-
-function htmlResponse(template: string): Response {
-  const nonce = randomUUID();
-  return new Response(injectTemplate(template, nonce), {
-    headers: {
-      'Content-Type': 'text/html',
-      'Content-Security-Policy': CSP.replace('__CSP_NONCE__', nonce),
-      ...SECURITY_HEADERS,
-    },
-  });
-}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -116,10 +64,11 @@ function isValidAddress(addr: string): boolean {
 }
 
 function isHex(s: string, byteLen?: number): boolean {
+  const hex = s.startsWith('0x') ? s.slice(2) : s;
   if (byteLen !== undefined) {
-    return s.length === byteLen * 2 && /^[0-9a-f]+$/.test(s);
+    return hex.length === byteLen * 2 && /^[0-9a-f]+$/i.test(hex);
   }
-  return s.length > 0 && s.length % 2 === 0 && /^[0-9a-f]+$/.test(s);
+  return hex.length > 0 && hex.length % 2 === 0 && /^[0-9a-f]+$/i.test(hex);
 }
 
 function isValidSig(sig: string): boolean {
@@ -143,13 +92,12 @@ function getClientIp(
   return server.requestIP(req)?.address ?? 'unknown';
 }
 
-// Challenge store for auth (in-memory, short-lived)
+// Challenge store for auth
 const authChallenges = new Map<
   string,
   { challenge: string; address: string; expiresAt: number }
 >();
 
-// Cleanup auth challenges periodically
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of authChallenges) {
@@ -157,61 +105,20 @@ setInterval(() => {
   }
 }, 60_000).unref();
 
-const JS_FILES: Record<string, string> = {
-  '/chat-crypto.js': chatCryptoJs,
-  '/chat-session.js': chatSessionJs,
-  '/chat-client.js': chatClientJs,
-  '/secp256k1.js': secp256k1Js,
-  '/wallet.js': walletJs,
-  '/utils.js': utilsJs,
-};
-
 const httpServer = Bun.serve({
   port: PORT,
+  idleTimeout: 60, // 60 seconds
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/$/, '') || '/';
     const method = req.method;
 
-    // HEAD support for COOP check
-    if (method === 'HEAD' && (
-      path === '/' || path === '/chat' || path === '/register'
-      || /^\/chat\/0x[0-9a-fA-F]{40}$/.test(path)
-    )) {
-      return new Response(null, {
-        status: 200,
-        headers: SECURITY_HEADERS,
-      });
+    // HEAD support
+    if (method === 'HEAD' && !path.startsWith('/api/')) {
+      return new Response(null, { status: 200, headers: SECURITY_HEADERS });
     }
 
-    // GET / → redirect to /chat
-    if (method === 'GET' && path === '/') {
-      return Response.redirect('/chat', 302);
-    }
-
-    // GET /register
-    if (method === 'GET' && path === '/register') {
-      return htmlResponse(rawRegisterHtml);
-    }
-
-    // GET /chat or /chat/:address
-    if (method === 'GET' && (
-      path === '/chat'
-      || /^\/chat\/0x[0-9a-fA-F]{40}$/.test(path)
-    )) {
-      return htmlResponse(rawChatHtml);
-    }
-
-    // Static JS files
-    const jsContent = JS_FILES[path];
-    if (method === 'GET' && jsContent !== undefined) {
-      return new Response(jsContent, {
-        headers: {
-          'Content-Type': 'application/javascript',
-          ...SECURITY_HEADERS,
-        },
-      });
-    }
+    // --- API Routes ---
 
     // POST /api/register
     if (method === 'POST' && path === '/api/register') {
@@ -221,7 +128,7 @@ const httpServer = Bun.serve({
       }
 
       let body: {
-        address?: unknown; pubkey?: unknown; sig?: unknown;
+        address?: unknown; pubkey?: unknown; signature?: unknown;
       };
       try {
         body = (await req.json()) as typeof body;
@@ -231,9 +138,10 @@ const httpServer = Bun.serve({
 
       const address = typeof body.address === 'string'
         ? body.address.trim().toLowerCase() : '';
-      const pubkey = typeof body.pubkey === 'string'
+      let pubkey = typeof body.pubkey === 'string'
         ? body.pubkey.trim().toLowerCase() : '';
-      const sig = typeof body.sig === 'string' ? body.sig : '';
+      if (pubkey.startsWith('0x')) pubkey = pubkey.slice(2);
+      const signature = typeof body.signature === 'string' ? body.signature : '';
 
       if (!isValidAddress(address)) {
         return json({ error: 'invalid address' }, 400);
@@ -243,11 +151,11 @@ const httpServer = Bun.serve({
           { error: 'pubkey must be 33-byte compressed hex' }, 400,
         );
       }
-      if (!isValidSig(sig)) {
+      if (!isValidSig(signature)) {
         return json({ error: 'invalid signature format' }, 400);
       }
 
-      const valid = await verifySig(KEYPAIR_MSG, sig, address);
+      const valid = await verifySig(KEYPAIR_MSG, signature, address);
       if (!valid) {
         return json({ error: 'signature verification failed' }, 401);
       }
@@ -263,8 +171,7 @@ const httpServer = Bun.serve({
     if (method === 'GET' && pubkeyMatch) {
       const address = pubkeyMatch[1]!.toLowerCase();
       const pubkey = getPubkey(address);
-      if (!pubkey) return json({ error: 'Not registered' }, 404);
-      return json({ pubkey });
+      return json({ pubkey: pubkey ? `0x${pubkey}` : null });
     }
 
     // POST /api/auth/challenge
@@ -386,22 +293,20 @@ const httpServer = Bun.serve({
         return json({ error: 'Invalid JSON' }, 400);
       }
 
+      const normalizeHex = (s: unknown) => {
+        if (typeof s !== 'string') return '';
+        const trimmed = s.trim().toLowerCase();
+        return trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
+      };
+
       const recipient = typeof body.recipient === 'string'
         ? body.recipient.trim().toLowerCase() : '';
-      const ctRecipient = typeof body.ct_recipient === 'string'
-        ? body.ct_recipient.toLowerCase() : '';
-      const ephPubRecipient =
-        typeof body.ephemeral_pub_recipient === 'string'
-          ? body.ephemeral_pub_recipient.toLowerCase() : '';
-      const ivRecipient = typeof body.iv_recipient === 'string'
-        ? body.iv_recipient.toLowerCase() : '';
-      const ctSender = typeof body.ct_sender === 'string'
-        ? body.ct_sender.toLowerCase() : '';
-      const ephPubSender =
-        typeof body.ephemeral_pub_sender === 'string'
-          ? body.ephemeral_pub_sender.toLowerCase() : '';
-      const ivSender = typeof body.iv_sender === 'string'
-        ? body.iv_sender.toLowerCase() : '';
+      const ctRecipient = normalizeHex(body.ct_recipient);
+      const ephPubRecipient = normalizeHex(body.ephemeral_pub_recipient);
+      const ivRecipient = normalizeHex(body.iv_recipient);
+      const ctSender = normalizeHex(body.ct_sender);
+      const ephPubSender = normalizeHex(body.ephemeral_pub_sender);
+      const ivSender = normalizeHex(body.iv_sender);
       const ttl = typeof body.ttl === 'number' ? body.ttl : 300;
 
       if (!isValidAddress(recipient)) {
@@ -493,7 +398,18 @@ const httpServer = Bun.serve({
       const msgs = getConversationMessages(
         address, counterparty, limit, before,
       );
-      return json({ messages: msgs });
+      
+      const prefixedMsgs = msgs.map(m => ({
+        ...m,
+        ct_recipient: `0x${m.ct_recipient}`,
+        ephemeral_pub_recipient: `0x${m.ephemeral_pub_recipient}`,
+        iv_recipient: `0x${m.iv_recipient}`,
+        ct_sender: `0x${m.ct_sender}`,
+        ephemeral_pub_sender: `0x${m.ephemeral_pub_sender}`,
+        iv_sender: `0x${m.iv_sender}`,
+      }));
+
+      return json({ messages: prefixedMsgs });
     }
 
     // GET /api/conversations
@@ -502,7 +418,12 @@ const httpServer = Bun.serve({
       if (!address) return json({ error: 'Unauthorized' }, 401);
 
       const convs = getConversations(address);
-      return json({ conversations: convs });
+      const mappedConvs = convs.map(c => ({
+        address: c.counterparty,
+        last_message_at: c.last_message_at,
+        unread_count: 0, // Not implemented in DB yet
+      }));
+      return json({ conversations: mappedConvs });
     }
 
     // GET /api/events — SSE
@@ -557,6 +478,29 @@ const httpServer = Bun.serve({
           ...SECURITY_HEADERS,
         },
       });
+    }
+
+    // Static file serving from dist/
+    if (method === 'GET') {
+      // Use relative path for joining to avoid 'join' resetting to root
+      const relativePath = path.startsWith('/') ? path.slice(1) : path;
+      const file = Bun.file(join(distDir, relativePath));
+      
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: SECURITY_HEADERS,
+        });
+      }
+
+      // SPA fallback to index.html (only for routes that don't look like files)
+      if (!path.startsWith('/api/') && !path.includes('.')) {
+        const indexFile = Bun.file(join(distDir, 'index.html'));
+        if (await indexFile.exists()) {
+          return new Response(indexFile, {
+            headers: SECURITY_HEADERS,
+          });
+        }
+      }
     }
 
     return json({ error: 'Not found' }, 404);
