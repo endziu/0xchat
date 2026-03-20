@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```sh
 bun install          # install deps
-bun run build:crypto # bundle secp256k1 for browser (run once after install)
-bun run build:wallet # bundle AppKit + wagmi for browser (run once after install, or after editing src/wallet-entry.ts)
-bun run server       # start server (http://localhost:3000)
+bun run build        # build frontend SPA (Vite)
+bun run dev          # start Vite dev server
+bun run server       # start backend server (serves dist/ + API)
 bun run typecheck    # tsc --noEmit
 bun run lint         # oxlint src server.ts
 bun run test         # bun test
@@ -16,83 +16,89 @@ bun run test         # bun test
 
 ## Project
 
-**ETH-Chat** — an E2E encrypted ephemeral chat between Ethereum addresses. Messages are double-encrypted (once for recipient, once for sender) using ECIES. Real-time delivery via SSE. All messages have a TTL (30s, 5m, 1h, 24h) and auto-expire.
+**ETH-Chat** — a Preact-based E2E encrypted ephemeral chat between Ethereum addresses using auto-generated **Burner Wallets**.
 
-Backend: Bun HTTP server + SQLite (`bun:sqlite`). No framework, no server-side crypto.
+- **Frontend:** Preact SPA, Tailwind CSS v4, Vite.
+- **Identity:** Burner keypairs generated locally and stored in `localStorage`.
+- **Encryption:** Messages are double-encrypted (once for recipient, once for sender) using ECIES (AES-GCM-256).
+- **Delivery:** Real-time delivery via SSE (Server-Sent Events).
+- **Backend:** Bun HTTP server + SQLite (`bun:sqlite`).
 
 ## Source Layout
 
 ```
-server.ts                         entry point (Bun.serve, all routes)
+server.ts                         Backend entry point (Bun.serve)
 server.test.ts                    HTTP integration tests
+index.html                        SPA entry point
+vite.config.ts                    Frontend build config
 src/
-  crypto-entry.ts                 bundle entry — re-exports from @noble/secp256k1
-  wallet-entry.ts                 bundle entry — AppKit + wagmi wallet module
   server/
-    db.ts                         SQLite schema + CRUD (pubkeys, sessions, messages)
-    db.test.ts                    DB unit tests
-    rate-limit.ts                 in-memory sliding-window rate limiter
-    rate-limit.test.ts            rate limiter unit tests
-    verify.ts                     EIP-191 signature recovery via viem
+    db.ts                         SQLite schema + CRUD
     sse.ts                        SSE client tracking + push
-    sse.test.ts                   SSE unit tests
-    utils.js                      shared browser utilities (hexToBytes, bytesToHex, walletErrorMessage)
-    utils.test.ts                 utils unit tests
-    chat-crypto.js                ECIES encrypt/decrypt for browser
-    chat-session.js               client auth (challenge → token)
-    chat-client.js                chat UI logic + SSE listener
-    secp256k1.bundle.js           generated browser bundle of @noble/secp256k1
-    wallet.bundle.js              generated browser bundle of AppKit + wagmi
-    views/
-      register.html               one-time pubkey registration
-      chat.html                   main chat UI
+    rate-limit.ts                 In-memory rate limiter
+    verify.ts                     EIP-191 signature recovery (viem)
+  client/
+    main.tsx                      Preact entry point
+    styles.css                    Tailwind v4 entry point
+    lib/
+      burner.ts                   Key generation, storage, EIP-191 signing
+      crypto.ts                   ECIES encrypt/decrypt (Web Crypto API)
+      api.ts                      Typed API client
+      session.ts                  Bearer token storage
+    hooks/
+      useIdentity.ts              Local account lifecycle
+      useSession.ts               Auth token management
+      useConversations.ts         Conversation list management
+      useMessages.ts              Message loading/decryption/sending
+      useSSE.ts                   SSE listener lifecycle
+    components/
+      App.tsx                     Root router & layout wrapper
+      ChatView.tsx                Main chat interface
+      MessagePane.tsx             Message bubbles & input (supports image paste)
+      ConversationList.tsx        Sidebar contacts
+      OnboardingView.tsx          First-time burner generation
+      KeyManagement.tsx           Key export/import settings
 ```
 
 ## Architecture
 
-**Recipient registration (once):**
-- Visits `GET /register` → connects wallet
-- `personal_sign("ETH-Gate keypair v1")` → deterministic sig → SHA-256 → secp256k1 seed → compressed pubkey
-- `POST /api/register { address, pubkey, sig }` → server verifies sig → stores pubkey
+**Identity & Registration:**
+- Unique secp256k1 keypair is generated on first visit and stored in `localStorage`.
+- To receive messages, users `POST /api/register` with their address, public key, and an EIP-191 signature of `"ETH-Gate keypair v1"`.
 
-**Session auth:**
-- `POST /api/auth/challenge { address }` → server issues nonce (5-min TTL)
-- `personal_sign(challenge)` → `POST /api/auth/session` → server verifies, creates 24h bearer token
-- Token stored in sessionStorage, sent as `Authorization: Bearer <token>`
+**Session Authentication:**
+- `POST /api/auth/challenge { address }` → returns a unique challenge + nonce.
+- Client signs challenge → `POST /api/auth/session` → returns 24h bearer token.
+- Token is sent in `Authorization: Bearer <token>` headers. 401 errors trigger local token clearing.
 
 **Message flow:**
-- Sender encrypts plaintext twice: ECIES with recipient pubkey + ECIES with own pubkey
-- `POST /api/messages` with both ciphertexts + TTL
-- Server stores message, computes expires_at, notifies both parties via SSE
-- Recipient/sender decrypts their respective ciphertext using derived seed
+- Sender encrypts plaintext twice: ECIES with recipient pubkey + ECIES with own pubkey.
+- `POST /api/messages` with ciphertexts, ephemeral keys, and IVs.
+- Server stores message, notifies both parties via SSE.
+- Clients decrypt their respective ciphertext using their private key.
+- Supports image pasting: images are converted to data URLs and encrypted as text.
 
 **Expiry:**
-- Messages auto-deleted when `expires_at` passes (30s server cleanup interval)
-- Client-side timers remove messages from DOM with CSS fade transition
+- Messages auto-delete after TTL (30s, 5m, 1h, 24h).
+- Server cleans DB every 30s; client removes messages from state via timers or refreshes.
 
 ## Crypto Scheme
 
-- Key derivation: `SHA-256(personal_sign("ETH-Gate keypair v1"))` → 32-byte secp256k1 seed
-- Encryption: ECIES — ephemeral ECDH + HKDF-SHA-256 + AES-GCM-256
-- HKDF salt: ephemeral pubkey bytes (33-byte compressed)
-- HKDF info: "ETH-Gate AES-GCM v1"
-- secp256k1: `@noble/secp256k1` bundled for browser
-- AES-GCM + HKDF: native Web Crypto API
+- **Key Derivation:** `crypto.getRandomValues(32)` for raw entropy.
+- **Encryption:** ECIES — ephemeral ECDH + HKDF-SHA-256 + AES-GCM-256.
+- **Standards:** All hex strings in API/DB use the `0x` prefix for compatibility with `viem`.
+- **Library:** `@noble/secp256k1` (v3) for curve math, `viem` for addresses/signatures.
 
 ## API
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/` | - | Redirect to `/chat` |
-| GET | `/register` | - | Registration page |
-| GET | `/chat` | - | Chat UI |
-| GET | `/chat/:address` | - | Chat UI (conversation with address) |
-| GET | `/*.js` | - | Static JS bundles |
-| POST | `/api/register` | - | Store pubkey for address |
-| GET | `/api/pubkey/:address` | - | Lookup pubkey |
-| POST | `/api/auth/challenge` | - | Issue session challenge |
-| POST | `/api/auth/session` | - | Verify sig → bearer token |
-| POST | `/api/messages` | Bearer | Send double-encrypted message |
-| GET | `/api/messages/:address` | Bearer | Fetch conversation (paginated) |
-| GET | `/api/conversations` | Bearer | List active conversations |
-| GET | `/api/events` | Token (query) | SSE real-time stream |
+| GET | `/*` | - | Serves `dist/` or `index.html` (SPA fallback) |
+| POST | `/api/register` | - | Register pubkey for an address |
+| GET | `/api/pubkey/:addr` | - | Lookup a registered pubkey (returns null if not found) |
+| POST | `/api/auth/challenge`| - | Issue unique auth challenge |
+| POST | `/api/auth/session` | - | Verify sig → return bearer token |
+| POST | `/api/messages` | Bearer | Send double-encrypted message/image |
+| GET | `/api/messages/:addr`| Bearer | Fetch conversation history (reversed for UI) |
+| GET | `/api/conversations`| Bearer | List active conversations |
+| GET | `/api/events` | Token | SSE event stream |
