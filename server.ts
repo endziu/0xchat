@@ -46,7 +46,7 @@ const SECURITY_HEADERS = {
 } as const;
 
 const KEYPAIR_MSG = 'ETH-Gate keypair v1';
-const VALID_TTLS = new Set([30, 300, 3600, 86400]);
+const VALID_TTLS = new Set([5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]);
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 function json(body: unknown, status = 200): Response {

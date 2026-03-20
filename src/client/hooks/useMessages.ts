@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'preact/hooks'
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
 import { api, Message } from '../lib/api'
 import { encrypt, decrypt } from '../lib/crypto'
 import { Keypair } from '../lib/burner'
@@ -7,6 +7,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const [messages, setMessages] = useState<(Message & { plaintext: string })[]>([])
   const [loading, setLoading] = useState(false)
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
+  const timerRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
 
   const loadMessages = useCallback(async () => {
     if (!recipientAddress || !identity || !token) {
@@ -55,6 +56,48 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   useEffect(() => {
     loadMessages()
   }, [loadMessages])
+
+  // Set up expiry timers for messages
+  useEffect(() => {
+    const now = Date.now()
+    const messageIds = new Set(messages.map(m => m.id))
+
+    // Clean up timers for removed messages
+    for (const [id] of timerRef.current) {
+      if (!messageIds.has(id)) {
+        const timer = timerRef.current.get(id)
+        if (timer) clearTimeout(timer)
+        timerRef.current.delete(id)
+      }
+    }
+
+    // Set timers for new messages
+    for (const msg of messages) {
+      if (timerRef.current.has(msg.id)) continue
+
+      const timeUntilExpiry = msg.expires_at - now
+      if (timeUntilExpiry <= 0) {
+        // Already expired, remove immediately
+        setMessages(prev => prev.filter(m => m.id !== msg.id))
+      } else {
+        // Set timer to remove when it expires
+        const timer = setTimeout(() => {
+          setMessages(prev => prev.filter(m => m.id !== msg.id))
+        }, timeUntilExpiry)
+        timerRef.current.set(msg.id, timer)
+      }
+    }
+  }, [messages])
+
+  // Clean up all timers on unmount
+  useEffect(() => {
+    return () => {
+      for (const timer of timerRef.current.values()) {
+        if (timer) clearTimeout(timer)
+      }
+      timerRef.current.clear()
+    }
+  }, [])
 
   const sendMessage = async (plaintext: string, ttl: number) => {
     if (!recipientAddress || !identity || !token) {

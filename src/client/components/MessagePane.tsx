@@ -11,7 +11,7 @@ interface MessagePaneProps {
 
 export function MessagePane({ recipientAddress, messages, onSendMessage, onBack }: MessagePaneProps) {
   const [inputText, setInputText] = useState('')
-  const [ttl, setTtl] = useState(300)
+  const [ttl, setTtl] = useState(60)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -131,14 +131,19 @@ export function MessagePane({ recipientAddress, messages, onSendMessage, onBack 
           className="flex-1 bg-surface border border-border rounded-sm px-4 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors"
           autoComplete="off"
         />
-        <select 
-          value={ttl} 
+        <select
+          value={ttl}
           onChange={(e: any) => setTtl(Number(e.target.value))}
           className="bg-surface border border-border rounded-sm px-2 text-[10px] text-dim cursor-pointer focus:border-accent outline-none font-bold uppercase tracking-tighter"
         >
+          <option value={5}>5s</option>
+          <option value={10}>10s</option>
           <option value={30}>30s</option>
+          <option value={60}>1m</option>
           <option value={300}>5m</option>
+          <option value={1800}>30m</option>
           <option value={3600}>1h</option>
+          <option value={21600}>6h</option>
           <option value={86400}>24h</option>
         </select>
         <button
