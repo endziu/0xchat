@@ -13,20 +13,22 @@ export function useIdentity() {
   const [loading, setLoading] = useState(true)
   const [backups, setBackups] = useState<Backup[]>([])
 
-  useEffect(() => {
-    // Check for URL-based PK import
+  function tryImportFromHash(): boolean {
     const hash = window.location.hash.replace('#', '')
-    if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-      const existing = loadKeypair()
-      if (existing) saveBackup(existing)
-      const imported = deriveKeypair(hash)
-      saveKeypair(imported)
-      history.replaceState(null, '', window.location.pathname)
-      setIdentity(imported)
-      setBackups(loadBackups())
-      checkRegistration(imported.address)
-      return
-    }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return false
+    const existing = loadKeypair()
+    if (existing) saveBackup(existing)
+    const imported = deriveKeypair(hash)
+    saveKeypair(imported)
+    history.replaceState(null, '', window.location.pathname)
+    setIdentity(imported)
+    setBackups(loadBackups())
+    checkRegistration(imported.address)
+    return true
+  }
+
+  useEffect(() => {
+    if (tryImportFromHash()) return
 
     // Normal flow
     const loaded = loadKeypair()
@@ -40,6 +42,10 @@ export function useIdentity() {
       setIdentity(generated)
       checkRegistration(generated.address)
     }
+
+    const handleHashChange = () => { tryImportFromHash() }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
 
   async function checkRegistration(address: string) {
@@ -92,6 +98,7 @@ export function useIdentity() {
   function switchToBackup(ts: number, kp: Keypair) {
     const existing = loadKeypair()
     if (existing) saveBackup(existing)
+    deleteBackupFromStorage(ts)
     saveKeypair(kp)
     setIdentity(kp)
     setBackups(loadBackups())
