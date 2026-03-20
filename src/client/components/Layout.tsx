@@ -3,7 +3,6 @@ import { useState } from 'preact/hooks'
 import { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
-import { Backup } from '../hooks/useIdentity'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -11,12 +10,9 @@ interface LayoutProps {
   onLogout: () => void
   onImport?: (keypair: Keypair) => void
   navigate?: (to: string) => void
-  backups?: Backup[]
-  onSwitch?: (ts: number, kp: Keypair) => void
-  onDelete?: (ts: number) => void
 }
 
-export function Layout({ children, identity, onLogout, onImport, navigate, backups, onSwitch, onDelete }: LayoutProps) {
+export function Layout({ children, identity, onLogout, onImport, navigate }: LayoutProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -89,9 +85,6 @@ export function Layout({ children, identity, onLogout, onImport, navigate, backu
                   onImport?.(kp)
                   setShowSettings(false)
                 }}
-                backups={backups}
-                onSwitch={onSwitch}
-                onDelete={onDelete}
               />
             </div>
           </div>

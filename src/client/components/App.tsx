@@ -6,7 +6,7 @@ import { OnboardingView } from './OnboardingView'
 import { ChatView } from './ChatView'
 
 export function App() {
-  const { identity, isRegistered, loading: idLoading, register, logout: idLogout, importIdentity, backups, switchToBackup, deleteBackup } = useIdentity()
+  const { identity, isRegistered, loading: idLoading, register, logout: idLogout, importIdentity } = useIdentity()
   const { token, loading: sessionLoading, error: loginError, login } = useSession(identity)
   const [path, setPath] = useState(window.location.pathname)
 
@@ -47,7 +47,7 @@ export function App() {
 
   if (!isRegistered) {
     return (
-      <Layout identity={identity} onLogout={idLogout} backups={backups} onSwitch={switchToBackup} onDelete={deleteBackup}>
+      <Layout identity={identity} onLogout={idLogout}>
         <OnboardingView onRegister={register} />
       </Layout>
     )
@@ -85,9 +85,6 @@ export function App() {
       onLogout={idLogout}
       onImport={importIdentity}
       navigate={navigate}
-      backups={backups}
-      onSwitch={switchToBackup}
-      onDelete={deleteBackup}
     >
       <ChatView
         recipientAddress={chatAddress}

@@ -55,18 +55,3 @@ export function loadKeypair(): Keypair | null {
 export function clearKeypair() {
   localStorage.removeItem(STORAGE_KEY)
 }
-
-export function saveBackup(kp: Keypair): void {
-  localStorage.setItem(`eth_chat_burner_backup_${Date.now()}`, JSON.stringify(kp))
-}
-
-export function loadBackups(): Array<{ ts: number; keypair: Keypair }> {
-  return Object.keys(localStorage)
-    .filter(k => k.startsWith('eth_chat_burner_backup_'))
-    .map(k => ({ ts: parseInt(k.split('_').at(-1)!), keypair: JSON.parse(localStorage.getItem(k)!) }))
-    .sort((a, b) => b.ts - a.ts)
-}
-
-export function deleteBackup(ts: number): void {
-  localStorage.removeItem(`eth_chat_burner_backup_${ts}`)
-}
