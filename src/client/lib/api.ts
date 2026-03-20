@@ -31,7 +31,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (res.status === 401) {
     clearToken()
     // Trigger a page reload or state update to handle logout
-    if (!path.includes('/api/auth/')) {
+    // but not for DELETE (logout already in progress) or auth endpoints
+    if (!path.includes('/api/auth/') && !path.includes('/api/addresses/')) {
       window.dispatchEvent(new CustomEvent('auth:expired'))
     }
   }

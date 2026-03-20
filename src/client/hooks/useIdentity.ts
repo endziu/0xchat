@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { Keypair, loadKeypair, generateKeypair, saveKeypair, clearKeypair, signEIP191, deriveKeypair } from '../lib/burner'
 import { api } from '../lib/api'
+import { getToken, clearToken } from '../lib/session'
 
 export function useIdentity() {
   const [identity, setIdentity] = useState<Keypair | null>(null)
@@ -67,7 +68,10 @@ export function useIdentity() {
 
   async function logout() {
     const current = loadKeypair()
-    if (current) {
+    const token = getToken()
+
+    // Only try to delete if we have a valid token
+    if (current && token) {
       try {
         await api.deleteAddress(current.address)
       } catch (err) {
@@ -76,6 +80,7 @@ export function useIdentity() {
     }
 
     clearKeypair()
+    clearToken()
     setIdentity(null)
     setIsRegistered(false)
 
