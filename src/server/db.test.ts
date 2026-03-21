@@ -5,7 +5,11 @@ import {
   createSession,
   deleteExpiredMessages,
   deleteExpiredSessions,
+  deleteAddress,
+  deleteAddressConversations,
+  deleteAddressSessions,
   getConversationMessages,
+  getConversationPartners,
   getConversations,
   getPubkey,
   getSession,
@@ -183,5 +187,128 @@ describe('conversations', () => {
 
   test('returns empty for no conversations', () => {
     expect(getConversations('0xnobody')).toHaveLength(0);
+  });
+});
+
+describe('cascade deletion (logout)', () => {
+  const alice = '0xalice';
+  const bob = '0xbob';
+  const charlie = '0xcharlie';
+
+  beforeEach(() => {
+    // Setup: Alice has conversations with Bob and Charlie
+    registerPubkey(alice, 'alice_pubkey');
+    registerPubkey(bob, 'bob_pubkey');
+    registerPubkey(charlie, 'charlie_pubkey');
+
+    // Alice ↔ Bob conversation
+    createMessage(
+      'm1', alice, bob,
+      'ct_r', 'eph_r', 'iv_r',
+      'ct_s', 'eph_s', 'iv_s',
+      3600,
+    );
+    createMessage(
+      'm2', bob, alice,
+      'ct_r', 'eph_r', 'iv_r',
+      'ct_s', 'eph_s', 'iv_s',
+      3600,
+    );
+
+    // Alice ↔ Charlie conversation
+    createMessage(
+      'm3', alice, charlie,
+      'ct_r', 'eph_r', 'iv_r',
+      'ct_s', 'eph_s', 'iv_s',
+      3600,
+    );
+
+    // Bob ↔ Charlie conversation (not involving Alice)
+    createMessage(
+      'm4', bob, charlie,
+      'ct_r', 'eph_r', 'iv_r',
+      'ct_s', 'eph_s', 'iv_s',
+      3600,
+    );
+
+    // Alice session
+    createSession('alice_token', alice, Date.now() + 60_000);
+  });
+
+  test('getConversationPartners identifies all partners', () => {
+    const partners = getConversationPartners(alice);
+    expect(partners).toHaveLength(2);
+    expect(partners).toContain(bob);
+    expect(partners).toContain(charlie);
+  });
+
+  test('getConversationPartners returns empty for no conversations', () => {
+    const partners = getConversationPartners('0xnobody');
+    expect(partners).toHaveLength(0);
+  });
+
+  test('deleteAddressConversations removes all messages involving user', () => {
+    // Before deletion: 3 messages involve Alice (m1, m2, m3)
+    let aliceConvs = getConversations(alice);
+    expect(aliceConvs.length).toBeGreaterThan(0);
+
+    deleteAddressConversations(alice);
+
+    // After deletion: Alice has no messages
+    aliceConvs = getConversations(alice);
+    expect(aliceConvs).toHaveLength(0);
+
+    // Bob-Charlie conversation (m4) should still exist
+    const bobConvs = getConversations(bob);
+    expect(bobConvs.some(c => c.counterparty === charlie)).toBe(true);
+  });
+
+  test('deleteAddressSessions removes user sessions', () => {
+    expect(getSession('alice_token')).not.toBeNull();
+
+    deleteAddressSessions(alice);
+
+    expect(getSession('alice_token')).toBeNull();
+  });
+
+  test('deleteAddress removes pubkey registration', () => {
+    expect(getPubkey(alice)).not.toBeNull();
+
+    deleteAddress(alice);
+
+    expect(getPubkey(alice)).toBeNull();
+  });
+
+  test('full logout cascade: delete all data for user', () => {
+    // Verify setup
+    expect(getPubkey(alice)).toBe('alice_pubkey');
+    expect(getSession('alice_token')).not.toBeNull();
+    const partnersBefore = getConversationPartners(alice);
+    expect(partnersBefore).toHaveLength(2);
+
+    // Cascade deletion (as done in server.ts DELETE endpoint)
+    deleteAddressSessions(alice);
+    deleteAddressConversations(alice);
+    deleteAddress(alice);
+
+    // Verify complete cleanup
+    expect(getPubkey(alice)).toBeNull();
+    expect(getSession('alice_token')).toBeNull();
+    expect(getConversations(alice)).toHaveLength(0);
+    expect(getConversationPartners(alice)).toHaveLength(0);
+
+    // Verify partners still exist and other data untouched
+    expect(getPubkey(bob)).not.toBeNull();
+    expect(getPubkey(charlie)).not.toBeNull();
+    const bobConvs = getConversations(bob);
+    expect(bobConvs.some(c => c.counterparty === charlie)).toBe(true);
+  });
+
+  test('address normalization in cascade deletion', () => {
+    // getPubkey/registerPubkey now normalize addresses
+    const upperAlice = '0xALICE';
+    deleteAddress(upperAlice);
+    expect(getPubkey(alice)).toBeNull();
+    expect(getPubkey(upperAlice)).toBeNull();
   });
 });

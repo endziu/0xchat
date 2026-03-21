@@ -187,25 +187,29 @@ export function deleteExpiredMessages(): void {
 }
 
 export function deleteAddressSessions(address: string): void {
-  db.query('DELETE FROM sessions WHERE address = ?').run(address);
+  const normalized = address.toLowerCase();
+  db.query('DELETE FROM sessions WHERE address = ?').run(normalized);
 }
 
 export function deleteAddressConversations(address: string): void {
-  db.query('DELETE FROM messages WHERE sender = ? OR recipient = ?').run(address, address);
+  const normalized = address.toLowerCase();
+  db.query('DELETE FROM messages WHERE sender = ? OR recipient = ?').run(normalized, normalized);
 }
 
 export function deleteAddress(address: string): void {
-  db.query('DELETE FROM pubkeys WHERE address = ?').run(address);
+  const normalized = address.toLowerCase();
+  db.query('DELETE FROM pubkeys WHERE address = ?').run(normalized);
 }
 
 export function getConversationPartners(address: string): string[] {
+  const normalized = address.toLowerCase();
   const rows = db
     .query(
       `SELECT DISTINCT CASE WHEN sender = ? THEN recipient ELSE sender END AS partner
        FROM messages
        WHERE sender = ? OR recipient = ?`,
     )
-    .all(address, address, address) as Array<{ partner: string }>;
+    .all(normalized, normalized, normalized) as Array<{ partner: string }>;
   return rows.map(r => r.partner);
 }
 
