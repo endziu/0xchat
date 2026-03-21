@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'preact/hooks'
+import { useState, useCallback, useRef, useEffect } from 'preact/hooks'
 import { ConversationList } from './ConversationList'
 import { MessagePane } from './MessagePane'
 import { useConversations } from '../hooks/useConversations'
@@ -19,8 +19,10 @@ export function ChatView({ recipientAddress, identity, token, navigate }: ChatVi
   const { messages, sendMessage, addMessage } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
+  const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
 
-  const handleSSE = useCallback((data: any) => {
+  // Use refs to keep SSE handlers stable across conversation changes
+  const handleSSERef = useRef((data: any) => {
     refreshConversations()
     if (recipientAddress && (
       data.sender.toLowerCase() === recipientAddress.toLowerCase() ||
@@ -28,16 +30,45 @@ export function ChatView({ recipientAddress, identity, token, navigate }: ChatVi
     )) {
       addMessage(data)
     }
-  }, [recipientAddress, identity.address, refreshConversations, addMessage])
+  })
 
-  const handleDisconnect = useCallback((address: string) => {
+  const handleDisconnectRef = useRef((address: string) => {
     refreshConversations()
     if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
-      navigate('/chat')
+      setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
+      setTimeout(() => navigate('/chat'), 2000)
+    }
+  })
+
+  // Update refs when dependencies change, without triggering SSE reconnect
+  useEffect(() => {
+    handleSSERef.current = (data: any) => {
+      refreshConversations()
+      if (recipientAddress && (
+        data.sender.toLowerCase() === recipientAddress.toLowerCase() ||
+        data.sender.toLowerCase() === identity.address.toLowerCase()
+      )) {
+        addMessage(data)
+      }
+    }
+  }, [recipientAddress, identity.address, refreshConversations, addMessage])
+
+  useEffect(() => {
+    handleDisconnectRef.current = (address: string) => {
+      refreshConversations()
+      if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
+        setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
+        setTimeout(() => navigate('/chat'), 2000)
+      }
     }
   }, [recipientAddress, navigate, refreshConversations])
 
-  useSSE(token, handleSSE, handleDisconnect)
+  // Create stable wrapper functions that call the updated refs
+  const stableHandleSSE = useCallback((data: any) => handleSSERef.current(data), [])
+  const stableHandleDisconnect = useCallback((address: string) => handleDisconnectRef.current(address), [])
+
+  // Pass stable handlers to SSE with only token as dependency
+  useSSE(token, stableHandleSSE, stableHandleDisconnect)
 
   const handleNewChat = () => {
     setNewChatAddr('')
@@ -121,8 +152,13 @@ export function ChatView({ recipientAddress, identity, token, navigate }: ChatVi
       </div>
 
       <div className={`flex-1 flex flex-col min-w-0 ${!recipientAddress ? 'hidden md:flex items-center justify-center text-dim italic' : 'flex'}`}>
+        {disconnectNotice && (
+          <div className="bg-error/20 border-b border-error/50 px-4 py-3 text-center text-sm text-error animate-pulse">
+            {disconnectNotice}
+          </div>
+        )}
         {recipientAddress ? (
-          <MessagePane 
+          <MessagePane
             recipientAddress={recipientAddress}
             messages={messages}
             onSendMessage={sendMessage}

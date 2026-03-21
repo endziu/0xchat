@@ -45,15 +45,17 @@ export function initDb(path = 'chat.db'): void {
 }
 
 export function registerPubkey(address: string, pubkey: string): void {
+  const normalized = address.toLowerCase();
   db.query(
     'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
-  ).run(address, pubkey);
+  ).run(normalized, pubkey);
 }
 
 export function getPubkey(address: string): string | null {
+  const normalized = address.toLowerCase();
   const row = db
     .query('SELECT pubkey FROM pubkeys WHERE address = ?')
-    .get(address) as { pubkey: string } | null;
+    .get(normalized) as { pubkey: string } | null;
   return row?.pubkey ?? null;
 }
 

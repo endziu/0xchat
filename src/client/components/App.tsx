@@ -6,8 +6,8 @@ import { OnboardingView } from './OnboardingView'
 import { ChatView } from './ChatView'
 
 export function App() {
-  const { identity, isRegistered, loading: idLoading, register, logout: idLogout, importIdentity } = useIdentity()
-  const { token, loading: sessionLoading, error: loginError, login } = useSession(identity)
+  const { identity, isRegistered, loading: idLoading, error: idError, register, logout: idLogout, importIdentity } = useIdentity()
+  const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout } = useSession(identity)
   const [path, setPath] = useState(window.location.pathname)
 
   useEffect(() => {
@@ -23,14 +23,14 @@ export function App() {
     }
   }, [identity, isRegistered, token, sessionLoading, login])
 
-  // Handle session expiry events
+  // Handle session expiry: re-authenticate instead of destroying identity
   useEffect(() => {
     const handleAuthExpired = () => {
-      idLogout()
+      sessionLogout()
     }
     window.addEventListener('auth:expired', handleAuthExpired)
     return () => window.removeEventListener('auth:expired', handleAuthExpired)
-  }, [idLogout])
+  }, [sessionLogout])
 
   const navigate = (to: string) => {
     window.history.pushState({}, '', to)
@@ -40,7 +40,19 @@ export function App() {
   if (idLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-accent animate-pulse font-serif italic text-2xl">Initializing identity...</div>
+        {idError ? (
+          <div className="flex flex-col items-center gap-4 max-w-sm">
+            <p className="text-error font-mono text-sm text-center">{idError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-8 py-3 border border-accent text-accent hover:bg-accent hover:text-bg transition-colors uppercase tracking-widest font-bold cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div className="text-accent animate-pulse font-serif italic text-2xl">Initializing identity...</div>
+        )}
       </div>
     )
   }
@@ -48,6 +60,11 @@ export function App() {
   if (!isRegistered) {
     return (
       <Layout identity={identity} onLogout={idLogout}>
+        {idError && (
+          <div className="mb-4 p-4 bg-error/20 border border-error/50 rounded text-error text-sm">
+            {idError}
+          </div>
+        )}
         <OnboardingView onRegister={register} />
       </Layout>
     )
@@ -85,6 +102,7 @@ export function App() {
       onLogout={idLogout}
       onImport={importIdentity}
       navigate={navigate}
+      error={idError}
     >
       <ChatView
         recipientAddress={chatAddress}

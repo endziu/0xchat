@@ -7,16 +7,25 @@ export function useIdentity() {
   const [identity, setIdentity] = useState<Keypair | null>(null)
   const [isRegistered, setIsRegistered] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   function tryImportFromHash(): boolean {
     const hash = window.location.hash.replace('#', '')
     if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return false
-    const imported = deriveKeypair(hash)
-    saveKeypair(imported)
-    history.replaceState(null, '', window.location.pathname)
-    setIdentity(imported)
-    checkRegistration(imported.address)
-    return true
+    try {
+      const imported = deriveKeypair(hash)
+      saveKeypair(imported)
+      history.replaceState(null, '', window.location.pathname)
+      setIdentity(imported)
+      setError(null)
+      checkRegistration(imported.address)
+      return true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to import key from URL'
+      setError(msg)
+      console.error('Key import failed:', err)
+      return false
+    }
   }
 
   useEffect(() => {
@@ -67,14 +76,16 @@ export function useIdentity() {
   }
 
   async function logout() {
-    const current = loadKeypair()
     const token = getToken()
+    let deleteError: string | null = null
 
     // Only try to delete if we have a valid token
-    if (current && token) {
+    if (identity && token) {
       try {
-        await api.deleteAddress(current.address)
+        await api.deleteAddress(identity.address)
       } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to notify server'
+        deleteError = msg
         console.error('Failed to delete address:', err)
       }
     }
@@ -85,9 +96,16 @@ export function useIdentity() {
     setIsRegistered(false)
 
     const generated = generateKeypair()
-    saveKeypair(generated)
-    setIdentity(generated)
-    checkRegistration(generated.address)
+    try {
+      saveKeypair(generated)
+      setIdentity(generated)
+      setError(deleteError ? `Logged out locally. Server cleanup failed: ${deleteError}` : null)
+      checkRegistration(generated.address)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save new key'
+      setError(msg)
+      console.error('Failed to save new keypair:', err)
+    }
   }
 
   function importIdentity(keypair: Keypair) {
@@ -96,5 +114,5 @@ export function useIdentity() {
     checkRegistration(keypair.address)
   }
 
-  return { identity, isRegistered, loading, register, logout, importIdentity }
+  return { identity, isRegistered, loading, error, register, logout, importIdentity }
 }

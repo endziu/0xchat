@@ -521,6 +521,7 @@ const httpServer = Bun.serve({
       if (!address) return json({ error: 'Unauthorized' }, 401);
 
       const targetAddr = deleteAddrMatch[1].toLowerCase();
+      if (!isValidAddress(targetAddr)) return json({ error: 'Invalid address format' }, 400);
       if (address !== targetAddr) return json({ error: 'Forbidden' }, 403);
 
       // Get conversation partners before deleting

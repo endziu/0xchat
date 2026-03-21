@@ -10,9 +10,10 @@ interface LayoutProps {
   onLogout: () => void
   onImport?: (keypair: Keypair) => void
   navigate?: (to: string) => void
+  error?: string | null
 }
 
-export function Layout({ children, identity, onLogout, onImport, navigate }: LayoutProps) {
+export function Layout({ children, identity, onLogout, onImport, navigate, error }: LayoutProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -25,6 +26,11 @@ export function Layout({ children, identity, onLogout, onImport, navigate }: Lay
 
   return (
     <div className="flex flex-col h-screen max-w-5xl mx-auto border-x border-border bg-bg relative">
+      {error && (
+        <div className="bg-error/20 border-b border-error/50 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      )}
       <header className="flex items-center justify-between p-4 border-b border-border shrink-0">
         <a 
           href="/chat" 
