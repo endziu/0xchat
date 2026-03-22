@@ -4,9 +4,9 @@ let db: Database;
 
 export function initDb(path = 'chat.db'): void {
   db = new Database(path);
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec(`
+  db.run('PRAGMA journal_mode = WAL');
+  db.run('PRAGMA foreign_keys = ON');
+  db.run(`
     CREATE TABLE IF NOT EXISTS pubkeys (
       address TEXT PRIMARY KEY,
       pubkey  TEXT NOT NULL
