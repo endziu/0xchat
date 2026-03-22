@@ -5,6 +5,7 @@ import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { useSSE } from '../hooks/useSSE'
 import { Keypair } from '../lib/burner'
+import { api } from '../lib/api'
 import { Plus, X } from 'lucide-preact'
 
 interface ChatViewProps {
@@ -12,9 +13,10 @@ interface ChatViewProps {
   identity: Keypair
   token: string
   navigate: (to: string) => void
+  onConnectedChange?: (connected: boolean) => void
 }
 
-export function ChatView({ recipientAddress, identity, token, navigate }: ChatViewProps) {
+export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
   const { conversations, refresh: refreshConversations } = useConversations(token)
   const { messages, sendMessage, addMessage } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
@@ -68,20 +70,36 @@ export function ChatView({ recipientAddress, identity, token, navigate }: ChatVi
   const stableHandleDisconnect = useCallback((address: string) => handleDisconnectRef.current(address), [])
 
   // Pass stable handlers to SSE with only token as dependency
-  useSSE(token, stableHandleSSE, stableHandleDisconnect)
+  const { connected } = useSSE(token, stableHandleSSE, stableHandleDisconnect)
+
+  // Notify parent of connection status
+  useEffect(() => {
+    onConnectedChange?.(connected)
+  }, [connected, onConnectedChange])
 
   const handleNewChat = () => {
     setNewChatAddr('')
     setNewChatError('')
   }
 
-  const handleNewChatSubmit = () => {
+  const handleNewChatSubmit = async () => {
     if (!newChatAddr) return
-    if (/^0x[0-9a-fA-F]{40}$/.test(newChatAddr)) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(newChatAddr)) {
+      setNewChatError('Invalid address. Must be 0x followed by 40 hex characters.')
+      return
+    }
+
+    // Pre-check if recipient is registered
+    try {
+      const { pubkey } = await api.getPubkey(newChatAddr)
+      if (!pubkey) {
+        setNewChatError('This address has not registered their encryption key yet.')
+        return
+      }
       navigate(`/chat/${newChatAddr.toLowerCase()}`)
       setNewChatAddr(null)
-    } else {
-      setNewChatError('Invalid address. Must be 0x followed by 40 hex characters.')
+    } catch (err: any) {
+      setNewChatError(err.message || 'Failed to check recipient registration.')
     }
   }
 

@@ -1,12 +1,18 @@
-import { useEffect } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { api } from '../lib/api'
 
 export function useSSE(token: string | null, onMessage: (data: any) => void, onDisconnect?: (address: string) => void) {
+  const [connected, setConnected] = useState(false)
+
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      setConnected(false)
+      return
+    }
 
     let es: EventSource | null = null
     let mounted = true
+    let reconnectTimeout: NodeJS.Timeout | null = null
 
     const setupSSE = async () => {
       try {
@@ -15,6 +21,10 @@ export function useSSE(token: string | null, onMessage: (data: any) => void, onD
         if (!mounted) return
 
         es = new EventSource(`/api/events?token=${sse_token}`)
+
+        es.addEventListener('open', () => {
+          if (mounted) setConnected(true)
+        })
 
         es.addEventListener('message', (e: MessageEvent) => {
           try {
@@ -36,10 +46,12 @@ export function useSSE(token: string | null, onMessage: (data: any) => void, onD
 
         es.onerror = (err) => {
           console.error('SSE error:', err)
+          if (mounted) setConnected(false)
           // Let EventSource reconnect automatically
         }
       } catch (err) {
         console.error('Failed to get SSE token:', err)
+        if (mounted) setConnected(false)
       }
     }
 
@@ -50,6 +62,12 @@ export function useSSE(token: string | null, onMessage: (data: any) => void, onD
       if (es) {
         es.close()
       }
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout)
+      }
+      setConnected(false)
     }
   }, [token, onMessage, onDisconnect])
+
+  return { connected }
 }

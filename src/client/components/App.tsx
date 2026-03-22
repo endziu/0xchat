@@ -4,11 +4,13 @@ import { useSession } from '../hooks/useSession'
 import { Layout } from './Layout'
 import { OnboardingView } from './OnboardingView'
 import { ChatView } from './ChatView'
+import { ToastProvider } from './Toast'
 
-export function App() {
+function AppContent() {
   const { identity, isRegistered, loading: idLoading, error: idError, register, logout: idLogout, importIdentity } = useIdentity()
   const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout } = useSession(identity)
   const [path, setPath] = useState(window.location.pathname)
+  const [sseConnected, setSseConnected] = useState(false)
 
   useEffect(() => {
     const handlePopState = () => setPath(window.location.pathname)
@@ -58,6 +60,12 @@ export function App() {
   }
 
   if (!isRegistered) {
+    const handleOnboardingImport = async (privateKey: string) => {
+      const keypair = { privateKey } as any
+      // Will be validated and derived in the import handler
+      importIdentity(keypair)
+    }
+
     return (
       <Layout identity={identity} onLogout={idLogout}>
         {idError && (
@@ -65,7 +73,10 @@ export function App() {
             {idError}
           </div>
         )}
-        <OnboardingView onRegister={register} />
+        <OnboardingView
+          onRegister={register}
+          onImport={handleOnboardingImport}
+        />
       </Layout>
     )
   }
@@ -103,13 +114,23 @@ export function App() {
       onImport={importIdentity}
       navigate={navigate}
       error={idError}
+      sseConnected={sseConnected}
     >
       <ChatView
         recipientAddress={chatAddress}
         identity={identity!}
         token={token}
         navigate={navigate}
+        onConnectedChange={setSseConnected}
       />
     </Layout>
+  )
+}
+
+export function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   )
 }
