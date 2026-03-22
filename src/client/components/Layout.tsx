@@ -1,5 +1,5 @@
 import { ComponentChildren } from 'preact'
-import { useState } from 'preact/hooks'
+import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
@@ -11,11 +11,20 @@ interface LayoutProps {
   onImport?: (keypair: Keypair) => void
   navigate?: (to: string) => void
   error?: string | null
+  sseConnected?: boolean
 }
 
-export function Layout({ children, identity, onLogout, onImport, navigate, error }: LayoutProps) {
+export function Layout({ children, identity, onLogout, onImport, navigate, error, sseConnected }: LayoutProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [logoutConfirm, setLogoutConfirm] = useState(false)
+  const logoutTimeoutRef = useRef<any>(null)
+
+  useEffect(() => {
+    return () => {
+      if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
+    }
+  }, [])
 
   const handleCopy = () => {
     if (!identity) return
@@ -32,28 +41,35 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
         </div>
       )}
       <header className="flex items-center justify-between p-4 border-b border-border shrink-0">
-        <a 
-          href="/chat" 
-          onClick={(e) => { e.preventDefault(); navigate?.('/chat') }}
-          className="font-serif text-2xl italic hover:text-accent transition-colors"
-        >
-          <span className="text-accent not-italic mr-1">⬡</span> 0xChat
-        </a>
-        
+        <div className="flex items-center gap-3">
+          <a
+            href="/chat"
+            onClick={(e) => { e.preventDefault(); navigate?.('/chat') }}
+            className="font-serif text-2xl italic hover:text-accent transition-colors"
+          >
+            <span className="text-accent not-italic mr-1">⬡</span> 0xChat
+          </a>
+          {sseConnected !== undefined && (
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono tracking-widest uppercase font-bold ${
+              sseConnected ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400 animate-pulse'
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'currentColor' }}></span>
+              {sseConnected ? 'Live' : 'Connecting'}
+            </div>
+          )}
+        </div>
+
         {identity && (
           <div className="flex items-center gap-4 text-xs">
-            <div className="hidden lg:flex items-center gap-2 text-dim font-mono">
-              <span className="truncate max-w-[150px] xl:max-w-none">{identity.address}</span>
-              <button 
+            <div className="flex items-center gap-2 text-dim font-mono">
+              <span className="truncate max-w-[120px] sm:max-w-[150px] lg:max-w-none">{identity.address}</span>
+              <button
                 onClick={handleCopy}
-                className="hover:text-accent transition-colors p-1"
+                className="hover:text-accent transition-colors p-1 shrink-0"
                 title="Copy Address"
               >
                 {copied ? <Check size={12} /> : <Copy size={12} />}
               </button>
-            </div>
-            <div className="lg:hidden text-dim font-mono">
-              {identity.address.slice(0, 6)}...{identity.address.slice(-4)}
             </div>
             <button
               onClick={() => setShowSettings(!showSettings)}
@@ -64,15 +80,27 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
             </button>
             <button
               onClick={() => {
-                if (confirm('Delete your burner wallet? This cannot be undone.')) {
+                if (logoutConfirm) {
                   onLogout()
+                } else {
+                  setLogoutConfirm(true)
+                  logoutTimeoutRef.current = setTimeout(() => {
+                    setLogoutConfirm(false)
+                  }, 3000)
                 }
               }}
-              className="p-1 text-dim hover:text-error transition-colors cursor-pointer"
+              className={`p-1 transition-colors cursor-pointer ${
+                logoutConfirm ? 'text-error animate-pulse' : 'text-dim hover:text-error'
+              }`}
               title="Logout / Delete Burner Key"
             >
               <LogOut size={16} />
             </button>
+            {logoutConfirm && (
+              <span className="text-[10px] text-error font-mono uppercase tracking-widest animate-pulse">
+                Click again to confirm
+              </span>
+            )}
           </div>
         )}
       </header>

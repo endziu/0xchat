@@ -1,6 +1,7 @@
-import { useState } from 'preact/hooks'
+import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair, saveKeypair, deriveKeypair } from '../lib/burner'
-import { Download, Upload, Eye, EyeOff } from 'lucide-preact'
+import { Download, Upload, Eye, EyeOff, X } from 'lucide-preact'
+import { useToast } from './Toast'
 
 interface KeyManagementProps {
   identity: Keypair
@@ -8,29 +9,49 @@ interface KeyManagementProps {
 }
 
 export function KeyManagement({ identity, onImport }: KeyManagementProps) {
+  const toast = useToast()
   const [showKey, setShowKey] = useState(false)
   const [importHex, setImportHex] = useState('')
-  const [status, setStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [previewKeypair, setPreviewKeypair] = useState<Keypair | null>(null)
+  const [confirmTimeout, setConfirmTimeout] = useState(false)
+  const confirmTimeoutRef = useRef<any>(null)
 
-  const setStatusWithTimeout = (type: 'ok' | 'err', text: string) => {
-    setStatus({ type, text })
-    setTimeout(() => setStatus(null), 2000)
-  }
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
+    }
+  }, [])
 
-  const handleImport = () => {
+  const handleImportPreview = () => {
     if (!importHex.trim()) return
     try {
       const hex = importHex.trim().startsWith('0x') ? importHex.trim() : `0x${importHex.trim()}`
       if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error('Invalid private key format')
 
       const newKeypair = deriveKeypair(hex)
-      saveKeypair(newKeypair)
-      onImport(newKeypair)
-      setImportHex('')
-      setStatusWithTimeout('ok', 'Key imported successfully!')
+      setPreviewKeypair(newKeypair)
     } catch (err: any) {
-      setStatusWithTimeout('err', err.message)
+      toast(err.message, 'error')
     }
+  }
+
+  const handleImportConfirm = () => {
+    if (!previewKeypair) return
+    try {
+      saveKeypair(previewKeypair)
+      onImport(previewKeypair)
+      setImportHex('')
+      setPreviewKeypair(null)
+      toast('Key imported successfully!', 'success')
+    } catch (err: any) {
+      toast(err.message, 'error')
+    }
+  }
+
+  const handleCancelPreview = () => {
+    setPreviewKeypair(null)
+    if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
+    setConfirmTimeout(false)
   }
 
   return (
@@ -48,15 +69,17 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
           <button
             onClick={() => setShowKey(!showKey)}
             className="p-1.5 text-dim hover:text-accent transition-colors border border-border rounded"
+            title="Toggle visibility"
           >
             {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
           <button
             onClick={() => {
               navigator.clipboard.writeText(identity.privateKey)
-              setStatusWithTimeout('ok', 'Copied to clipboard!')
+              toast('Copied to clipboard!', 'success')
             }}
             className="p-1.5 text-dim hover:text-accent transition-colors border border-border rounded cursor-pointer"
+            title="Copy to clipboard"
           >
             <Download size={14} />
           </button>
@@ -66,25 +89,66 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
       <div className="space-y-2">
         <h3 className="text-[10px] uppercase tracking-widest text-accent font-bold">Import Private Key</h3>
         <p className="text-[10px] text-dim italic">Warning: This will overwrite your current burner wallet.</p>
-        <div className="flex items-center gap-2 mt-2">
-          <input
-            type="password"
-            placeholder="0x..."
-            value={importHex}
-            onInput={(e: any) => setImportHex(e.target.value)}
-            className="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono"
-          />
-          <button
-            onClick={handleImport}
-            className="p-1.5 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded cursor-pointer"
-          >
-            <Upload size={14} />
-          </button>
-        </div>
-        {status && (
-          <p className={`text-xs ${status.type === 'ok' ? 'text-accent' : 'text-error'}`}>
-            {status.text}
-          </p>
+
+        {!previewKeypair ? (
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              type="password"
+              placeholder="0x..."
+              value={importHex}
+              onInput={(e: any) => setImportHex(e.target.value)}
+              className="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono"
+            />
+            <button
+              onClick={handleImportPreview}
+              disabled={!importHex.trim()}
+              className="p-1.5 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded cursor-pointer disabled:opacity-50"
+              title="Preview imported address"
+            >
+              <Upload size={14} />
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 bg-surface border border-border rounded space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-widest font-bold text-dim">New Address</span>
+              <button
+                onClick={handleCancelPreview}
+                className="text-dim hover:text-error transition-colors p-1"
+                title="Cancel"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="font-mono text-xs text-accent break-all">{previewKeypair.address}</div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => {
+                  if (confirmTimeout) {
+                    handleImportConfirm()
+                  } else {
+                    setConfirmTimeout(true)
+                    confirmTimeoutRef.current = setTimeout(() => {
+                      setConfirmTimeout(false)
+                    }, 3000)
+                  }
+                }}
+                className={`flex-1 px-3 py-1.5 rounded text-xs font-bold uppercase transition-colors ${
+                  confirmTimeout
+                    ? 'bg-error text-white animate-pulse'
+                    : 'bg-accent text-bg hover:brightness-110'
+                }`}
+              >
+                {confirmTimeout ? 'Confirm?' : 'Import'}
+              </button>
+              <button
+                onClick={handleCancelPreview}
+                className="px-3 py-1.5 border border-border rounded text-xs font-bold uppercase hover:border-error hover:text-error transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
