@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks'
 import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
+import { deriveKeypair } from '../lib/burner'
 import { Layout } from './Layout'
 import { OnboardingView } from './OnboardingView'
 import { ChatView } from './ChatView'
@@ -61,8 +62,7 @@ function AppContent() {
 
   if (!isRegistered) {
     const handleOnboardingImport = async (privateKey: string) => {
-      const keypair = { privateKey } as any
-      // Will be validated and derived in the import handler
+      const keypair = deriveKeypair(privateKey)
       importIdentity(keypair)
     }
 
