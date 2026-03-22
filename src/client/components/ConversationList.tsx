@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'preact/hooks'
 import { Conversation } from '../lib/api'
+import { Pencil } from 'lucide-preact'
 
 interface ConversationListProps {
   conversations: Conversation[]
   activeAddress: string | null
   onSelect: (address: string) => void
+  labels?: Record<string, string>
+  onRename?: (address: string, name: string) => void
 }
 
 const getLastSeenKey = (address: string) => `last_seen_${address.toLowerCase()}`
@@ -32,8 +35,10 @@ const formatTimestamp = (timestamp: number): string => {
   }
 }
 
-export function ConversationList({ conversations, activeAddress, onSelect }: ConversationListProps) {
+export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename }: ConversationListProps) {
   const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({})
+  const [editingAddress, setEditingAddress] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   useEffect(() => {
     // Initialize unread map based on localStorage
@@ -53,6 +58,27 @@ export function ConversationList({ conversations, activeAddress, onSelect }: Con
     setUnreadMap(prev => ({ ...prev, [address.toLowerCase()]: false }))
     onSelect(address)
   }
+
+  const handleStartEdit = (e: Event, address: string) => {
+    e.stopPropagation()
+    const currentName = labels[address.toLowerCase()] ?? ''
+    setEditingAddress(address.toLowerCase())
+    setEditValue(currentName)
+  }
+
+  const handleSaveEdit = (address: string) => {
+    if (onRename) {
+      onRename(address, editValue)
+    }
+    setEditingAddress(null)
+    setEditValue('')
+  }
+
+  const handleCancelEdit = () => {
+    setEditingAddress(null)
+    setEditValue('')
+  }
+
   if (conversations.length === 0) {
     return (
       <div className="p-8 text-center text-dim italic text-sm">
@@ -67,22 +93,63 @@ export function ConversationList({ conversations, activeAddress, onSelect }: Con
         const isActive = activeAddress?.toLowerCase() === conv.address.toLowerCase()
         const isUnread = unreadMap[conv.address.toLowerCase()]
 
+        const isEditing = editingAddress === conv.address.toLowerCase()
+        const label = labels[conv.address.toLowerCase()]
+
         return (
           <button
             key={conv.address}
-            onClick={() => handleSelect(conv.address)}
-            className={`flex flex-col p-4 text-left border-b border-border hover:bg-surface transition-colors cursor-pointer ${
+            onClick={() => !isEditing && handleSelect(conv.address)}
+            className={`flex flex-col p-4 text-left border-b border-border hover:bg-surface transition-colors cursor-pointer group ${
               isActive ? 'bg-surface border-l-2 border-l-accent' : ''
             }`}
           >
-            <div className="flex items-center gap-2">
-              <div className="text-sm font-mono truncate flex-1">
-                {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
+            {isEditing ? (
+              <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="text"
+                  value={editValue}
+                  onInput={(e: any) => setEditValue(e.target.value)}
+                  onKeyDown={(e: KeyboardEvent) => {
+                    if (e.key === 'Enter') {
+                      handleSaveEdit(conv.address.toLowerCase())
+                    } else if (e.key === 'Escape') {
+                      handleCancelEdit()
+                    }
+                  }}
+                  onBlur={() => handleSaveEdit(conv.address.toLowerCase())}
+                  autoFocus
+                  className="flex-1 text-sm font-mono px-2 py-1 bg-bg border border-accent rounded focus:outline-none"
+                />
               </div>
-              {isUnread && (
-                <div className="w-2 h-2 rounded-full bg-accent shrink-0" aria-label="Unread" />
-              )}
-            </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  {label ? (
+                    <>
+                      <div className="text-sm truncate font-medium text-text">{label}</div>
+                      <div className="text-[10px] text-dim font-mono truncate">
+                        {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm font-mono truncate">
+                      {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => handleStartEdit(e, conv.address)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-dim hover:text-accent shrink-0"
+                  title="Rename conversation"
+                >
+                  <Pencil size={14} />
+                </button>
+                {isUnread && (
+                  <div className="w-2 h-2 rounded-full bg-accent shrink-0" aria-label="Unread" />
+                )}
+              </div>
+            )}
             <div className="flex justify-between items-center mt-1">
               <span className="text-[10px] text-dim opacity-60">
                 {formatTimestamp(conv.last_message_at)}

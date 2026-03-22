@@ -17,7 +17,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
-  const { conversations, refresh: refreshConversations } = useConversations(token)
+  const { conversations, refresh: refreshConversations, labels, setLabel } = useConversations(token)
   const { messages, sendMessage, addMessage } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
@@ -165,6 +165,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             conversations={conversations}
             activeAddress={recipientAddress}
             onSelect={(addr) => navigate(`/chat/${addr}`)}
+            labels={labels}
+            onRename={setLabel}
           />
         </div>
       </div>

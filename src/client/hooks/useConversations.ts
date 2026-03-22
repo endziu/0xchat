@@ -4,6 +4,13 @@ import { api, Conversation } from '../lib/api'
 export function useConversations(token: string | null) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(false)
+  const [labels, setLabels] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('conversation_labels') ?? '{}')
+    } catch {
+      return {}
+    }
+  })
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const pendingRefreshRef = useRef(false)
 
@@ -22,6 +29,15 @@ export function useConversations(token: string | null) {
       setLoading(false)
     }
   }, [token])
+
+  const setLabel = useCallback((address: string, name: string) => {
+    setLabels(prev => {
+      const next = { ...prev, [address.toLowerCase()]: name.trim() }
+      if (!name.trim()) delete next[address.toLowerCase()]
+      localStorage.setItem('conversation_labels', JSON.stringify(next))
+      return next
+    })
+  }, [])
 
   const refresh = useCallback(() => {
     // Clear pending flag since we're scheduling a new one
@@ -51,5 +67,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, refresh }
+  return { conversations, loading, refresh, labels, setLabel }
 }
