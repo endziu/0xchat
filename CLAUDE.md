@@ -9,6 +9,10 @@ bun install          # install deps
 bun run build        # build frontend SPA (Vite)
 bun run dev          # start Vite dev server
 bun run server       # start backend server (serves dist/ + API)
+bun run start        # start server in background (writes PID to .server.pid)
+bun run stop         # stop background server
+bun run restart      # stop + rebuild + start
+bun run db:clear     # delete chat.db and WAL/SHM files
 bun run typecheck    # tsc --noEmit
 bun run lint         # oxlint src server.ts
 bun run test         # bun test
