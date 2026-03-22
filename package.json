@@ -8,7 +8,7 @@
     "server": "bun run server.ts",
     "start": "nohup bun run server.ts > /dev/null 2>&1 & echo $! > .server.pid && echo 'Server started'",
     "stop": "test -f .server.pid && kill $(cat .server.pid) 2>/dev/null && rm .server.pid && echo 'Server stopped' || echo 'Server not running'",
-    "restart": "bun stop; bun build && bun start",
+    "restart": "bun stop; bun run build && bun start",
     "db:clear": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
