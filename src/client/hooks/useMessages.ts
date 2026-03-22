@@ -47,6 +47,12 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     }
   }, [recipientAddress, identity, token, decryptMessage])
 
+  // Clear messages immediately when recipient changes, then load new ones
+  useEffect(() => {
+    setMessages([])
+    setRecipientPubkey(null)
+  }, [recipientAddress])
+
   useEffect(() => {
     loadMessages()
   }, [loadMessages])

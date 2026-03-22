@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'preact/hooks'
 import { Conversation } from '../lib/api'
 
 interface ConversationListProps {
@@ -6,7 +7,52 @@ interface ConversationListProps {
   onSelect: (address: string) => void
 }
 
+const getLastSeenKey = (address: string) => `last_seen_${address.toLowerCase()}`
+
+const formatTimestamp = (timestamp: number): string => {
+  const date = new Date(timestamp)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+  const timeDiff = today.getTime() - msgDate.getTime()
+
+  if (timeDiff === 0) {
+    // Today
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } else if (timeDiff === 86400000) {
+    // Yesterday
+    return 'Yesterday'
+  } else if (timeDiff < 604800000) {
+    // Less than a week
+    return date.toLocaleDateString([], { weekday: 'short' })
+  } else {
+    // Older
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+}
+
 export function ConversationList({ conversations, activeAddress, onSelect }: ConversationListProps) {
+  const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    // Initialize unread map based on localStorage
+    const map: Record<string, boolean> = {}
+    for (const conv of conversations) {
+      const key = getLastSeenKey(conv.address)
+      const lastSeen = localStorage.getItem(key)
+      map[conv.address.toLowerCase()] = !lastSeen || Number(lastSeen) < conv.last_message_at
+    }
+    setUnreadMap(map)
+  }, [conversations])
+
+  const handleSelect = (address: string) => {
+    // Mark as read
+    const key = getLastSeenKey(address)
+    localStorage.setItem(key, String(Date.now()))
+    setUnreadMap(prev => ({ ...prev, [address.toLowerCase()]: false }))
+    onSelect(address)
+  }
   if (conversations.length === 0) {
     return (
       <div className="p-8 text-center text-dim italic text-sm">
@@ -17,24 +63,34 @@ export function ConversationList({ conversations, activeAddress, onSelect }: Con
 
   return (
     <div className="flex flex-col">
-      {conversations.map((conv) => (
-        <button
-          key={conv.address}
-          onClick={() => onSelect(conv.address)}
-          className={`flex flex-col p-4 text-left border-b border-border hover:bg-surface transition-colors cursor-pointer ${
-            activeAddress?.toLowerCase() === conv.address.toLowerCase() ? 'bg-surface border-l-2 border-l-accent' : ''
-          }`}
-        >
-          <div className="text-sm font-mono truncate">
-            {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
-          </div>
-          <div className="flex justify-between items-center mt-1">
-            <span className="text-[10px] text-dim opacity-60">
-              {new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-        </button>
-      ))}
+      {conversations.map((conv) => {
+        const isActive = activeAddress?.toLowerCase() === conv.address.toLowerCase()
+        const isUnread = unreadMap[conv.address.toLowerCase()]
+
+        return (
+          <button
+            key={conv.address}
+            onClick={() => handleSelect(conv.address)}
+            className={`flex flex-col p-4 text-left border-b border-border hover:bg-surface transition-colors cursor-pointer ${
+              isActive ? 'bg-surface border-l-2 border-l-accent' : ''
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-mono truncate flex-1">
+                {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
+              </div>
+              {isUnread && (
+                <div className="w-2 h-2 rounded-full bg-accent shrink-0" aria-label="Unread" />
+              )}
+            </div>
+            <div className="flex justify-between items-center mt-1">
+              <span className="text-[10px] text-dim opacity-60">
+                {formatTimestamp(conv.last_message_at)}
+              </span>
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }
