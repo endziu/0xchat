@@ -20,7 +20,11 @@ import { isRateLimited } from './src/server/rate-limit.ts';
 import { addClient, notify, removeClient } from './src/server/sse.ts';
 import { verifySig } from './src/server/verify.ts';
 
-const PORT = Number(process.env['PORT'] ?? 3000);
+const rawPort = Number(process.env['PORT'] ?? 3000);
+if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
+  throw new Error(`Invalid PORT: expected integer in [1, 65535], got ${process.env['PORT']}`);
+}
+const PORT = rawPort;
 
 initDb();
 
@@ -478,7 +482,11 @@ const httpServer = Bun.serve({
 
       const counterparty = msgsMatch[1]!.toLowerCase();
       const beforeParam = url.searchParams.get('before');
-      const before = beforeParam ? Number(beforeParam) : undefined;
+      const beforeNum = beforeParam ? Number(beforeParam) : null;
+      if (beforeParam != null && (!Number.isSafeInteger(beforeNum) || beforeNum <= 0)) {
+        return json({ error: 'Invalid before parameter: must be a positive integer' }, 400);
+      }
+      const before = beforeNum && beforeNum > 0 ? beforeNum : undefined;
       const limitParam = url.searchParams.get('limit');
       const limit = limitParam
         ? Math.min(Math.max(Number(limitParam), 1), 100)
