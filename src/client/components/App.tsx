@@ -3,12 +3,11 @@ import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
 import { deriveKeypair } from '../lib/burner'
 import { Layout } from './Layout'
-import { OnboardingView } from './OnboardingView'
 import { ChatView } from './ChatView'
 import { ToastProvider } from './Toast'
 
 function AppContent() {
-  const { identity, isRegistered, loading: idLoading, error: idError, register, logout: idLogout, importIdentity } = useIdentity()
+  const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, importIdentity } = useIdentity()
   const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout } = useSession(identity)
   const [path, setPath] = useState(window.location.pathname)
   const [sseConnected, setSseConnected] = useState(false)
@@ -60,26 +59,24 @@ function AppContent() {
     )
   }
 
-  if (!isRegistered) {
-    const handleOnboardingImport = async (privateKey: string) => {
-      const keypair = deriveKeypair(privateKey)
-      importIdentity(keypair)
+  // Handle /pk/<privateKey> import routes
+  useEffect(() => {
+    if (!path.startsWith('/pk/')) return
+    const rawKey = path.slice(4)
+    const hex = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) {
+      navigate('/chat')
+      return
     }
-
-    return (
-      <Layout identity={identity} onLogout={idLogout}>
-        {idError && (
-          <div className="mb-4 p-4 bg-error/20 border border-error/50 rounded text-error text-sm">
-            {idError}
-          </div>
-        )}
-        <OnboardingView
-          onRegister={register}
-          onImport={handleOnboardingImport}
-        />
-      </Layout>
-    )
-  }
+    try {
+      const kp = deriveKeypair(hex)
+      importIdentity(kp)
+      navigate('/chat')
+    } catch (err) {
+      console.error('Failed to import key from URL:', err)
+      navigate('/chat')
+    }
+  }, [path, navigate, importIdentity])
 
   if (!token) {
     if (loginError) {
