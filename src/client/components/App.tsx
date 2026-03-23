@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useCallback } from 'preact/hooks'
 import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
 import { deriveKeypair } from '../lib/burner'
@@ -34,10 +34,10 @@ function AppContent() {
     return () => window.removeEventListener('auth:expired', handleAuthExpired)
   }, [sessionLogout])
 
-  const navigate = (to: string) => {
+  const navigate = useCallback((to: string) => {
     window.history.pushState({}, '', to)
     setPath(to)
-  }
+  }, [])
 
   if (idLoading) {
     return (
@@ -59,24 +59,27 @@ function AppContent() {
     )
   }
 
-  // Handle /pk/<privateKey> import routes
+  // Handle hash-based key import (e.g., #0x<privateKey>)
   useEffect(() => {
-    if (!path.startsWith('/pk/')) return
-    const rawKey = path.slice(4)
-    const hex = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`
+    const hash = window.location.hash.slice(1)
+    if (!hash) return
+    const hex = hash.startsWith('0x') ? hash : `0x${hash}`
     if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) {
-      navigate('/chat')
+      window.location.hash = ''
       return
     }
-    try {
-      const kp = deriveKeypair(hex)
-      importIdentity(kp)
-      navigate('/chat')
-    } catch (err) {
-      console.error('Failed to import key from URL:', err)
-      navigate('/chat')
-    }
-  }, [path, navigate, importIdentity])
+    (async () => {
+      try {
+        const kp = deriveKeypair(hex)
+        await importIdentity(kp)
+        window.location.hash = ''
+        navigate('/chat')
+      } catch (err) {
+        console.error('Failed to import key from hash:', err)
+        window.location.hash = ''
+      }
+    })()
+  }, [navigate, importIdentity])
 
   if (!token) {
     if (loginError) {

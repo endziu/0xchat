@@ -22,7 +22,7 @@ export function useIdentity() {
     }
   }, [])
 
-  const register = useCallback(async (kp?: Keypair) => {
+  const register = useCallback(async (kp?: Keypair): Promise<void> => {
     const key = kp ?? identity
     if (!key) return
     setLoading(true)
@@ -32,6 +32,8 @@ export function useIdentity() {
       await api.register(key.address, key.publicKey, sig, nonce)
       setIsRegistered(true)
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Registration failed'
+      setError(msg)
       console.error('Registration failed:', err)
       throw err
     } finally {
@@ -98,23 +100,33 @@ export function useIdentity() {
       saveKeypair(generated)
       setIdentity(generated)
       setError(deleteError ? `Logged out locally. Server cleanup failed: ${deleteError}` : null)
-      await checkRegistration(generated.address)
+      const registered = await checkRegistration(generated.address)
+      if (!registered) {
+        await register(generated)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save new key'
       setError(msg)
       console.error('Failed to save new keypair:', err)
     }
-  }, [identity, checkRegistration])
+  }, [identity, checkRegistration, register])
 
-  const importIdentity = useCallback(async (keypair: Keypair) => {
-    saveKeypair(keypair)
-    setIdentity(keypair)
-    setError(null)
-    const registered = await checkRegistration(keypair.address)
-    if (!registered) {
-      await register(keypair)
+  const importIdentity = useCallback(async (keypair: Keypair): Promise<void> => {
+    try {
+      saveKeypair(keypair)
+      setIdentity(keypair)
+      setError(null)
+      const registered = await checkRegistration(keypair.address)
+      if (!registered) {
+        await register(keypair)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to import identity'
+      setError(msg)
+      console.error('Import identity failed:', err)
+      throw err
     }
   }, [checkRegistration, register])
 
-  return { identity, isRegistered, loading, error, register, logout, importIdentity }
+  return { identity, isRegistered, loading, error, logout, importIdentity }
 }
