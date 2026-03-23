@@ -30,6 +30,12 @@ const DEBUG = process.env['DEBUG'] === '1' || process.env['DEBUG'] === 'true';
 function log(...args: unknown[]) {
   if (DEBUG) console.log(...args);
 }
+function error(...args: unknown[]) {
+  console.error(...args);
+}
+function warn(...args: unknown[]) {
+  console.warn(...args);
+}
 
 initDb();
 
@@ -175,7 +181,7 @@ const httpServer = Bun.serve({
         ? body.address.trim().toLowerCase() : '';
 
       if (!isValidAddress(address)) {
-        log('[invalid]', path, 'bad address', address);
+        warn('[invalid]', path, 'bad address', address);
         return json({ error: 'Invalid address' }, 400);
       }
 
@@ -202,7 +208,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/register') {
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:register`)) {
-        log('[rate-limit] register', ip);
+        warn('[rate-limit] register', ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -212,6 +218,7 @@ const httpServer = Bun.serve({
       try {
         body = (await req.json()) as typeof body;
       } catch {
+        warn('[invalid] register malformed JSON');
         return json({ error: 'Invalid JSON' }, 400);
       }
 
@@ -224,34 +231,34 @@ const httpServer = Bun.serve({
       const nonce = typeof body.nonce === 'string' ? body.nonce : '';
 
       if (!isValidAddress(address)) {
-        log('[invalid] register bad address', address);
+        warn('[invalid] register bad address', address);
         return json({ error: 'invalid address' }, 400);
       }
       if (!isHex(pubkey, 33)) {
-        log('[invalid] register bad pubkey', pubkey);
+        warn('[invalid] register bad pubkey', pubkey);
         return json(
           { error: 'pubkey must be 33-byte compressed hex' }, 400,
         );
       }
       if (!isValidSig(signature)) {
-        log('[invalid] register bad signature format');
+        warn('[invalid] register bad signature format');
         return json({ error: 'invalid signature format' }, 400);
       }
 
       // Validate nonce and challenge
       const regChallenge = regChallenges.get(nonce);
       if (!regChallenge) {
-        log('[invalid] register challenge not found/expired', nonce);
+        warn('[invalid] register challenge not found/expired', nonce);
         return json({ error: 'Invalid or expired challenge' }, 401);
       }
       if (regChallenge.address !== address) {
-        log('[invalid] register challenge address mismatch', address, 'vs', regChallenge.address);
+        warn('[invalid] register challenge address mismatch', address, 'vs', regChallenge.address);
         return json({ error: 'Challenge address mismatch' }, 401);
       }
 
       const valid = await verifySig(regChallenge.challenge, signature, address);
       if (!valid) {
-        log('[invalid] register signature verification failed', address);
+        warn('[invalid] register signature verification failed', address);
         return json({ error: 'signature verification failed' }, 401);
       }
 
@@ -278,7 +285,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/auth/challenge') {
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:auth`)) {
-        log('[rate-limit] auth-challenge', ip);
+        warn('[rate-limit] auth-challenge', ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -286,13 +293,14 @@ const httpServer = Bun.serve({
       try {
         body = (await req.json()) as typeof body;
       } catch {
+        warn('[invalid] auth-challenge malformed JSON');
         return json({ error: 'Invalid JSON' }, 400);
       }
 
       const address = typeof body.address === 'string'
         ? body.address.trim().toLowerCase() : '';
       if (!isValidAddress(address)) {
-        log('[invalid] auth-challenge bad address', address);
+        warn('[invalid] auth-challenge bad address', address);
         return json({ error: 'invalid address' }, 400);
       }
 
@@ -323,7 +331,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/auth/session') {
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:session`)) {
-        log('[rate-limit] auth-session', ip);
+        warn('[rate-limit] auth-session', ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -333,6 +341,7 @@ const httpServer = Bun.serve({
       try {
         body = (await req.json()) as typeof body;
       } catch {
+        warn('[invalid] auth-session malformed JSON');
         return json({ error: 'Invalid JSON' }, 400);
       }
 
@@ -344,22 +353,22 @@ const httpServer = Bun.serve({
         ? body.address.trim().toLowerCase() : '';
 
       if (!isValidAddress(address)) {
-        log('[invalid] auth-session bad address', address);
+        warn('[invalid] auth-session bad address', address);
         return json({ error: 'invalid address' }, 400);
       }
       if (!isValidSig(signature)) {
-        log('[invalid] auth-session bad signature format');
+        warn('[invalid] auth-session bad signature format');
         return json({ error: 'invalid signature format' }, 400);
       }
 
       const entry = authChallenges.get(nonce);
       if (!entry || entry.expiresAt < Date.now()) {
         authChallenges.delete(nonce);
-        log('[invalid] auth-session challenge not found/expired', nonce);
+        warn('[invalid] auth-session challenge not found/expired', nonce);
         return json({ error: 'Challenge expired or not found' }, 401);
       }
       if (entry.address !== address) {
-        log('[invalid] auth-session address mismatch', address, 'vs', entry.address);
+        warn('[invalid] auth-session address mismatch', address, 'vs', entry.address);
         return json({ error: 'Address mismatch' }, 401);
       }
 
@@ -367,7 +376,7 @@ const httpServer = Bun.serve({
         entry.challenge, signature, address,
       );
       if (!valid) {
-        log('[auth] invalid sig', address);
+        warn('[invalid] auth-session signature verification failed', address);
         return json(
           { error: 'Signature verification failed' }, 401,
         );
@@ -387,13 +396,13 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/messages') {
       const sender = getSessionAddress(req);
       if (!sender) {
-        log('[unauth] message no session', ip);
+        warn('[unauth] message no session', ip);
         return json({ error: 'Unauthorized' }, 401);
       }
 
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:${sender}:msg`)) {
-        log('[rate-limit] msg', sender, ip);
+        warn('[rate-limit] msg', sender, ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -410,6 +419,7 @@ const httpServer = Bun.serve({
       try {
         body = (await req.json()) as typeof body;
       } catch {
+        warn('[invalid] message malformed JSON');
         return json({ error: 'Invalid JSON' }, 400);
       }
 
@@ -430,15 +440,15 @@ const httpServer = Bun.serve({
       const ttl = typeof body.ttl === 'number' ? body.ttl : 300;
 
       if (!isValidAddress(recipient)) {
-        log('[invalid] message bad recipient', recipient);
+        warn('[invalid] message bad recipient', recipient);
         return json({ error: 'invalid recipient address' }, 400);
       }
       if (recipient === sender) {
-        log('[invalid] message self-message', sender);
+        warn('[invalid] message self-message', sender);
         return json({ error: 'cannot message yourself' }, 400);
       }
       if (!VALID_TTLS.has(ttl)) {
-        log('[invalid] message bad ttl', ttl);
+        warn('[invalid] message bad ttl', ttl);
         return json({ error: 'invalid TTL' }, 400);
       }
       if (
@@ -478,7 +488,7 @@ const httpServer = Bun.serve({
       }
 
       if (!getPubkey(recipient)) {
-        log('[invalid] message recipient not registered', recipient);
+        warn('[invalid] message recipient not registered', recipient);
         return json(
           { error: 'Recipient not registered' }, 400,
         );
@@ -514,7 +524,7 @@ const httpServer = Bun.serve({
     if (method === 'GET' && msgsMatch) {
       const address = getSessionAddress(req);
       if (!address) {
-        log('[unauth] get messages no session', ip);
+        warn('[unauth] get messages no session', ip);
         return json({ error: 'Unauthorized' }, 401);
       }
 
@@ -551,7 +561,7 @@ const httpServer = Bun.serve({
     if (method === 'GET' && path === '/api/conversations') {
       const address = getSessionAddress(req);
       if (!address) {
-        log('[unauth] get conversations no session', ip);
+        warn('[unauth] get conversations no session', ip);
         return json({ error: 'Unauthorized' }, 401);
       }
 
@@ -568,14 +578,14 @@ const httpServer = Bun.serve({
     if (method === 'DELETE' && deleteAddrMatch) {
       const address = getSessionAddress(req);
       if (!address) {
-        log('[unauth] delete address no session', ip);
+        warn('[unauth] delete address no session', ip);
         return json({ error: 'Unauthorized' }, 401);
       }
 
       const targetAddr = deleteAddrMatch[1].toLowerCase();
       if (!isValidAddress(targetAddr)) return json({ error: 'Invalid address format' }, 400);
       if (address !== targetAddr) {
-        log('[forbidden] delete address', address, 'tried to delete', targetAddr);
+        warn('[forbidden] delete address', address, 'tried to delete', targetAddr);
         return json({ error: 'Forbidden' }, 403);
       }
 
@@ -600,7 +610,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/events/token') {
       const address = getSessionAddress(req);
       if (!address) {
-        log('[unauth] sse token no session', ip);
+        warn('[unauth] sse token no session', ip);
         return json({ error: 'Unauthorized' }, 401);
       }
 
@@ -647,7 +657,7 @@ const httpServer = Bun.serve({
                 ),
               );
             } catch {
-              log('[sse]', address, 'disconnected (heartbeat error)');
+              error('[sse]', address, 'disconnected (heartbeat error)');
               clearInterval(interval);
               removeClient(address, ctrl);
             }
