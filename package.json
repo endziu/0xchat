@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently 'bun run server.ts' 'vite'",
+    "clear:db": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
+    "clear:dist": "rm -rf dist && echo 'Dist cleared'",
+    "clear": "bun clear:db; bun clear:dist",
     "build": "vite build",
-    "start": "bun run build; bun run server.ts",
-    "clear": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
+    "dev": "concurrently 'bun run server.ts' 'vite'",
+    "start": "bun clear; bun run build; bun run server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src server.ts"
