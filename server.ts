@@ -99,6 +99,10 @@ function getClientIp(
   return server.requestIP(req)?.address ?? 'unknown';
 }
 
+function shortAddr(addr: string): string {
+  return `${addr.slice(0, 8)}...${addr.slice(-4)}`;
+}
+
 // Challenge store for auth
 const authChallenges = new Map<
   string,
@@ -193,6 +197,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/register') {
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:register`)) {
+        console.log('[rate-limit] register', ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -244,6 +249,7 @@ const httpServer = Bun.serve({
       addressToRegNonce.delete(address);
 
       registerPubkey(address, pubkey);
+      console.log('[reg]', shortAddr(address), 'registered');
       return json({ ok: true });
     }
 
@@ -261,6 +267,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/auth/challenge') {
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:auth`)) {
+        console.log('[rate-limit] auth-challenge', ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -304,6 +311,7 @@ const httpServer = Bun.serve({
     if (method === 'POST' && path === '/api/auth/session') {
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:session`)) {
+        console.log('[rate-limit] auth-session', ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -343,6 +351,7 @@ const httpServer = Bun.serve({
         entry.challenge, signature, address,
       );
       if (!valid) {
+        console.log('[auth] invalid sig', shortAddr(address));
         return json(
           { error: 'Signature verification failed' }, 401,
         );
@@ -352,6 +361,7 @@ const httpServer = Bun.serve({
       const token = randomBytes(32).toString('hex');
       const expiresAt = Date.now() + SESSION_TTL_MS;
       createSession(token, address, expiresAt);
+      console.log('[auth]', shortAddr(address), 'session created');
       return json({ token, expires_at: expiresAt });
     }
 
@@ -364,6 +374,7 @@ const httpServer = Bun.serve({
 
       const ip = getClientIp(req, httpServer);
       if (isRateLimited(`${ip}:${sender}:msg`)) {
+        console.log('[rate-limit] msg', shortAddr(sender), ip);
         return json({ error: 'Too many requests' }, 429);
       }
 
@@ -469,6 +480,7 @@ const httpServer = Bun.serve({
       notify(recipient, 'message', event);
       notify(sender, 'message', event);
 
+      console.log('[msg]', shortAddr(sender), '→', shortAddr(recipient), `ttl=${ttl}s`);
       return json({ id, created_at: now, expires_at: expiresAt }, 201);
     }
 
@@ -545,6 +557,7 @@ const httpServer = Bun.serve({
         notify(partner, 'user:disconnected', { address });
       }
 
+      console.log('[del]', shortAddr(address), 'deleted account, notified', partners.length, 'partners');
       return json({ success: true });
     }
 
@@ -580,6 +593,7 @@ const httpServer = Bun.serve({
       const stream = new ReadableStream({
         start(ctrl) {
           addClient(address, ctrl);
+          console.log('[sse]', shortAddr(address), 'connected');
 
           // Send initial ping
           const ping = `event: ping\ndata: {}\n\n`;
@@ -594,6 +608,7 @@ const httpServer = Bun.serve({
                 ),
               );
             } catch {
+              console.log('[sse]', shortAddr(address), 'disconnected (heartbeat error)');
               clearInterval(interval);
               removeClient(address, ctrl);
             }
@@ -602,6 +617,7 @@ const httpServer = Bun.serve({
           // Cleanup on cancel
           const origCancel = ctrl.close.bind(ctrl);
           ctrl.close = () => {
+            console.log('[sse]', shortAddr(address), 'disconnected');
             clearInterval(interval);
             removeClient(address, ctrl);
             origCancel();
@@ -654,6 +670,10 @@ const httpServer = Bun.serve({
     }
 
     return json({ error: 'Not found' }, 404);
+  },
+  error(err: Error) {
+    console.error('[error]', err.message);
+    return json({ error: 'Internal server error' }, 500);
   },
 });
 
