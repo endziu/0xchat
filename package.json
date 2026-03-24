@@ -5,12 +5,12 @@
   "scripts": {
     "clear:db": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
     "clear:dist": "rm -rf dist && echo 'Dist cleared'",
-    "clear": "bun clear:db; bun clear:dist",
+    "clear:all": "bun clear:db; bun clear:dist",
     "build": "vite build",
     "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
-    "start": "bun clear; bun run build; DEBUG=1 bun run server.ts",
+    "start": "bun clear:db; bun run build; DEBUG=1 bun run server.ts",
     "start:prod": "bun run server.ts",
-    "test": "bun run build && bun test",
+    "test": "bun clear:all && bun run build && bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src server.ts"
   },
