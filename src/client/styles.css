@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @layer base {
-  body { @apply bg-black text-neutral-200 font-mono text-xs m-0; }
+  body { @apply bg-black text-neutral-200 font-mono text-base m-0; }
   button {
     all: unset;
     @apply cursor-pointer inline-flex items-center gap-1 px-2 py-1 border border-neutral-800;
@@ -9,14 +9,14 @@
     &:disabled { @apply opacity-30 pointer-events-none; }
   }
   input, textarea, select {
-    @apply bg-neutral-950 text-neutral-200 border border-neutral-800 px-2 py-1.5 font-mono text-xs outline-none w-full;
+    @apply bg-neutral-950 text-neutral-200 border border-neutral-800 px-2 py-1.5 font-mono text-base outline-none w-full;
     &:focus { @apply border-neutral-600; }
     &::placeholder { @apply text-neutral-600; }
   }
   textarea { @apply resize-none; }
   select { @apply w-auto cursor-pointer; }
   a { @apply text-inherit no-underline; }
-  h2, h3 { @apply text-[11px] font-normal uppercase tracking-wider text-neutral-500 m-0; }
-  p { @apply my-1 text-neutral-500 text-xs; }
+  h2, h3 { @apply text-sm font-normal uppercase tracking-wider text-neutral-500 m-0; }
+  p { @apply my-1 text-neutral-500 text-base; }
   img { @apply max-w-full border border-neutral-800 cursor-pointer; }
 }

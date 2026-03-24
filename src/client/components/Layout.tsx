@@ -38,14 +38,14 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
         <div className="flex items-center gap-2">
           <a href="/chat" onClick={(e) => { e.preventDefault(); navigate?.('/chat') }}>⬡ 0xChat</a>
           {sseConnected !== undefined && (
-            <span className="flex items-center gap-1 text-neutral-600 text-[11px]">
+            <span className="flex items-center gap-1 text-neutral-600 text-sm">
               <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-neutral-700'}`} />
               {sseConnected ? 'Live' : '...'}
             </span>
           )}
         </div>
         {identity && (
-          <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+          <div className="flex items-center gap-2 text-sm text-neutral-500">
             <span>{identity.address.slice(0, 6)}...{identity.address.slice(-4)}</span>
             <button onClick={handleCopy} title="Copy Address">
               {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -64,7 +64,7 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
             >
               <LogOut size={14} />
             </button>
-            {logoutConfirm && <span className="text-[11px] text-red-400">confirm?</span>}
+            {logoutConfirm && <span className="text-sm text-red-400">confirm?</span>}
           </div>
         )}
       </header>

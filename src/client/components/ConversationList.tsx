@@ -19,7 +19,7 @@ const formatTimestamp = (timestamp: number): string => {
   const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   const timeDiff = today.getTime() - msgDate.getTime()
 
-  if (timeDiff === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (timeDiff === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
   if (timeDiff === 86400000) return 'Yesterday'
   if (timeDiff < 604800000) return date.toLocaleDateString([], { weekday: 'short' })
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
@@ -74,11 +74,11 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
         return (
           <button
             key={conv.address}
-            className={`flex items-center justify-between w-full text-left border-0 border-b border-neutral-900 px-3 py-2 ${isActive ? 'bg-neutral-900' : ''}`}
+            className={`flex items-center w-full border-neutral-900 py-2 ${isActive ? 'bg-neutral-900' : ''}`}
             onClick={() => !isEditing && handleSelect(conv.address)}
           >
             {isEditing ? (
-              <div onClick={(e) => e.stopPropagation()}>
+              <div className="flex-1" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="text"
                   value={editValue}
@@ -92,18 +92,21 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
                 />
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <div className="flex-1 min-w-0">
-                  {label && <div>{label}</div>}
-                  <div className="text-[11px] text-neutral-600">{conv.address.slice(0, 10)}...{conv.address.slice(-8)}</div>
+              <>
+                <div className="min-w-0">
+                  {label ? label : <span className="text-sm text-neutral-600">{conv.address.slice(0, 5)}...{conv.address.slice(-3)}</span>}
                 </div>
-                <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5">
-                  <Pencil size={12} />
-                </button>
-                {isUnread && <div className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
-              </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5 shrink-0">
+                    <Pencil size={12} />
+                  </button>
+                  {isUnread && <div className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
+                </div>
+                <div>
+                  <span className="text-sm text-neutral-600">{formatTimestamp(conv.last_message_at)}</span>
+                </div>
+              </>
             )}
-            <span className="text-[11px] text-neutral-600 whitespace-nowrap">{formatTimestamp(conv.last_message_at)}</span>
           </button>
         )
       })}

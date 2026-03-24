@@ -58,8 +58,8 @@ export function MessagePane({ recipientAddress, messages, onSendMessage, onBack 
   return (
     <div className="flex flex-col h-full" onPaste={handlePaste}>
       <div className="flex items-center gap-2 p-2 border-b border-neutral-800">
-        <button onClick={onBack} className="border-0 p-1"><ArrowLeft size={18} /></button>
-        <span className="flex-1 min-w-0 text-[11px] text-neutral-500 truncate">{recipientAddress}</span>
+        <button onClick={onBack} className="border-0 p-1"><ArrowLeft size={16} /></button>
+        <span className="flex-1 min-w-0 text-sm text-neutral-500 truncate">{recipientAddress}</span>
         <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" className="border-0 p-1">
           {copied ? <Check size={12} /> : <Copy size={12} />}
         </button>
@@ -75,10 +75,10 @@ export function MessagePane({ recipientAddress, messages, onSendMessage, onBack 
               <div className={`px-2.5 py-1.5 border border-neutral-800 break-words ${isMine ? 'bg-neutral-900' : ''}`}>
                 {isImage ? <img src={msg.plaintext} alt="Attachment" onClick={() => window.open(msg.plaintext, '_blank')} /> : msg.plaintext}
               </div>
-              <div className={`text-[10px] text-neutral-600 mt-0.5 flex gap-1 ${isMine ? 'justify-end' : ''}`}>
-                <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              <div className={`text-xs text-neutral-600 mt-0.5 flex gap-1 ${isMine ? 'justify-end' : ''}`}>
+                <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
                 <span>·</span>
-                <span>expires {new Date(msg.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <span>expires {new Date(msg.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
               </div>
             </div>
           )

@@ -7,7 +7,7 @@
     "clear:dist": "rm -rf dist && echo 'Dist cleared'",
     "clear:all": "bun clear:db; bun clear:dist",
     "build": "vite build",
-    "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
+    "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite --host'",
     "start": "bun clear:db; bun run build; DEBUG=1 bun run server.ts",
     "start:prod": "bun run server.ts",
     "test": "bun clear:all && bun run build && bun test",

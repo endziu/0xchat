@@ -73,10 +73,10 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
         ) : (
           <div className="mt-2">
             <div className="flex justify-between items-center">
-              <span className="text-[11px] text-neutral-500">New Address</span>
+              <span className="text-sm text-neutral-500">New Address</span>
               <button onClick={handleCancelPreview} title="Cancel" className="border-0 p-0.5"><X size={14} /></button>
             </div>
-            <div className="text-[11px] text-neutral-400 mt-1">{previewKeypair.address}</div>
+            <div className="text-sm text-neutral-400 mt-1">{previewKeypair.address}</div>
             <div className="flex gap-1 mt-2">
               <button onClick={() => {
                 if (confirmTimeout) { handleImportConfirm() } else {
