@@ -7,11 +7,9 @@
     "clear:dist": "rm -rf dist && echo 'Dist cleared'",
     "clear": "bun clear:db; bun clear:dist",
     "build": "vite build",
-    "dev": "concurrently 'bun run server.ts' 'vite'",
-    "dev:debug": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
-    "start": "bun clear; bun run build; bun run server.ts",
+    "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
+    "start": "bun clear; bun run build; DEBUG=1 bun run server.ts",
     "start:prod": "bun run server.ts",
-    "start:debug": "DEBUG=1 bun start",
     "test": "bun run build && bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src server.ts"

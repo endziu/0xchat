@@ -6,16 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```sh
 bun install          # install deps
-bun run dev          # start Vite dev server + backend (both on localhost)
-bun run dev:debug    # start dev with full debug logs
+bun run dev          # start Vite dev server + backend with debug logs (concurrently)
 bun run build        # build frontend SPA (Vite)
-bun run start        # build + start server (foreground, production mode)
+bun run start        # clear db/dist, build, start server (production mode)
 bun run start:prod   # start already-built server (assumes dist/ exists)
-bun run start:debug  # start server with full debug logs
-bun run clear        # delete chat.db and WAL/SHM files
+bun run clear        # delete chat.db, WAL/SHM, and dist/
+bun run clear:db     # delete chat.db and WAL/SHM files only
+bun run clear:dist   # delete dist/ only
 bun run typecheck    # tsc --noEmit
 bun run lint         # oxlint src server.ts
-bun run test         # bun test
+bun run test         # build, then run bun test
 ```
 
 ## Project
