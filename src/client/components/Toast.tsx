@@ -17,11 +17,11 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const useToast = (): ToastContextType => {
   const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error('useToast must be called within ToastProvider');
-  }
+  if (!ctx) throw new Error('useToast must be called within ToastProvider');
   return ctx;
 };
+
+const borderColor = { success: 'border-green-900', error: 'border-red-900', info: 'border-neutral-700' };
 
 export const ToastProvider = ({ children }: { children: any }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -29,61 +29,21 @@ export const ToastProvider = ({ children }: { children: any }) => {
   const toast = (message: string, type: ToastType = 'info') => {
     const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, message, type }]);
-
-    const timer = setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
-
+    const timer = setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
     return () => clearTimeout(timer);
   };
 
-  const value: ToastContextType = { toast };
-
   return (
-    <ToastContext.Provider value={value}>
+    <ToastContext.Provider value={{ toast }}>
       {children}
-      <ToastContainer toasts={toasts} onRemove={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
+      <div className="fixed top-3 right-3 flex flex-col gap-1.5 z-50">
+        {toasts.map((t) => (
+          <div key={t.id} className={`flex items-center gap-2 px-3 py-2 bg-neutral-900 border ${borderColor[t.type]}`} role="alert">
+            <span>{t.message}</span>
+            <button className="border-0 p-0.5 ml-2" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close">×</button>
+          </div>
+        ))}
+      </div>
     </ToastContext.Provider>
-  );
-};
-
-const ToastContainer = ({ toasts, onRemove }: { toasts: ToastMessage[]; onRemove: (id: string) => void }) => {
-  return (
-    <div class="fixed bottom-4 right-4 z-[60] space-y-2 pointer-events-none">
-      {toasts.map((t) => (
-        <ToastItem key={t.id} toast={t} onRemove={onRemove} />
-      ))}
-    </div>
-  );
-};
-
-const ToastItem = ({ toast, onRemove }: { toast: ToastMessage; onRemove: (id: string) => void }) => {
-  const bgColor = {
-    success: 'bg-green-500',
-    error: 'bg-red-500',
-    info: 'bg-blue-500',
-  }[toast.type];
-
-  const icon = {
-    success: '✓',
-    error: '✕',
-    info: 'ℹ',
-  }[toast.type];
-
-  return (
-    <div
-      class={`${bgColor} text-white px-4 py-2 rounded shadow-md pointer-events-auto flex items-center gap-2 min-w-xs animate-fadeIn`}
-      role="alert"
-    >
-      <span class="font-bold text-lg">{icon}</span>
-      <span class="text-sm">{toast.message}</span>
-      <button
-        class="ml-2 text-white opacity-70 hover:opacity-100"
-        onClick={() => onRemove(toast.id)}
-        aria-label="Close"
-      >
-        ×
-      </button>
-    </div>
   );
 };

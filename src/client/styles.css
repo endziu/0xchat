@@ -1,42 +1,22 @@
 @import "tailwindcss";
 
-@theme {
-  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-serif: "Instrument Serif", Georgia, serif;
-  
-  --color-bg: #0a0a0c;
-  --color-surface: #111115;
-  --color-border: #1e1e26;
-  --color-text: #e8e6e1;
-  --color-dim: #6b6a72;
-  --color-accent: #c4f84a;
-  --color-error: #ff4444;
-}
-
 @layer base {
-  * {
-    @apply border-border;
+  body { @apply bg-black text-neutral-200 font-mono text-xs m-0; }
+  button {
+    all: unset;
+    @apply cursor-pointer inline-flex items-center gap-1 px-2 py-1 border border-neutral-800;
+    &:hover { @apply bg-neutral-950; }
+    &:disabled { @apply opacity-30 pointer-events-none; }
   }
-  body {
-    @apply bg-bg text-text font-mono antialiased overflow-hidden;
+  input, textarea, select {
+    @apply bg-neutral-950 text-neutral-200 border border-neutral-800 px-2 py-1.5 font-mono text-xs outline-none w-full;
+    &:focus { @apply border-neutral-600; }
+    &::placeholder { @apply text-neutral-600; }
   }
-}
-
-@utility transition-opacity-5s {
-  transition: opacity 5s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@utility animate-fadeIn {
-  animation: fadeIn 0.2s ease-out;
+  textarea { @apply resize-none; }
+  select { @apply w-auto cursor-pointer; }
+  a { @apply text-inherit no-underline; }
+  h2, h3 { @apply text-[11px] font-normal uppercase tracking-wider text-neutral-500 m-0; }
+  p { @apply my-1 text-neutral-500 text-xs; }
+  img { @apply max-w-full border border-neutral-800 cursor-pointer; }
 }

@@ -9,7 +9,7 @@ interface KeyManagementProps {
 }
 
 export function KeyManagement({ identity, onImport }: KeyManagementProps) {
-  const toast = useToast()
+  const { toast } = useToast()
   const [showKey, setShowKey] = useState(false)
   const [importHex, setImportHex] = useState('')
   const [previewKeypair, setPreviewKeypair] = useState<Keypair | null>(null)
@@ -17,9 +17,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   const confirmTimeoutRef = useRef<any>(null)
 
   useEffect(() => {
-    return () => {
-      if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current)
-    }
+    return () => { if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current) }
   }, [])
 
   const handleImportPreview = () => {
@@ -27,12 +25,8 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
     try {
       const hex = importHex.trim().startsWith('0x') ? importHex.trim() : `0x${importHex.trim()}`
       if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error('Invalid private key format')
-
-      const newKeypair = deriveKeypair(hex)
-      setPreviewKeypair(newKeypair)
-    } catch (err: any) {
-      toast(err.message, 'error')
-    }
+      setPreviewKeypair(deriveKeypair(hex))
+    } catch (err: any) { toast(err.message, 'error') }
   }
 
   const handleImportConfirm = () => {
@@ -42,10 +36,8 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
       onImport(previewKeypair)
       setImportHex('')
       setPreviewKeypair(null)
-      toast('Key imported successfully!', 'success')
-    } catch (err: any) {
-      toast(err.message, 'error')
-    }
+      toast('Key imported', 'success')
+    } catch (err: any) { toast(err.message, 'error') }
   }
 
   const handleCancelPreview = () => {
@@ -55,98 +47,44 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   }
 
   return (
-    <div className="p-4 border border-border bg-surface/20 rounded flex flex-col gap-6">
-      <div className="space-y-2">
-        <h3 className="text-[10px] uppercase tracking-widest text-accent font-bold">Export Private Key</h3>
-        <p className="text-[10px] text-dim italic">Save this key in a safe place to restore your account on another device.</p>
-        <div className="flex items-center gap-2 mt-2">
-          <input
-            type={showKey ? 'text' : 'password'}
-            readOnly
-            value={identity.privateKey}
-            className="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono"
-          />
-          <button
-            onClick={() => setShowKey(!showKey)}
-            className="p-1.5 text-dim hover:text-accent transition-colors border border-border rounded"
-            title="Toggle visibility"
-          >
+    <div>
+      <div className="mt-3">
+        <h3>Export Private Key</h3>
+        <p>Save this key to restore your account on another device.</p>
+        <div className="flex items-center gap-1 mt-1.5">
+          <input type={showKey ? 'text' : 'password'} readOnly value={identity.privateKey} className="flex-1" />
+          <button onClick={() => setShowKey(!showKey)} title="Toggle visibility">
             {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(identity.privateKey)
-              toast('Copied to clipboard!', 'success')
-            }}
-            className="p-1.5 text-dim hover:text-accent transition-colors border border-border rounded cursor-pointer"
-            title="Copy to clipboard"
-          >
+          <button onClick={() => { navigator.clipboard.writeText(identity.privateKey); toast('Copied', 'success') }} title="Copy">
             <Download size={14} />
           </button>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <h3 className="text-[10px] uppercase tracking-widest text-accent font-bold">Import Private Key</h3>
-        <p className="text-[10px] text-dim italic">Warning: This will overwrite your current burner wallet.</p>
-
+      <div className="mt-4">
+        <h3>Import Private Key</h3>
+        <p>This will overwrite your current burner wallet.</p>
         {!previewKeypair ? (
-          <div className="flex items-center gap-2 mt-2">
-            <input
-              type="password"
-              placeholder="0x..."
-              value={importHex}
-              onInput={(e: any) => setImportHex(e.target.value)}
-              className="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono"
-            />
-            <button
-              onClick={handleImportPreview}
-              disabled={!importHex.trim()}
-              className="p-1.5 text-accent hover:bg-accent hover:text-bg transition-colors border border-accent rounded cursor-pointer disabled:opacity-50"
-              title="Preview imported address"
-            >
-              <Upload size={14} />
-            </button>
+          <div className="flex items-center gap-1 mt-1.5">
+            <input type="password" placeholder="0x..." value={importHex} onInput={(e: any) => setImportHex(e.target.value)} className="flex-1" />
+            <button onClick={handleImportPreview} disabled={!importHex.trim()} title="Preview"><Upload size={14} /></button>
           </div>
         ) : (
-          <div className="p-3 bg-surface border border-border rounded space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-widest font-bold text-dim">New Address</span>
-              <button
-                onClick={handleCancelPreview}
-                className="text-dim hover:text-error transition-colors p-1"
-                title="Cancel"
-              >
-                <X size={14} />
-              </button>
+          <div className="mt-2">
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] text-neutral-500">New Address</span>
+              <button onClick={handleCancelPreview} title="Cancel" className="border-0 p-0.5"><X size={14} /></button>
             </div>
-            <div className="font-mono text-xs text-accent break-all">{previewKeypair.address}</div>
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={() => {
-                  if (confirmTimeout) {
-                    handleImportConfirm()
-                  } else {
-                    setConfirmTimeout(true)
-                    confirmTimeoutRef.current = setTimeout(() => {
-                      setConfirmTimeout(false)
-                    }, 3000)
-                  }
-                }}
-                className={`flex-1 px-3 py-1.5 rounded text-xs font-bold uppercase transition-colors ${
-                  confirmTimeout
-                    ? 'bg-error text-white animate-pulse'
-                    : 'bg-accent text-bg hover:brightness-110'
-                }`}
-              >
-                {confirmTimeout ? 'Confirm?' : 'Import'}
-              </button>
-              <button
-                onClick={handleCancelPreview}
-                className="px-3 py-1.5 border border-border rounded text-xs font-bold uppercase hover:border-error hover:text-error transition-colors"
-              >
-                Cancel
-              </button>
+            <div className="text-[11px] text-neutral-400 mt-1">{previewKeypair.address}</div>
+            <div className="flex gap-1 mt-2">
+              <button onClick={() => {
+                if (confirmTimeout) { handleImportConfirm() } else {
+                  setConfirmTimeout(true)
+                  confirmTimeoutRef.current = setTimeout(() => setConfirmTimeout(false), 3000)
+                }
+              }}>{confirmTimeout ? 'Confirm?' : 'Import'}</button>
+              <button onClick={handleCancelPreview}>Cancel</button>
             </div>
           </div>
         )}

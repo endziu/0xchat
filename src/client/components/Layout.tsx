@@ -21,9 +21,7 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
   const logoutTimeoutRef = useRef<any>(null)
 
   useEffect(() => {
-    return () => {
-      if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
-    }
+    return () => { if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current) }
   }, [])
 
   const handleCopy = () => {
@@ -34,93 +32,53 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-5xl mx-auto border-x border-border bg-bg relative">
-      {error && (
-        <div className="bg-error/20 border-b border-error/50 px-4 py-3 text-sm text-error">
-          {error}
-        </div>
-      )}
-      <header className="flex items-center justify-between p-4 border-b border-border shrink-0">
-        <div className="flex items-center gap-3">
-          <a
-            href="/chat"
-            onClick={(e) => { e.preventDefault(); navigate?.('/chat') }}
-            className="font-serif text-2xl italic hover:text-accent transition-colors"
-          >
-            <span className="text-accent not-italic mr-1">⬡</span> 0xChat
-          </a>
+    <div className="flex flex-col h-dvh max-w-[900px] mx-auto border-x border-neutral-800">
+      {error && <div className="p-2 text-center text-neutral-500 border-b border-neutral-800">{error}</div>}
+      <header className="flex items-center justify-between p-2 border-b border-neutral-800 shrink-0 gap-2">
+        <div className="flex items-center gap-2">
+          <a href="/chat" onClick={(e) => { e.preventDefault(); navigate?.('/chat') }}>⬡ 0xChat</a>
           {sseConnected !== undefined && (
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-mono tracking-widest uppercase font-bold ${
-              sseConnected ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400 animate-pulse'
-            }`}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'currentColor' }}></span>
-              {sseConnected ? 'Live' : 'Connecting'}
-            </div>
+            <span className="flex items-center gap-1 text-neutral-600 text-[11px]">
+              <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-neutral-700'}`} />
+              {sseConnected ? 'Live' : '...'}
+            </span>
           )}
         </div>
-
         {identity && (
-          <div className="flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-2 text-dim font-mono">
-              <span className="truncate max-w-[120px] sm:max-w-[150px] lg:max-w-none">{identity.address}</span>
-              <button
-                onClick={handleCopy}
-                className="hover:text-accent transition-colors p-1 shrink-0"
-                title="Copy Address"
-              >
-                {copied ? <Check size={12} /> : <Copy size={12} />}
-              </button>
-            </div>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className={`p-1 transition-colors ${showSettings ? 'text-accent' : 'text-dim hover:text-accent'}`}
-              title="Identity / Settings"
-            >
-              <Settings size={16} />
+          <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+            <span>{identity.address.slice(0, 6)}...{identity.address.slice(-4)}</span>
+            <button onClick={handleCopy} title="Copy Address">
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+            <button onClick={() => setShowSettings(!showSettings)} title="Settings">
+              <Settings size={14} />
             </button>
             <button
               onClick={() => {
-                if (logoutConfirm) {
-                  onLogout()
-                } else {
+                if (logoutConfirm) { onLogout() } else {
                   setLogoutConfirm(true)
-                  logoutTimeoutRef.current = setTimeout(() => {
-                    setLogoutConfirm(false)
-                  }, 3000)
+                  logoutTimeoutRef.current = setTimeout(() => setLogoutConfirm(false), 3000)
                 }
               }}
-              className={`p-1 transition-colors cursor-pointer ${
-                logoutConfirm ? 'text-error animate-pulse' : 'text-dim hover:text-error'
-              }`}
-              title="Logout / Delete Burner Key"
+              title="Logout"
             >
-              <LogOut size={16} />
+              <LogOut size={14} />
             </button>
-            {logoutConfirm && (
-              <span className="text-[10px] text-error font-mono uppercase tracking-widest animate-pulse">
-                Click again to confirm
-              </span>
-            )}
+            {logoutConfirm && <span className="text-[11px] text-red-400">confirm?</span>}
           </div>
         )}
       </header>
-      
-      <main className="flex-1 min-h-0 relative">
+      <main className="flex-1 overflow-hidden flex flex-col">
         {showSettings && identity && (
-          <div className="absolute inset-0 z-50 bg-bg p-8 flex flex-col items-center justify-center">
-            <div className="max-w-md w-full">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-serif italic text-accent">Identity Settings</h2>
-                <button onClick={() => setShowSettings(false)} className="text-dim hover:text-text cursor-pointer">Close</button>
-              </div>
-              <KeyManagement
-                identity={identity}
-                onImport={(kp) => {
-                  onImport?.(kp)
-                  setShowSettings(false)
-                }}
-              />
+          <div className="p-3 border-b border-neutral-800">
+            <div className="flex justify-between items-center">
+              <h2>Identity</h2>
+              <button onClick={() => setShowSettings(false)}>Close</button>
             </div>
+            <KeyManagement
+              identity={identity}
+              onImport={(kp) => { onImport?.(kp); setShowSettings(false) }}
+            />
           </div>
         )}
         {children}

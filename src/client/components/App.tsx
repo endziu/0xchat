@@ -18,18 +18,12 @@ function AppContent() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
-  // Auto-login when registered but no token
   useEffect(() => {
-    if (identity && isRegistered && !token && !sessionLoading) {
-      login()
-    }
+    if (identity && isRegistered && !token && !sessionLoading) login()
   }, [identity, isRegistered, token, sessionLoading, login])
 
-  // Handle session expiry: re-authenticate instead of destroying identity
   useEffect(() => {
-    const handleAuthExpired = () => {
-      sessionLogout()
-    }
+    const handleAuthExpired = () => sessionLogout()
     window.addEventListener('auth:expired', handleAuthExpired)
     return () => window.removeEventListener('auth:expired', handleAuthExpired)
   }, [sessionLogout])
@@ -41,37 +35,27 @@ function AppContent() {
 
   if (idLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center h-dvh">
         {idError ? (
-          <div className="flex flex-col items-center gap-4 max-w-sm">
-            <p className="text-error font-mono text-sm text-center">{idError}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-8 py-3 border border-accent text-accent hover:bg-accent hover:text-bg transition-colors uppercase tracking-widest font-bold cursor-pointer"
-            >
-              Retry
-            </button>
+          <div>
+            <p>{idError}</p>
+            <button onClick={() => window.location.reload()}>Retry</button>
           </div>
         ) : (
-          <div className="text-accent animate-pulse font-serif italic text-2xl">Initializing identity...</div>
+          <span className="text-neutral-600">Initializing...</span>
         )}
       </div>
     )
   }
 
-  // Handle hash-based key import (e.g., #0x<privateKey>)
   useEffect(() => {
     const hash = window.location.hash.slice(1)
     if (!hash) return
     const hex = hash.startsWith('0x') ? hash : `0x${hash}`
-    if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) {
-      window.location.hash = ''
-      return
-    }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) { window.location.hash = ''; return }
     (async () => {
       try {
-        const kp = deriveKeypair(hex)
-        await importIdentity(kp)
+        await importIdentity(deriveKeypair(hex))
         window.location.hash = ''
         navigate('/chat')
       } catch (err) {
@@ -84,40 +68,21 @@ function AppContent() {
   if (!token) {
     if (loginError) {
       return (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="flex flex-col items-center gap-6 max-w-sm">
-            <p className="text-error font-mono text-sm text-center">{loginError}</p>
-            <button
-              onClick={login}
-              disabled={sessionLoading}
-              className="px-8 py-3 border border-accent text-accent hover:bg-accent hover:text-bg transition-colors disabled:opacity-50 uppercase tracking-widest font-bold cursor-pointer"
-            >
-              {sessionLoading ? 'Retrying...' : 'Retry'}
-            </button>
+        <div className="flex items-center justify-center h-dvh">
+          <div>
+            <p>{loginError}</p>
+            <button onClick={login} disabled={sessionLoading}>{sessionLoading ? 'Retrying...' : 'Retry'}</button>
           </div>
         </div>
       )
     }
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-accent animate-pulse font-serif italic text-2xl">Connecting...</div>
-      </div>
-    )
+    return <div className="flex items-center justify-center h-dvh text-neutral-600">Connecting...</div>
   }
 
-  const chatAddress = path.startsWith('/chat/') ? path.slice(6) : null
-
   return (
-    <Layout
-      identity={identity}
-      onLogout={idLogout}
-      onImport={importIdentity}
-      navigate={navigate}
-      error={idError}
-      sseConnected={sseConnected}
-    >
+    <Layout identity={identity} onLogout={idLogout} onImport={importIdentity} navigate={navigate} error={idError} sseConnected={sseConnected}>
       <ChatView
-        recipientAddress={chatAddress}
+        recipientAddress={path.startsWith('/chat/') ? path.slice(6) : null}
         identity={identity!}
         token={token}
         navigate={navigate}

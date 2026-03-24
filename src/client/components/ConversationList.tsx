@@ -17,22 +17,12 @@ const formatTimestamp = (timestamp: number): string => {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-
   const timeDiff = today.getTime() - msgDate.getTime()
 
-  if (timeDiff === 0) {
-    // Today
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } else if (timeDiff === 86400000) {
-    // Yesterday
-    return 'Yesterday'
-  } else if (timeDiff < 604800000) {
-    // Less than a week
-    return date.toLocaleDateString([], { weekday: 'short' })
-  } else {
-    // Older
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  }
+  if (timeDiff === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (timeDiff === 86400000) return 'Yesterday'
+  if (timeDiff < 604800000) return date.toLocaleDateString([], { weekday: 'short' })
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
 export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename }: ConversationListProps) {
@@ -41,7 +31,6 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
   const [editValue, setEditValue] = useState('')
 
   useEffect(() => {
-    // Initialize unread map based on localStorage
     const map: Record<string, boolean> = {}
     for (const conv of conversations) {
       const key = getLastSeenKey(conv.address)
@@ -52,111 +41,69 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
   }, [conversations])
 
   const handleSelect = (address: string) => {
-    // Mark as read
-    const key = getLastSeenKey(address)
-    localStorage.setItem(key, String(Date.now()))
+    localStorage.setItem(getLastSeenKey(address), String(Date.now()))
     setUnreadMap(prev => ({ ...prev, [address.toLowerCase()]: false }))
     onSelect(address)
   }
 
   const handleStartEdit = (e: Event, address: string) => {
     e.stopPropagation()
-    const currentName = labels[address.toLowerCase()] ?? ''
     setEditingAddress(address.toLowerCase())
-    setEditValue(currentName)
+    setEditValue(labels[address.toLowerCase()] ?? '')
   }
 
   const handleSaveEdit = (address: string) => {
-    if (onRename) {
-      onRename(address, editValue)
-    }
-    setEditingAddress(null)
-    setEditValue('')
-  }
-
-  const handleCancelEdit = () => {
+    onRename?.(address, editValue)
     setEditingAddress(null)
     setEditValue('')
   }
 
   if (conversations.length === 0) {
-    return (
-      <div className="p-8 text-center text-dim italic text-sm">
-        No active conversations
-        <br />
-        Select a conversation or start a new one.
-      </div>
-    )
+    return <div className="flex items-center justify-center h-full text-neutral-700 p-4">No conversations yet</div>
   }
 
   return (
-    <div className="flex flex-col">
+    <div>
       {conversations.map((conv) => {
-        const isActive = activeAddress?.toLowerCase() === conv.address.toLowerCase()
-        const isUnread = unreadMap[conv.address.toLowerCase()]
-
-        const isEditing = editingAddress === conv.address.toLowerCase()
-        const label = labels[conv.address.toLowerCase()]
+        const addr = conv.address.toLowerCase()
+        const isActive = activeAddress?.toLowerCase() === addr
+        const isUnread = unreadMap[addr]
+        const isEditing = editingAddress === addr
+        const label = labels[addr]
 
         return (
           <button
             key={conv.address}
+            className={`flex items-center justify-between w-full text-left border-0 border-b border-neutral-900 px-3 py-2 ${isActive ? 'bg-neutral-900' : ''}`}
             onClick={() => !isEditing && handleSelect(conv.address)}
-            className={`flex flex-col p-4 text-left border-b border-border hover:bg-surface transition-colors cursor-pointer group ${
-              isActive ? 'bg-surface border-l-2 border-l-accent' : ''
-            }`}
           >
             {isEditing ? (
-              <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+              <div onClick={(e) => e.stopPropagation()}>
                 <input
                   type="text"
                   value={editValue}
                   onInput={(e: any) => setEditValue(e.target.value)}
                   onKeyDown={(e: KeyboardEvent) => {
-                    if (e.key === 'Enter') {
-                      handleSaveEdit(conv.address.toLowerCase())
-                    } else if (e.key === 'Escape') {
-                      handleCancelEdit()
-                    }
+                    if (e.key === 'Enter') handleSaveEdit(addr)
+                    else if (e.key === 'Escape') { setEditingAddress(null); setEditValue('') }
                   }}
-                  onBlur={() => handleSaveEdit(conv.address.toLowerCase())}
+                  onBlur={() => handleSaveEdit(addr)}
                   autoFocus
-                  className="flex-1 text-sm font-mono px-2 py-1 bg-bg border border-accent rounded focus:outline-none"
                 />
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
                 <div className="flex-1 min-w-0">
-                  {label ? (
-                    <>
-                      <div className="text-sm truncate font-medium text-text">{label}</div>
-                      <div className="text-[10px] text-dim font-mono truncate">
-                        {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-sm font-mono truncate">
-                      {conv.address.slice(0, 10)}...{conv.address.slice(-8)}
-                    </div>
-                  )}
+                  {label && <div>{label}</div>}
+                  <div className="text-[11px] text-neutral-600">{conv.address.slice(0, 10)}...{conv.address.slice(-8)}</div>
                 </div>
-                <button
-                  onClick={(e) => handleStartEdit(e, conv.address)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-dim hover:text-accent shrink-0"
-                  title="Rename conversation"
-                >
-                  <Pencil size={14} />
+                <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5">
+                  <Pencil size={12} />
                 </button>
-                {isUnread && (
-                  <div className="w-2 h-2 rounded-full bg-accent shrink-0" aria-label="Unread" />
-                )}
+                {isUnread && <div className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
               </div>
             )}
-            <div className="flex justify-between items-center mt-1">
-              <span className="text-[10px] text-dim opacity-60">
-                {formatTimestamp(conv.last_message_at)}
-              </span>
-            </div>
+            <span className="text-[11px] text-neutral-600 whitespace-nowrap">{formatTimestamp(conv.last_message_at)}</span>
           </button>
         )
       })}
