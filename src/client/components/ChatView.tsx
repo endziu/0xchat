@@ -177,16 +177,13 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             {disconnectNotice}
           </div>
         )}
-        {recipientAddress ? (
+        {recipientAddress && 
           <MessagePane
             recipientAddress={recipientAddress}
             messages={messages}
             onSendMessage={sendMessage}
             onBack={() => navigate('/chat')}
-          />
-        ) : (
-          <div className="text-sm font-serif italic opacity-50">Select a conversation or start a new one</div>
-        )}
+          />}
       </div>
     </div>
   )

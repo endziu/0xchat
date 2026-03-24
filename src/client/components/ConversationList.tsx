@@ -83,6 +83,8 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
     return (
       <div className="p-8 text-center text-dim italic text-sm">
         No active conversations
+        <br />
+        Select a conversation or start a new one.
       </div>
     )
   }
