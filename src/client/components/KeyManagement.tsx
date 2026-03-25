@@ -47,7 +47,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   }
 
   return (
-    <div>
+    <>
       <div className="mt-3">
         <h3>Export Private Key</h3>
         <p>Save this key to restore your account on another device.</p>
@@ -89,6 +89,6 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
           </div>
         )}
       </div>
-    </div>
+    </>
   )
 }

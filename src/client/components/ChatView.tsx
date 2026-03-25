@@ -87,7 +87,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
 
   return (
     <div className={`flex flex-1 overflow-hidden max-sm:flex-col ${recipientAddress ? 'max-sm:[&>:first-child]:hidden' : 'max-sm:[&>:last-child]:hidden'}`}>
-      <div className="w-72 shrink-0 border-r border-neutral-800 flex flex-col max-sm:w-full">
+      <nav className="w-72 shrink-0 border-r border-neutral-800 flex flex-col max-sm:w-full">
         <div className="flex items-center justify-between p-2 border-b border-neutral-800">
           <span className="text-sm uppercase tracking-wider text-neutral-500">Conversations</span>
           <button onClick={() => { setNewChatAddr(''); setNewChatError('') }} className="border-0 p-1"><Plus size={16} /></button>
@@ -121,10 +121,10 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             onRename={setLabel}
           />
         </div>
-      </div>
+      </nav>
 
       <div className="flex-1 flex flex-col min-w-0">
-        {disconnectNotice && <div className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</div>}
+        {disconnectNotice && <p className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</p>}
         {recipientAddress ? (
           <MessagePane
             recipientAddress={recipientAddress}

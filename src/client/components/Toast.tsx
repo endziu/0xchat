@@ -39,7 +39,7 @@ export const ToastProvider = ({ children }: { children: any }) => {
       <div className="fixed top-3 right-3 flex flex-col gap-1.5 z-50">
         {toasts.map((t) => (
           <div key={t.id} className={`flex items-center gap-2 px-3 py-2 bg-neutral-900 border ${borderColor[t.type]}`} role="alert">
-            <span>{t.message}</span>
+            <p className="m-0">{t.message}</p>
             <button className="border-0 p-0.5 ml-2" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close">×</button>
           </div>
         ))}

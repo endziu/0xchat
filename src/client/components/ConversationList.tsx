@@ -63,7 +63,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
   }
 
   return (
-    <div>
+    <ul className="list-none m-0 p-0">
       {conversations.map((conv) => {
         const addr = conv.address.toLowerCase()
         const isActive = activeAddress?.toLowerCase() === addr
@@ -72,44 +72,40 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
         const label = labels[addr]
 
         return (
-          <button
+          <li
             key={conv.address}
-            className={`flex items-center w-full border-neutral-900 py-2 ${isActive ? 'bg-neutral-900' : ''}`}
+            className={`flex items-center gap-2 px-3 py-2 border-b border-neutral-900 cursor-pointer ${isActive ? 'bg-neutral-900' : ''}`}
             onClick={() => !isEditing && handleSelect(conv.address)}
           >
             {isEditing ? (
-              <div className="flex-1" onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="text"
-                  value={editValue}
-                  onInput={(e: any) => setEditValue(e.target.value)}
-                  onKeyDown={(e: KeyboardEvent) => {
-                    if (e.key === 'Enter') handleSaveEdit(addr)
-                    else if (e.key === 'Escape') { setEditingAddress(null); setEditValue('') }
-                  }}
-                  onBlur={() => handleSaveEdit(addr)}
-                  autoFocus
-                />
-              </div>
+              <input
+                className="flex-1"
+                type="text"
+                value={editValue}
+                onInput={(e: any) => setEditValue(e.target.value)}
+                onKeyDown={(e: KeyboardEvent) => {
+                  if (e.key === 'Enter') handleSaveEdit(addr)
+                  else if (e.key === 'Escape') { setEditingAddress(null); setEditValue('') }
+                }}
+                onBlur={() => handleSaveEdit(addr)}
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
             ) : (
               <>
-                <div className="min-w-0">
-                  {label ? label : <span className="text-sm text-neutral-600">{conv.address.slice(0, 5)}...{conv.address.slice(-3)}</span>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5 shrink-0">
-                    <Pencil size={12} />
-                  </button>
-                  {isUnread && <div className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
-                </div>
-                <div>
-                  <span className="text-sm text-neutral-600">{formatTimestamp(conv.last_message_at)}</span>
-                </div>
+                <span className="flex-1 min-w-0 truncate">
+                  {label || <span className="text-sm text-neutral-600">{conv.address.slice(0, 6)}...{conv.address.slice(-4)}</span>}
+                </span>
+                <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5 shrink-0">
+                  <Pencil size={12} />
+                </button>
+                {isUnread && <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
+                <time className="text-sm text-neutral-600 shrink-0">{formatTimestamp(conv.last_message_at)}</time>
               </>
             )}
-          </button>
+          </li>
         )
       })}
-    </div>
+    </ul>
   )
 }

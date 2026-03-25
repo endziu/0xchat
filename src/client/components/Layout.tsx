@@ -70,7 +70,7 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
       </header>
       <main className="flex-1 overflow-hidden flex flex-col">
         {showSettings && identity && (
-          <div className="p-3 border-b border-neutral-800">
+          <section className="p-3 border-b border-neutral-800">
             <div className="flex justify-between items-center">
               <h2>Identity</h2>
               <button onClick={() => setShowSettings(false)}>Close</button>
@@ -79,7 +79,7 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
               identity={identity}
               onImport={(kp) => { onImport?.(kp); setShowSettings(false) }}
             />
-          </div>
+          </section>
         )}
         {children}
       </main>

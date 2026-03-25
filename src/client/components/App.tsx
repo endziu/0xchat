@@ -37,10 +37,10 @@ function AppContent() {
     return (
       <div className="flex items-center justify-center h-dvh">
         {idError ? (
-          <div>
+          <>
             <p>{idError}</p>
             <button onClick={() => window.location.reload()}>Retry</button>
-          </div>
+          </>
         ) : (
           <span className="text-neutral-600">Initializing...</span>
         )}
@@ -69,10 +69,10 @@ function AppContent() {
     if (loginError) {
       return (
         <div className="flex items-center justify-center h-dvh">
-          <div>
+          <>
             <p>{loginError}</p>
             <button onClick={login} disabled={sessionLoading}>{sessionLoading ? 'Retrying...' : 'Retry'}</button>
-          </div>
+          </>
         </div>
       )
     }
