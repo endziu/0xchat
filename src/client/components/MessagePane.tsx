@@ -61,7 +61,10 @@ export function MessagePane({ recipientAddress, messages, onSendMessage, onBack 
     <div className="flex flex-col h-full" onPaste={handlePaste}>
       <div className="flex items-center gap-2 p-2 border-b border-neutral-800">
         <button onClick={onBack} className="border-0 p-1"><ArrowLeft size={16} /></button>
-        <span className="flex-1 min-w-0 text-sm text-neutral-500 truncate">{recipientAddress}</span>
+        <span className="flex-1 min-w-0 text-sm text-neutral-500 truncate">
+          <span className="max-sm:hidden">{recipientAddress}</span>
+          <span className="sm:hidden">{recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}</span>
+        </span>
         <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" className="border-0 p-1">
           {copied ? <Check size={12} /> : <Copy size={12} />}
         </button>

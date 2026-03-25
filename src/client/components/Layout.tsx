@@ -1,7 +1,7 @@
 import { ComponentChildren } from 'preact'
 import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair } from '../lib/burner'
-import { LogOut, Settings, Copy, Check } from 'lucide-preact'
+import { LogOut, Settings, Copy, Check, Link } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 
 interface LayoutProps {
@@ -17,6 +17,7 @@ interface LayoutProps {
 export function Layout({ children, identity, onLogout, onImport, navigate, error, sseConnected }: LayoutProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
   const logoutTimeoutRef = useRef<any>(null)
 
@@ -46,9 +47,12 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
         </div>
         {identity && (
           <div className="flex items-center gap-2 text-sm text-neutral-500">
-            <span>{identity.address.slice(0, 6)}...{identity.address.slice(-4)}</span>
+            <span className="max-sm:hidden">{identity.address.slice(0, 6)}...{identity.address.slice(-4)}</span>
             <button onClick={handleCopy} title="Copy Address">
               {copied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+            <button onClick={() => { navigator.clipboard.writeText(`https://chat.endziu.xyz/chat/${identity.address}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000) }} title="Copy conversation link">
+              {linkCopied ? <Check size={12} /> : <Link size={14} />}
             </button>
             <button onClick={() => setShowSettings(!showSettings)} title="Settings">
               <Settings size={14} />
@@ -60,11 +64,11 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
                   logoutTimeoutRef.current = setTimeout(() => setLogoutConfirm(false), 3000)
                 }
               }}
-              title="Logout"
+              title={logoutConfirm ? 'Click again to confirm' : 'Logout'}
+              className={logoutConfirm ? 'text-red-400' : ''}
             >
               <LogOut size={14} />
             </button>
-            {logoutConfirm && <span className="text-sm text-red-400">confirm?</span>}
           </div>
         )}
       </header>
