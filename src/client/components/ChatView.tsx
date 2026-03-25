@@ -18,7 +18,7 @@ interface ChatViewProps {
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
   const { conversations, refresh: refreshConversations, labels, setLabel } = useConversations(token)
-  const { messages, sendMessage, addMessage } = useMessages(recipientAddress, identity, token)
+  const { messages, sendMessage, addMessage, loading: messagesLoading } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
@@ -37,7 +37,6 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     refreshConversations()
     if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
       setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
-      setTimeout(() => navigate('/chat'), 2000)
     }
   })
 
@@ -58,10 +57,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       refreshConversations()
       if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
         setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
-        setTimeout(() => navigate('/chat'), 2000)
       }
     }
-  }, [recipientAddress, navigate, refreshConversations])
+  }, [recipientAddress, refreshConversations])
 
   const stableHandleSSE = useCallback((data: any) => handleSSERef.current(data), [])
   const stableHandleDisconnect = useCallback((address: string) => handleDisconnectRef.current(address), [])
@@ -112,7 +110,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             </div>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overscroll-contain">
           <ConversationList
             conversations={conversations}
             activeAddress={recipientAddress}
@@ -129,6 +127,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
           <MessagePane
             recipientAddress={recipientAddress}
             messages={messages}
+            loading={messagesLoading}
             onSendMessage={sendMessage}
             onBack={() => navigate('/chat')}
           />

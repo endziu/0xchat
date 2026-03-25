@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'preact/hooks'
-import { ArrowLeft, Send, Copy, Check, Paperclip, Plus, X } from 'lucide-preact'
+import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { useToast } from './Toast'
 
 interface MessagePaneProps {
   recipientAddress: string
   messages: (Message & { plaintext: string })[]
+  loading?: boolean
   onSendMessage: (plaintext: string, ttl: number) => Promise<any>
   onBack: () => void
 }
@@ -13,7 +14,7 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, loading, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   const [ttl, setTtl] = useState(1800)
@@ -70,8 +71,11 @@ export function MessagePane({ recipientAddress, messages, onSendMessage, onBack 
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-2 flex flex-col">
-        {messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>}
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+        {loading
+          ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
+          : messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
+        }
         {messages.map((msg, i) => {
           const isMine = msg.sender.toLowerCase() !== recipientAddress.toLowerCase()
           const isImage = msg.plaintext.startsWith('data:image/')

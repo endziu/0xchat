@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair, saveKeypair, deriveKeypair } from '../lib/burner'
-import { Download, Upload, Eye, EyeOff, X } from 'lucide-preact'
+import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
 import { useToast } from './Toast'
 
 interface KeyManagementProps {
@@ -11,6 +11,7 @@ interface KeyManagementProps {
 export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   const { toast } = useToast()
   const [showKey, setShowKey] = useState(false)
+  const [keyCopied, setKeyCopied] = useState(false)
   const [importHex, setImportHex] = useState('')
   const [previewKeypair, setPreviewKeypair] = useState<Keypair | null>(null)
   const [confirmTimeout, setConfirmTimeout] = useState(false)
@@ -56,8 +57,8 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
           <button onClick={() => setShowKey(!showKey)} title="Toggle visibility">
             {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
-          <button onClick={() => { navigator.clipboard.writeText(identity.privateKey); toast('Copied', 'success') }} title="Copy">
-            <Download size={14} />
+          <button onClick={() => { navigator.clipboard.writeText(identity.privateKey); toast('Copied', 'success'); setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000) }} title="Copy">
+            {keyCopied ? <Check size={14} /> : <Copy size={14} />}
           </button>
         </div>
       </div>

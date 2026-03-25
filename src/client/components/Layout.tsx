@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check, Link } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
+import { useToast } from './Toast'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -15,15 +16,26 @@ interface LayoutProps {
 }
 
 export function Layout({ children, identity, onLogout, onImport, navigate, error, sseConnected }: LayoutProps) {
+  const { toast } = useToast()
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
   const logoutTimeoutRef = useRef<any>(null)
+  const prevConnected = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
     return () => { if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current) }
   }, [])
+
+  useEffect(() => {
+    if (prevConnected.current === true && sseConnected === false) {
+      toast('Connection lost — messages may be delayed', 'error')
+    } else if (prevConnected.current === false && sseConnected === true) {
+      toast('Reconnected', 'info')
+    }
+    prevConnected.current = sseConnected
+  }, [sseConnected, toast])
 
   const handleCopy = () => {
     if (!identity) return

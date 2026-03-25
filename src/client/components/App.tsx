@@ -35,10 +35,10 @@ function AppContent() {
 
   if (idLoading) {
     return (
-      <div className="flex items-center justify-center h-dvh">
+      <div className="flex flex-col items-center justify-center h-dvh gap-2">
         {idError ? (
           <>
-            <p>{idError}</p>
+            <p className="text-red-400">{idError}</p>
             <button onClick={() => window.location.reload()}>Retry</button>
           </>
         ) : (
@@ -68,11 +68,9 @@ function AppContent() {
   if (!token) {
     if (loginError) {
       return (
-        <div className="flex items-center justify-center h-dvh">
-          <>
-            <p>{loginError}</p>
-            <button onClick={login} disabled={sessionLoading}>{sessionLoading ? 'Retrying...' : 'Retry'}</button>
-          </>
+        <div className="flex flex-col items-center justify-center h-dvh gap-2">
+          <p className="text-red-400">{loginError}</p>
+          <button onClick={login} disabled={sessionLoading}>{sessionLoading ? 'Retrying...' : 'Retry'}</button>
         </div>
       )
     }

@@ -1,4 +1,5 @@
 import { createContext } from 'preact';
+import { X } from 'lucide-preact';
 import { useContext, useState } from 'preact/hooks';
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -40,7 +41,7 @@ export const ToastProvider = ({ children }: { children: any }) => {
         {toasts.map((t) => (
           <div key={t.id} className={`flex items-center gap-2 px-3 py-2 bg-neutral-900 border ${borderColor[t.type]}`} role="alert">
             <p className="m-0">{t.message}</p>
-            <button className="border-0 p-0.5 ml-2" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close">×</button>
+            <button className="border-0 p-0.5 ml-2" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close"><X size={14} /></button>
           </div>
         ))}
       </div>

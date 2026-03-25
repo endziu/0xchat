@@ -74,7 +74,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
         return (
           <li
             key={conv.address}
-            className={`flex items-center gap-2 px-3 py-2 border-b border-neutral-900 cursor-pointer ${isActive ? 'bg-neutral-900' : ''}`}
+            className={`group flex items-center gap-2 px-3 py-2 border-b border-neutral-900 cursor-pointer ${isActive ? 'bg-neutral-900' : ''}`}
             onClick={() => !isEditing && handleSelect(conv.address)}
           >
             {isEditing ? (
@@ -96,7 +96,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
                 <span className="flex-1 min-w-0 truncate">
                   {label || <span className="text-sm text-neutral-600">{conv.address.slice(0, 6)}...{conv.address.slice(-4)}</span>}
                 </span>
-                <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5 shrink-0">
+                <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100">
                   <Pencil size={12} />
                 </button>
                 {isUnread && <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}

@@ -13,7 +13,7 @@
     &:focus { @apply border-neutral-600; }
     &::placeholder { @apply text-neutral-600; }
   }
-  textarea { @apply resize-none overflow-hidden; }
+  textarea { @apply resize-none overflow-y-hidden; }
   select { @apply w-auto cursor-pointer; }
   a { @apply text-inherit no-underline; }
   h2, h3 { @apply text-sm font-normal uppercase tracking-wider text-neutral-500 m-0; }
