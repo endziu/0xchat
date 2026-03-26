@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 @layer base {
-  body { @apply bg-black text-neutral-200 font-mono text-base m-0 overflow-x-hidden; }
+  html { height: 100dvh; overflow: hidden; }
+  body { @apply bg-black text-neutral-200 font-mono text-base m-0; height: 100%; overflow: hidden; }
+  #app { height: 100%; overflow: hidden; }
   button {
     all: unset;
     @apply cursor-pointer inline-flex items-center gap-1 px-2 py-1 border border-neutral-800;

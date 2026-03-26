@@ -121,7 +121,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
         </div>
       </nav>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {disconnectNotice && <p className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</p>}
         {recipientAddress ? (
           <MessagePane
