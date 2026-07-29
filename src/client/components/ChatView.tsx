@@ -17,7 +17,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
-  const { conversations, refresh: refreshConversations, labels, setLabel } = useConversations(token)
+  const { conversations, refresh: refreshConversations, labels, setLabel, deleteConversation } = useConversations(token)
   const { messages, sendMessage, addMessage, loading: messagesLoading } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
@@ -66,6 +66,11 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const { connected } = useSSE(token, stableHandleSSE, stableHandleDisconnect)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
+
+  const handleDeleteConversation = (address: string) => {
+    deleteConversation(address)
+    if (recipientAddress?.toLowerCase() === address.toLowerCase()) navigate('/chat')
+  }
 
   const handleNewChatSubmit = async () => {
     if (!newChatAddr) return
@@ -117,6 +122,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             onSelect={(addr) => navigate(`/chat/${addr}`)}
             labels={labels}
             onRename={setLabel}
+            onDelete={handleDeleteConversation}
           />
         </div>
       </nav>

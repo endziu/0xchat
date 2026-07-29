@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'preact/hooks'
-import { Conversation } from '../lib/api'
-import { Pencil } from 'lucide-preact'
+import { MergedConversation } from '../hooks/useConversations'
+import { getLastSeenKey } from '../lib/contacts'
+import { Pencil, Trash2 } from 'lucide-preact'
 
 interface ConversationListProps {
-  conversations: Conversation[]
+  conversations: MergedConversation[]
   activeAddress: string | null
   onSelect: (address: string) => void
   labels?: Record<string, string>
   onRename?: (address: string, name: string) => void
+  onDelete?: (address: string) => void
 }
-
-const getLastSeenKey = (address: string) => `last_seen_${address.toLowerCase()}`
 
 const formatTimestamp = (timestamp: number): string => {
   const date = new Date(timestamp)
@@ -25,7 +25,7 @@ const formatTimestamp = (timestamp: number): string => {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename }: ConversationListProps) {
+export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename, onDelete }: ConversationListProps) {
   const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({})
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -33,12 +33,21 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
   useEffect(() => {
     const map: Record<string, boolean> = {}
     for (const conv of conversations) {
+      const addrLower = conv.address.toLowerCase()
       const key = getLastSeenKey(conv.address)
+      // The active conversation is always considered read — any activity in
+      // it (new message, sending, selecting) keeps last_seen current so the
+      // dot never reappears while it's open.
+      if (activeAddress?.toLowerCase() === addrLower) {
+        localStorage.setItem(key, String(Date.now()))
+        map[addrLower] = false
+        continue
+      }
       const lastSeen = localStorage.getItem(key)
-      map[conv.address.toLowerCase()] = !lastSeen || Number(lastSeen) < conv.last_message_at
+      map[addrLower] = !lastSeen || Number(lastSeen) < conv.last_message_at
     }
     setUnreadMap(map)
-  }, [conversations])
+  }, [conversations, activeAddress])
 
   const handleSelect = (address: string) => {
     localStorage.setItem(getLastSeenKey(address), String(Date.now()))
@@ -74,7 +83,8 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
         return (
           <li
             key={conv.address}
-            className={`group flex items-center gap-2 px-3 py-2 border-b border-neutral-900 cursor-pointer ${isActive ? 'bg-neutral-900' : ''}`}
+            className={`group flex items-center gap-2 px-3 py-2 border-b border-neutral-900 cursor-pointer ${isActive ? 'bg-neutral-900' : ''} ${conv.stale ? 'opacity-50' : ''}`}
+            title={conv.stale ? 'No active messages' : undefined}
             onClick={() => !isEditing && handleSelect(conv.address)}
           >
             {isEditing ? (
@@ -98,6 +108,13 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
                 </span>
                 <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" className="border-0 p-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100">
                   <Pencil size={12} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete?.(conv.address) }}
+                  title="Delete"
+                  className="border-0 p-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                >
+                  <Trash2 size={12} />
                 </button>
                 {isUnread && <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
                 <time className="text-sm text-neutral-600 shrink-0">{formatTimestamp(conv.last_message_at)}</time>

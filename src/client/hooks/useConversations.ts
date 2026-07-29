@@ -1,8 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks'
 import { api, Conversation } from '../lib/api'
+import { mergeContacts, loadContacts, deleteContact, isDeleted } from '../lib/contacts'
+
+export interface MergedConversation extends Conversation {
+  stale?: boolean
+}
+
+function withKnownContacts(live: Conversation[]): MergedConversation[] {
+  const liveVisible = live.filter(c => !isDeleted(c.address, c.last_message_at))
+  const known = mergeContacts(liveVisible)
+  const liveAddresses = new Set(liveVisible.map(c => c.address.toLowerCase()))
+  const stale = Object.values(known)
+    .filter(c => !liveAddresses.has(c.address.toLowerCase()))
+    .map(c => ({ address: c.address, last_message_at: c.last_message_at, stale: true }))
+  return [...liveVisible, ...stale].sort((a, b) => b.last_message_at - a.last_message_at)
+}
 
 export function useConversations(token: string | null) {
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversations, setConversations] = useState<MergedConversation[]>(() =>
+    Object.values(loadContacts())
+      .map(c => ({ ...c, stale: true }))
+      .sort((a, b) => b.last_message_at - a.last_message_at)
+  )
   const [loading, setLoading] = useState(false)
   const [labels, setLabels] = useState<Record<string, string>>(() => {
     try {
@@ -22,7 +41,7 @@ export function useConversations(token: string | null) {
     setLoading(true)
     try {
       const data = await api.getConversations()
-      setConversations(data.conversations)
+      setConversations(withKnownContacts(data.conversations))
     } catch (err) {
       console.error('Failed to load conversations:', err)
     } finally {
@@ -37,6 +56,17 @@ export function useConversations(token: string | null) {
       localStorage.setItem('conversation_labels', JSON.stringify(next))
       return next
     })
+  }, [])
+
+  const deleteConversation = useCallback((address: string) => {
+    deleteContact(address)
+    setLabels(prev => {
+      const next = { ...prev }
+      delete next[address.toLowerCase()]
+      localStorage.setItem('conversation_labels', JSON.stringify(next))
+      return next
+    })
+    setConversations(prev => prev.filter(c => c.address.toLowerCase() !== address.toLowerCase()))
   }, [])
 
   const refresh = useCallback(() => {
@@ -67,5 +97,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, refresh, labels, setLabel }
+  return { conversations, loading, refresh, labels, setLabel, deleteConversation }
 }
