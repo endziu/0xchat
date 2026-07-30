@@ -16,12 +16,9 @@
     "lint": "oxlint src server.ts"
   },
   "dependencies": {
-    "@noble/hashes": "^1.8.0",
     "@noble/secp256k1": "3.0.0",
-    "clsx": "^2.1.1",
     "lucide-preact": "^0.474.0",
     "preact": "^10.29.0",
-    "tailwind-merge": "^3.5.0",
     "viem": "2.47.4"
   },
   "devDependencies": {

@@ -114,7 +114,8 @@ src/
 - Supports image pasting: images are converted to data URLs and encrypted as text.
 
 **Expiry:**
-- Messages auto-delete after TTL (30s, 5m, 1h, 24h).
+- Messages auto-delete after TTL — the composer offers 5s, 10s, 30s, 1m, 5m, 30m, 1h, 6h, 24h
+  (`VALID_TTLS` in `src/server/constants.ts` is the authority; the server rejects anything else).
 - Server cleans DB every 30s; client removes messages from state via timers or refreshes.
 
 ## Mobile & Installability

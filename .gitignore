@@ -1,6 +1,5 @@
 node_modules/
 dist/
-bun.lock
 .env
 chat.db*
 .claude/
