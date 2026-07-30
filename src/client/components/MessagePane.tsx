@@ -29,7 +29,13 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
 
   useEffect(() => {
     const ta = textareaRef.current
-    if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 200) + 'px' }
+    // Cap at 30% of the viewport, not a fixed 200px — on a phone with the
+    // keyboard up, 200px of composer leaves almost no room for messages.
+    if (ta) {
+      const max = Math.max(96, Math.min(200, window.innerHeight * 0.3))
+      ta.style.height = 'auto'
+      ta.style.height = Math.min(ta.scrollHeight, max) + 'px'
+    }
   }, [inputText])
 
   const handleImageFile = (file: File) => {
@@ -61,13 +67,13 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
   return (
     <div className="flex flex-col h-full" onPaste={handlePaste}>
       <div className="flex items-center gap-2 p-2 border-b border-neutral-800">
-        <button onClick={onBack} className="border-0 p-1"><ArrowLeft size={16} /></button>
+        <button onClick={onBack} aria-label="Back to conversations" className="border-0"><ArrowLeft size={18} /></button>
         <span className="flex-1 min-w-0 text-sm text-neutral-500 truncate">
           <span className="max-sm:hidden">{recipientAddress}</span>
           <span className="sm:hidden">{recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}</span>
         </span>
-        <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" className="border-0 p-1">
-          {copied ? <Check size={12} /> : <Copy size={12} />}
+        <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" aria-label="Copy address" className="border-0">
+          {copied ? <Check size={14} /> : <Copy size={14} />}
         </button>
       </div>
 
@@ -95,7 +101,7 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
                   </span>
                 )}
                 {isImage ? (
-                  <img src={msg.plaintext} alt="Attachment" className="max-w-xs mt-1 border-0 cursor-pointer" onClick={() => window.open(msg.plaintext, '_blank')} />
+                  <img src={msg.plaintext} alt="Attachment" className="max-w-xs max-sm:max-w-full mt-1 border-0 cursor-pointer" onClick={() => window.open(msg.plaintext, '_blank')} />
                 ) : (
                   <p className={`m-0 break-words ${isMine ? 'text-neutral-400' : 'text-neutral-200'}`}>{msg.plaintext}</p>
                 )}
@@ -119,11 +125,11 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
           </div>
         )}
         <div className="flex items-center border border-neutral-800 rounded-lg bg-neutral-950">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending} title="Attach" className="border-0 p-0 pl-3 text-neutral-600 hover:text-neutral-300">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
             <Plus size={18} />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleImageFile(f) }} hidden />
-          <select value={ttl} onChange={(e: any) => setTtl(Number(e.target.value))} className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-2 pr-1 cursor-pointer">
+          <select value={ttl} onChange={(e: any) => setTtl(Number(e.target.value))} aria-label="Message expiry" className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer">
             <option value={5}>5s</option>
             <option value={10}>10s</option>
             <option value={30}>30s</option>
@@ -144,7 +150,7 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
             rows={1}
             className="flex-1 border-0 bg-transparent py-2.5 px-2"
           />
-          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} title="Send" className="border-0 p-0 pr-3 text-neutral-600 hover:text-neutral-300">
+          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} aria-label="Send" title="Send" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
             <Send size={18} />
           </button>
         </div>

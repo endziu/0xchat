@@ -7,6 +7,7 @@
     "clear:dist": "rm -rf dist && echo 'Dist cleared'",
     "clear:all": "bun clear:db; bun clear:dist",
     "build": "vite build",
+    "icons": "bun run scripts/gen-icons.ts",
     "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
     "start": "bun clear:db; bun run build; DEBUG=1 bun run server.ts",
     "start:prod": "bun run server.ts",

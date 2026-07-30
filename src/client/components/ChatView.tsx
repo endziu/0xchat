@@ -91,15 +91,19 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   return (
     <div className={`flex flex-1 overflow-hidden max-sm:flex-col ${recipientAddress ? 'max-sm:[&>:first-child]:hidden' : 'max-sm:[&>:last-child]:hidden'}`}>
       <nav className="w-72 shrink-0 border-r border-neutral-800 flex flex-col max-sm:w-full">
-        <div className="flex items-center justify-between p-2 border-b border-neutral-800">
+        <div className="flex items-center justify-between pl-2 pr-1 py-1 border-b border-neutral-800">
           <span className="text-sm uppercase tracking-wider text-neutral-500">Conversations</span>
-          <button onClick={() => { setNewChatAddr(''); setNewChatError('') }} className="border-0 p-1"><Plus size={16} /></button>
+          <button onClick={() => { setNewChatAddr(''); setNewChatError('') }} aria-label="New conversation" title="New conversation" className="border-0"><Plus size={18} /></button>
         </div>
         {newChatAddr !== null && (
           <div className="p-2 border-b border-neutral-900 flex flex-col gap-1.5">
             <input
               type="text"
               placeholder="0x..."
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
+              spellcheck={false}
               value={newChatAddr}
               onInput={(e: any) => { setNewChatAddr(e.target.value); setNewChatError('') }}
               onKeyDown={(e: KeyboardEvent) => {
@@ -111,7 +115,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             {newChatError && <p className="text-red-400">{newChatError}</p>}
             <div className="flex gap-1">
               <button onClick={handleNewChatSubmit}>Start</button>
-              <button onClick={() => { setNewChatAddr(null); setNewChatError('') }}><X size={14} /></button>
+              <button onClick={() => { setNewChatAddr(null); setNewChatError('') }} aria-label="Cancel"><X size={14} /></button>
             </div>
           </div>
         )}

@@ -1,16 +1,38 @@
 @import "tailwindcss";
 
+/* Applies only where hover actually works. Tailwind's own `hover:` already
+   guards itself this way, so anything that *hides* an element until hover must
+   be guarded too — otherwise it stays hidden forever on touch. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
 @layer base {
-  html { height: 100dvh; overflow: hidden; }
-  body { @apply bg-black text-neutral-200 font-mono text-base m-0; height: 100%; overflow: hidden; }
+  html {
+    height: 100dvh;
+    overflow: hidden;
+    /* Stop iOS from re-flowing type when the device rotates. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-black text-neutral-200 font-mono text-base m-0;
+    height: 100%;
+    overflow: hidden;
+    /* No rubber-band scroll of the page behind the app, and no grey flash on tap. */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
   #app { height: 100%; overflow: hidden; }
   button {
     all: unset;
     @apply cursor-pointer inline-flex items-center gap-1 px-2 py-1 border border-neutral-800;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; /* kills the 300ms double-tap-zoom delay */
     &:hover { @apply bg-neutral-950; }
     &:disabled { @apply opacity-30 pointer-events-none; }
+    &:focus-visible { @apply outline outline-1 outline-neutral-500; }
   }
   input, textarea, select {
+    /* text-base = 16px, which is what keeps iOS from zooming on focus. */
     @apply bg-neutral-950 text-neutral-200 border border-neutral-800 px-2 py-1.5 font-mono text-base outline-none w-full;
     &:focus { @apply border-neutral-600; }
     &::placeholder { @apply text-neutral-600; }
@@ -22,8 +44,26 @@
   p { @apply my-1 text-neutral-500 text-base; }
   img { @apply max-w-full border border-neutral-800 cursor-pointer; }
 
+  /* Touch devices: every control gets a real 44px target regardless of how
+     small its icon is, and labels stop being selectable on long-press. */
+  @media (pointer: coarse) {
+    button, select {
+      min-height: 44px;
+      min-width: 44px;
+      justify-content: center;
+    }
+    button { -webkit-user-select: none; user-select: none; }
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: #333 transparent;
   }
+}
+
+@utility safe-top { padding-top: env(safe-area-inset-top); }
+@utility safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+@utility safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
