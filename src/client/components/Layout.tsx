@@ -1,9 +1,10 @@
 import { ComponentChildren } from 'preact'
 import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair } from '../lib/burner'
-import { LogOut, Settings, Copy, Check, Link } from 'lucide-preact'
+import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { InstallBanner } from './InstallBanner'
+import { QRModal } from './QRModal'
 import { useToast } from './Toast'
 
 interface LayoutProps {
@@ -22,6 +23,7 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
+  const [showQR, setShowQR] = useState(false)
   const logoutTimeoutRef = useRef<any>(null)
   const prevConnected = useRef<boolean | undefined>(undefined)
 
@@ -68,8 +70,11 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
             <button onClick={handleCopy} title="Copy Address" aria-label="Copy address" className="max-sm:border-0">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
-            <button onClick={() => { navigator.clipboard.writeText(`https://chat.endziu.xyz/chat/${identity.address}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000) }} title="Copy conversation link" aria-label="Copy conversation link" className="max-sm:border-0">
+            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/chat/${identity.address}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000) }} title="Copy conversation link" aria-label="Copy conversation link" className="max-sm:border-0">
               {linkCopied ? <Check size={14} /> : <Link size={14} />}
+            </button>
+            <button onClick={() => setShowQR(true)} title="Show QR code" aria-label="Show QR code" className="max-sm:border-0">
+              <QrCode size={14} />
             </button>
             <button onClick={() => setShowSettings(!showSettings)} title="Settings" aria-label="Settings" aria-expanded={showSettings} className="max-sm:border-0">
               <Settings size={14} />
@@ -106,6 +111,14 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
         )}
         {children}
       </main>
+      {showQR && identity && (
+        <QRModal
+          mode="show"
+          address={identity.address}
+          onClose={() => setShowQR(false)}
+          onScan={(addr) => { setShowQR(false); navigate?.(`/chat/${addr.toLowerCase()}`) }}
+        />
+      )}
     </div>
   )
 }

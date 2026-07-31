@@ -6,7 +6,8 @@ import { useMessages } from '../hooks/useMessages'
 import { useSSE } from '../hooks/useSSE'
 import { Keypair } from '../lib/burner'
 import { api } from '../lib/api'
-import { Plus, X } from 'lucide-preact'
+import { Plus, X, QrCode } from 'lucide-preact'
+import { QRModal } from './QRModal'
 
 interface ChatViewProps {
   recipientAddress: string | null
@@ -22,6 +23,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
+  const [showScanner, setShowScanner] = useState(false)
 
   const handleSSERef = useRef((data: any) => {
     refreshConversations()
@@ -72,20 +74,30 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     if (recipientAddress?.toLowerCase() === address.toLowerCase()) navigate('/chat')
   }
 
-  const handleNewChatSubmit = async () => {
-    if (!newChatAddr) return
-    if (!/^0x[0-9a-fA-F]{40}$/.test(newChatAddr)) {
+  const resolveAndNavigate = async (addr: string) => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
       setNewChatError('Invalid address. Must be 0x followed by 40 hex characters.')
       return
     }
     try {
-      const { pubkey } = await api.getPubkey(newChatAddr)
+      const { pubkey } = await api.getPubkey(addr)
       if (!pubkey) { setNewChatError('Address not registered yet.'); return }
-      navigate(`/chat/${newChatAddr.toLowerCase()}`)
+      navigate(`/chat/${addr.toLowerCase()}`)
       setNewChatAddr(null)
     } catch (err: any) {
       setNewChatError(err.message || 'Failed to check registration.')
     }
+  }
+
+  const handleNewChatSubmit = () => {
+    if (!newChatAddr) return
+    resolveAndNavigate(newChatAddr)
+  }
+
+  const handleScan = (addr: string) => {
+    setShowScanner(false)
+    setNewChatAddr(addr)
+    resolveAndNavigate(addr)
   }
 
   return (
@@ -115,6 +127,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             {newChatError && <p className="text-red-400">{newChatError}</p>}
             <div className="flex gap-1">
               <button onClick={handleNewChatSubmit}>Start</button>
+              <button onClick={() => setShowScanner(true)} aria-label="Scan QR code" title="Scan QR code"><QrCode size={14} /></button>
               <button onClick={() => { setNewChatAddr(null); setNewChatError('') }} aria-label="Cancel"><X size={14} /></button>
             </div>
           </div>
@@ -145,6 +158,10 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
           <div className="flex items-center justify-center h-full text-neutral-700">No conversation selected</div>
         )}
       </div>
+
+      {showScanner && (
+        <QRModal mode="scan" onClose={() => setShowScanner(false)} onScan={handleScan} />
+      )}
     </div>
   )
 }
