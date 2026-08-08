@@ -15,9 +15,27 @@ interface LayoutProps {
   navigate?: (to: string) => void
   error?: string | null
   sseConnected?: boolean
+  pushSupported?: boolean
+  pushSubscribed?: boolean
+  pushPermission?: NotificationPermission | null
+  onPushSubscribe?: () => void
+  onPushUnsubscribe?: () => void
 }
 
-export function Layout({ children, identity, onLogout, onImport, navigate, error, sseConnected }: LayoutProps) {
+export function Layout({
+  children,
+  identity,
+  onLogout,
+  onImport,
+  navigate,
+  error,
+  sseConnected,
+  pushSupported,
+  pushSubscribed,
+  pushPermission,
+  onPushSubscribe,
+  onPushUnsubscribe,
+}: LayoutProps) {
   const { toast } = useToast()
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -107,6 +125,24 @@ export function Layout({ children, identity, onLogout, onImport, navigate, error
               identity={identity}
               onImport={(kp) => { onImport?.(kp); setShowSettings(false) }}
             />
+            {pushSupported && (
+              <div className="mt-4">
+                <h3 className="text-sm text-neutral-400">Notifications</h3>
+                <p className="text-sm text-neutral-500 mt-1">
+                  Get a phone alert when a new message arrives. No message content or contact info is ever sent through the notification — just a wakeup.
+                </p>
+                {pushPermission === 'denied' ? (
+                  <p className="text-sm text-neutral-500 mt-2">Notifications blocked — enable them in your browser/OS settings.</p>
+                ) : (
+                  <button
+                    className="mt-2 min-w-[44px] min-h-[44px]"
+                    onClick={pushSubscribed ? onPushUnsubscribe : onPushSubscribe}
+                  >
+                    {pushSubscribed ? 'Disable notifications' : 'Enable notifications'}
+                  </button>
+                )}
+              </div>
+            )}
           </section>
         )}
         {children}
