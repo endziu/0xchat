@@ -8,7 +8,9 @@ if (pushEnabled) {
 }
 
 // No payload: the push relay and service worker learn nothing beyond "deliver a wakeup".
-export async function pushNotify(address: string): Promise<void> {
+// ttlSeconds caps delivery to the message's own remaining lifetime — a push that
+// outlives the (possibly seconds-lived) message it's about would be misleading.
+export async function pushNotify(address: string, ttlSeconds: number): Promise<void> {
   if (!pushEnabled) return;
   const subs = getPushSubscriptionsForAddress(address);
   if (subs.length === 0) return;
@@ -16,10 +18,14 @@ export async function pushNotify(address: string): Promise<void> {
   await Promise.all(
     subs.map(async (sub) => {
       try {
-        await webpush.sendNotification({
-          endpoint: sub.endpoint,
-          keys: { p256dh: sub.p256dh, auth: sub.auth },
-        });
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          undefined,
+          { TTL: ttlSeconds },
+        );
         log('[push] sent', address);
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number })?.statusCode;

@@ -90,7 +90,7 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
   };
   notify(recipient, 'message', event);
   notify(sender, 'message', event);
-  pushNotify(recipient).catch((err) => error('[push] notify failed', recipient, err));
+  pushNotify(recipient, ttl).catch((err) => error('[push] notify failed', recipient, err));
 
   log('[msg]', id, sender, '→', recipient, `ttl=${ttl}s`, `ct_r=${ctRecipient.length / 2}B`, `ct_s=${ctSender.length / 2}B`);
   return json({ id, created_at: now, expires_at: expiresAt }, 201);
