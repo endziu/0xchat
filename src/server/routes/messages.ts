@@ -4,7 +4,8 @@ import { json, getSessionAddress } from '../http.ts';
 import { isRateLimited } from '../rate-limit.ts';
 import { isValidAddress, isHex, normalizeHex } from '../validation.ts';
 import { notify } from '../sse.ts';
-import { log, warn, VALID_TTLS } from '../constants.ts';
+import { pushNotify } from '../push.ts';
+import { log, warn, error, VALID_TTLS } from '../constants.ts';
 import type { Context } from '../http.ts';
 
 export async function handleSendMessage({ req, ip }: Context): Promise<Response> {
@@ -89,6 +90,7 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
   };
   notify(recipient, 'message', event);
   notify(sender, 'message', event);
+  pushNotify(recipient).catch((err) => error('[push] notify failed', recipient, err));
 
   log('[msg]', id, sender, '→', recipient, `ttl=${ttl}s`, `ct_r=${ctRecipient.length / 2}B`, `ct_s=${ctSender.length / 2}B`);
   return json({ id, created_at: now, expires_at: expiresAt }, 201);

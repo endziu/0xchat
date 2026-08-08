@@ -104,4 +104,21 @@ export const api = {
 
   deleteAddress: (address: string) =>
     request(`/api/addresses/${address}`, { method: 'DELETE' }),
+
+  getVapidPublicKey: (): Promise<{ publicKey: string }> =>
+    request('/api/push/vapid-public-key'),
+
+  subscribePush: (subscription: PushSubscriptionJSON) =>
+    request('/api/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(subscription),
+      headers: { 'Content-Type': 'application/json' },
+    }),
+
+  unsubscribePush: (endpoint: string) =>
+    request('/api/push/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
 }
