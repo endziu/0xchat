@@ -50,6 +50,7 @@ src/
     challenge.ts                  Challenge store (issue, verify, cleanup)
     db.ts                         SQLite schema + CRUD
     sse.ts                        SSE client tracking + push
+    push.ts                       Web Push dispatch (VAPID, no payload)
     rate-limit.ts                 In-memory rate limiter
     verify.ts                     EIP-191 signature recovery (viem)
     routes/
@@ -59,6 +60,7 @@ src/
       messages.ts                 Send / fetch messages, conversation list
       account.ts                  Account deletion (cascades + notifies partners)
       events.ts                   SSE token + event stream
+      push.ts                     VAPID key, push subscribe/unsubscribe
       static.ts                   Serves dist/ with SPA fallback
   client/
     main.tsx                      Preact entry point
@@ -77,6 +79,7 @@ src/
       useMessages.ts              Message loading/decryption/sending
       useSSE.ts                   SSE listener lifecycle
       useInstallPrompt.ts         beforeinstallprompt / iOS add-to-home-screen detection
+      usePushSubscription.ts      Web Push opt-in/out (explicit gesture only)
     components/
       App.tsx                     Root router & layout wrapper
       Layout.tsx                  Page shell
@@ -113,6 +116,46 @@ src/
 - Clients decrypt their respective ciphertext using their private key.
 - Supports image pasting: images are converted to data URLs and encrypted as text.
 
+**Push notifications (offline wakeup):**
+- Standards-based Web Push (VAPID) — the right fit for a PWA with an existing
+  service worker, and on iOS/iPadOS Home Screen apps the push service is
+  APNs with no Apple Developer Program membership required.
+- SSE remains the live-delivery channel. Push is a side-channel wakeup
+  only — not the transport, not a delivery/read receipt, not durable
+  storage. The server persists the message and notifies over SSE first;
+  `pushNotify(recipient, ttl)` fires after, fire-and-forget, never blocking
+  or failing the send. `ttl` is passed through as the Web Push `TTL` header,
+  capping delivery to the message's own remaining lifetime.
+- **Payload-less by design:** `sendNotification` carries no payload, so the
+  relay (FCM/Mozilla/Apple) learns only that some subscription was pinged,
+  at some time — never sender, recipient, message id, or conversation hint.
+  The service worker's `push` handler ignores `event.data` and shows a
+  static "0xChat / New message" from its own hardcoded strings. One
+  consequence: tapping a notification always opens `/chat` (the
+  conversation list), never a specific thread — the service worker has no
+  thread info to route to.
+- **Storage:** `push_subscriptions(endpoint PK, address, p256dh, auth,
+  created_at)`, indexed on `address`. One address can hold multiple
+  subscriptions (phone, desktop, several browsers) — `pushNotify` fans out
+  to all of them. Rows are purged on account deletion and pruned
+  individually when a provider reports a subscription dead (404/410 from
+  `sendNotification`).
+- **Opt-in only:** the client never auto-subscribes — browsers block
+  `Notification.requestPermission()` outside a direct user gesture.
+  `usePushSubscription` only checks for an *existing* subscription on
+  mount; `subscribe()` is wired to an explicit "Enable notifications"
+  button in the settings panel. Logout unsubscribes first, both
+  browser-side and server-side.
+- **Config:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, read
+  from env (`.env.example`). Soft-disabled (not a boot failure) if unset, so
+  dev works without them configured.
+- **Not implemented — deferred:** `pushsubscriptionchange` handling in the
+  service worker (a stale client-side subscription is only cleaned up
+  server-side once a push to it 404s/410s); installation-level presence
+  suppression (a device with the conversation already open via SSE still
+  gets pushed to — simpler, and preferred over silently missing an offline
+  device).
+
 **Expiry:**
 - Messages auto-delete after TTL — the composer offers 5s, 10s, 30s, 1m, 5m, 30m, 1h, 6h, 24h
   (`VALID_TTLS` in `src/server/constants.ts` is the authority; the server rejects anything else).
@@ -129,7 +172,8 @@ The app is an installable PWA and is built touch-first.
   Dismissal is remembered in `eth_chat_install_dismissed_v1`.
 - **Offline shell:** `public/sw.js` precaches `/chat` and the icons, serves navigations
   network-first and hashed assets cache-first. `/api/*` is excluded outright, so no ciphertext,
-  token or SSE traffic is ever cached.
+  token or SSE traffic is ever cached. The same worker also handles `push` (shows a static,
+  payload-less notification) and `notificationclick` (focuses an existing window or opens `/chat`).
 - **Touch targets:** `@media (pointer: coarse)` in `styles.css` gives every `button`/`select` a
   44×44 minimum, and `touch-action: manipulation` removes the double-tap-zoom delay.
 - **Hover affordances:** the `can-hover:` custom variant (`(hover: hover) and (pointer: fine)`)
@@ -163,6 +207,9 @@ The app is an installable PWA and is built touch-first.
 | DELETE | `/api/addresses/:addr` | Bearer | Delete own account (pubkey, sessions, conversations) |
 | POST | `/api/events/token` | Bearer | Exchange bearer token for a short-lived SSE token |
 | GET | `/api/events?token=` | Token | SSE event stream |
+| GET | `/api/push/vapid-public-key` | - | Return the VAPID public key (503 if push unconfigured) |
+| POST | `/api/push/subscribe` | Bearer | Upsert a push subscription for the session address |
+| POST | `/api/push/unsubscribe` | Bearer | Delete a push subscription by `(address, endpoint)` |
 
 Only `/api/*`, static asset extensions, `/chat`, `/chat/*`, `/pk`, and exact `/` are reachable in
 production — Nginx returns `444` for everything else. New routes must live under `/api/`.

@@ -30,6 +30,10 @@ You are on a WSL on Windows.
 - Shared helpers, not ad-hoc code: `json()` and session extraction from `http.ts`, validators from
   `validation.ts`, `log`/`warn`/`error` from `constants.ts`, `ChallengeStore` from `challenge.ts`.
 - Auth-bearing handlers check `getSessionAddress(req)` and return 401 before touching the body.
+- Push (`push.ts`, `routes/push.ts`): `sendNotification` is always called with no payload — never
+  add one, that would leak sender/recipient/content to the relay (FCM/Mozilla/Apple). Subscription
+  `endpoint` host must stay checked against `ALLOWED_PUSH_HOSTS` in `validation.ts` — without it any
+  user can point the server at an arbitrary HTTPS URL (SSRF via `webpush.sendNotification`).
 
 ## Client
 
@@ -64,3 +68,6 @@ You are on a WSL on Windows.
 Hybrid: frontend built locally, `dist/` plus source rsync'd to the droplet, Bun server on port 3002
 behind Nginx as systemd unit `0xChat`. Deployment lives in a different repo (`remote/`) — changes
 there are a separate commit. Never deploy unless asked.
+
+Push notifications need `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` in the droplet's env
+for the systemd unit — soft-disabled (503 on the vapid-key route) without them, not a boot failure.
