@@ -22,8 +22,23 @@ export function normalizeHex(s: unknown): string {
 
 function isBase64UrlOfLength(s: string, byteLen: number): boolean {
   if (!/^[A-Za-z0-9_-]+$/.test(s)) return false;
-  const approxBytes = Math.floor((s.length * 3) / 4);
-  return Math.abs(approxBytes - byteLen) <= 1;
+  try {
+    return Buffer.from(s, 'base64url').length === byteLen;
+  } catch {
+    return false;
+  }
+}
+
+// Only these push services are allowed as subscription endpoints, to stop
+// the server being used as an SSRF proxy against arbitrary hosts.
+const ALLOWED_PUSH_HOSTS = [
+  'fcm.googleapis.com',
+  'updates.push.services.mozilla.com',
+  'web.push.apple.com',
+];
+
+function isAllowedPushHost(hostname: string): boolean {
+  return ALLOWED_PUSH_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
 }
 
 export function isValidPushSubscription(
@@ -33,7 +48,8 @@ export function isValidPushSubscription(
   const b = body as Record<string, unknown>;
   if (typeof b['endpoint'] !== 'string' || b['endpoint'].length > 2000) return false;
   try {
-    if (new URL(b['endpoint']).protocol !== 'https:') return false;
+    const url = new URL(b['endpoint']);
+    if (url.protocol !== 'https:' || !isAllowedPushHost(url.hostname)) return false;
   } catch {
     return false;
   }

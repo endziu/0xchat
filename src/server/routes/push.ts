@@ -1,6 +1,7 @@
 import { upsertPushSubscription, deletePushSubscriptionForAddress } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
 import { isValidPushSubscription } from '../validation.ts';
+import { isRateLimited } from '../rate-limit.ts';
 import { VAPID_PUBLIC_KEY, log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
 
@@ -14,6 +15,11 @@ export async function handleSubscribePush({ req, ip }: Context): Promise<Respons
   if (!address) {
     warn('[unauth] push subscribe no session', ip);
     return json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (isRateLimited(`${ip}:${address}:push-sub`)) {
+    warn('[rate-limit] push-sub', address, ip);
+    return json({ error: 'Too many requests' }, 429);
   }
 
   let body: unknown;
