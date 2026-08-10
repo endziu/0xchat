@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'preact/hooks'
 import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
+import { usePushSubscription } from '../hooks/usePushSubscription'
 import { deriveKeypair } from '../lib/burner'
 import { Layout } from './Layout'
 import { ChatView } from './ChatView'
@@ -9,8 +10,14 @@ import { ToastProvider } from './Toast'
 function AppContent() {
   const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, importIdentity } = useIdentity()
   const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout } = useSession(identity)
+  const push = usePushSubscription(token)
   const [path, setPath] = useState(window.location.pathname)
   const [sseConnected, setSseConnected] = useState(false)
+
+  const handleLogout = async () => {
+    await push.unsubscribe()
+    idLogout()
+  }
 
   useEffect(() => {
     const handlePopState = () => setPath(window.location.pathname)
@@ -78,7 +85,19 @@ function AppContent() {
   }
 
   return (
-    <Layout identity={identity} onLogout={idLogout} onImport={importIdentity} navigate={navigate} error={idError} sseConnected={sseConnected}>
+    <Layout
+      identity={identity}
+      onLogout={handleLogout}
+      onImport={importIdentity}
+      navigate={navigate}
+      error={idError}
+      sseConnected={sseConnected}
+      pushSupported={push.supported}
+      pushSubscribed={push.subscribed}
+      pushPermission={push.permission}
+      onPushSubscribe={push.subscribe}
+      onPushUnsubscribe={push.unsubscribe}
+    >
       <ChatView
         recipientAddress={path.startsWith('/chat/') ? path.slice(6) : null}
         identity={identity!}

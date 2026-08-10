@@ -41,6 +41,16 @@ export function initDb(path = 'chat.db'): void {
       ON messages(recipient, created_at);
     CREATE INDEX IF NOT EXISTS idx_msg_expires
       ON messages(expires_at);
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint   TEXT PRIMARY KEY,
+      address    TEXT NOT NULL,
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_address
+      ON push_subscriptions(address);
   `);
 }
 
@@ -199,6 +209,45 @@ export function deleteAddressConversations(address: string): void {
 export function deleteAddress(address: string): void {
   const normalized = address.toLowerCase();
   db.query('DELETE FROM pubkeys WHERE address = ?').run(normalized);
+}
+
+export function upsertPushSubscription(
+  address: string,
+  endpoint: string,
+  p256dh: string,
+  auth: string,
+): void {
+  const normalized = address.toLowerCase();
+  db.query(
+    'INSERT OR REPLACE INTO push_subscriptions (endpoint, address, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)',
+  ).run(endpoint, normalized, p256dh, auth, Date.now());
+}
+
+export function deletePushSubscription(endpoint: string): void {
+  db.query('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
+}
+
+export function deletePushSubscriptionForAddress(address: string, endpoint: string): void {
+  const normalized = address.toLowerCase();
+  db.query('DELETE FROM push_subscriptions WHERE endpoint = ? AND address = ?').run(endpoint, normalized);
+}
+
+export function deletePushSubscriptionsForAddress(address: string): void {
+  const normalized = address.toLowerCase();
+  db.query('DELETE FROM push_subscriptions WHERE address = ?').run(normalized);
+}
+
+export interface PushSubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+export function getPushSubscriptionsForAddress(address: string): PushSubscriptionRow[] {
+  const normalized = address.toLowerCase();
+  return db
+    .query('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE address = ?')
+    .all(normalized) as PushSubscriptionRow[];
 }
 
 export function getConversationPartners(address: string): string[] {
