@@ -164,6 +164,17 @@ src/
   gets pushed to — simpler, and preferred over silently missing an offline
   device).
 
+**Authenticated message protocol cutover:**
+- Protocol v1 is the only accepted message format. Clients generate a 128-bit message ID, use the
+  canonical version/ID/sender/recipient/TTL metadata as AES-GCM AAD for both encrypted copies, then
+  EIP-191-sign the canonical envelope containing both ciphertexts, ephemeral keys, and IVs.
+- The server verifies the session sender, version, shape, TTL, recipient, signature, and unique ID
+  before persistence or notification. Fetch and SSE clients repeat envelope and participant
+  verification before decryption.
+- This is a hard cutover: on first startup with the v1 schema, all unexpired legacy message rows are
+  deleted because they cannot be authenticated safely. Old clients receive 400 for missing or
+  unsupported envelope versions; there is no legacy read/write fallback or silent downgrade.
+
 **Expiry:**
 - Messages auto-delete after TTL — the composer offers 5s, 10s, 30s, 1m, 5m, 30m, 1h, 6h, 24h
   (`VALID_TTLS` in `src/server/constants.ts` is the authority; the server rejects anything else).
@@ -195,7 +206,9 @@ The app is an installable PWA and is built touch-first.
 ## Crypto Scheme
 
 - **Key Derivation:** `crypto.getRandomValues(32)` for raw entropy.
-- **Encryption:** ECIES — ephemeral ECDH + HKDF-SHA-256 + AES-GCM-256.
+- **Encryption:** ECIES — ephemeral ECDH + HKDF-SHA-256 + AES-GCM-256, with canonical envelope
+  metadata supplied as AES-GCM additional authenticated data for both message copies.
+- **Authentication:** EIP-191 signature over the complete canonical protocol-v1 envelope.
 - **Standards:** All hex strings in API/DB use the `0x` prefix for compatibility with `viem`.
 - **Library:** `@noble/secp256k1` (v3) for curve math, `viem` for addresses/signatures.
 

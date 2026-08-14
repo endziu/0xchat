@@ -8,11 +8,20 @@ export interface EncryptedData {
   iv: string
 }
 
-export async function encrypt(plaintext: string, recipientPubkeyHex: string): Promise<EncryptedData> {
+type RandomBytes = (length: number) => Uint8Array
+
+const secureRandomBytes: RandomBytes = (length) => crypto.getRandomValues(new Uint8Array(length))
+
+export async function encrypt(
+  plaintext: string,
+  recipientPubkeyHex: string,
+  additionalData: string,
+  randomBytes: RandomBytes = secureRandomBytes,
+): Promise<EncryptedData> {
   const messageBytes = new TextEncoder().encode(plaintext)
   const recipientPubBytes = hexToBytes(ensure0x(recipientPubkeyHex))
 
-  const ephemPriv = crypto.getRandomValues(new Uint8Array(32))
+  const ephemPriv = randomBytes(32)
   const ephemPub = secp.getPublicKey(ephemPriv, true)
 
   const sharedSecret = secp.getSharedSecret(ephemPriv, recipientPubBytes, true)
@@ -33,9 +42,9 @@ export async function encrypt(plaintext: string, recipientPubkeyHex: string): Pr
     ['encrypt']
   )
 
-  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const iv = randomBytes(12)
   const ctBuf = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv }, aesKey, messageBytes
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(additionalData) }, aesKey, messageBytes
   )
 
   return {
@@ -49,7 +58,8 @@ export async function decrypt(
   ciphertextHex: string,
   ephemeralPubkeyHex: string,
   ivHex: string,
-  privKey: string
+  privKey: string,
+  additionalData: string,
 ): Promise<string> {
   const ephemPubBytes = hexToBytes(ensure0x(ephemeralPubkeyHex))
   const privBytes = hexToBytes(ensure0x(privKey))
@@ -74,7 +84,7 @@ export async function decrypt(
   const iv = hexToBytes(ensure0x(ivHex))
   const ciphertextBytes = hexToBytes(ensure0x(ciphertextHex))
   const plaintextBuf = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv }, aesKey, ciphertextBytes
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(additionalData) }, aesKey, ciphertextBytes
   )
 
   return new TextDecoder().decode(plaintextBuf)

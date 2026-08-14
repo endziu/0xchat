@@ -1,20 +1,8 @@
 import { getToken, clearToken } from './session'
 import { buildRegistrationChallenge, verifyEncryptionPublicKey } from './encryption-key'
+import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-envelope'
 
-export interface Message {
-  id: string
-  sender: string
-  recipient: string
-  ct_recipient: string
-  ephemeral_pub_recipient: string
-  iv_recipient: string
-  ct_sender: string
-  ephemeral_pub_sender: string
-  iv_sender: string
-  ttl: number
-  created_at: number
-  expires_at: number
-}
+export type Message = DeliveredMessage
 
 export interface Conversation {
   address: string
@@ -93,23 +81,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  sendMessage: (data: {
-    recipient: string
-    ct_recipient: string
-    ephemeral_pub_recipient: string
-    iv_recipient: string
-    ct_sender: string
-    ephemeral_pub_sender: string
-    iv_sender: string
-    ttl: number
-  }) =>
+  sendMessage: (data: MessageEnvelope): Promise<DeliveredMessage> =>
     request('/api/messages', {
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  getMessages: (address: string): Promise<{ messages: Message[] }> =>
+  getMessages: (address: string): Promise<{ messages: unknown[] }> =>
     request(`/api/messages/${address}`),
 
   getConversations: (): Promise<{ conversations: Conversation[] }> =>

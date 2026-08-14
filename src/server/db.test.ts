@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { unlinkSync } from 'node:fs';
+import { Database } from 'bun:sqlite';
 import {
-  createMessage,
+  createMessage as persistMessage,
   createSession,
   deleteExpiredMessages,
   deleteExpiredSessions,
@@ -9,6 +10,7 @@ import {
   deleteAddressConversations,
   deleteAddressSessions,
   getConversationMessages,
+  getDb,
   getConversationPartners,
   getConversations,
   getPubkey,
@@ -18,6 +20,34 @@ import {
 } from './db.ts';
 
 const TEST_DB = `test-chat-${Date.now()}.db`;
+
+function createMessage(
+  id: string,
+  sender: string,
+  recipient: string,
+  ctRecipient: string,
+  ephPubRecipient: string,
+  ivRecipient: string,
+  ctSender: string,
+  ephPubSender: string,
+  ivSender: string,
+  ttl: number,
+) {
+  return persistMessage({
+    version: 1,
+    id,
+    sender,
+    recipient,
+    ct_recipient: ctRecipient,
+    ephemeral_pub_recipient: ephPubRecipient,
+    iv_recipient: ivRecipient,
+    ct_sender: ctSender,
+    ephemeral_pub_sender: ephPubSender,
+    iv_sender: ivSender,
+    ttl,
+    signature: 'test-signature',
+  });
+}
 
 beforeEach(() => {
   initDb(TEST_DB);
@@ -76,6 +106,22 @@ describe('sessions', () => {
 describe('messages', () => {
   const alice = '0xalice';
   const bob = '0xbob';
+
+  test('hard-cutover deletes legacy unauthenticated messages', () => {
+    getDb().close();
+    for (const suffix of ['', '-shm', '-wal']) {
+      try { unlinkSync(TEST_DB + suffix); } catch {}
+    }
+    const legacy = new Database(TEST_DB);
+    legacy.run('CREATE TABLE messages (id TEXT PRIMARY KEY, sender TEXT NOT NULL)');
+    legacy.query('INSERT INTO messages (id, sender) VALUES (?, ?)').run('legacy', alice);
+    legacy.close();
+
+    initDb(TEST_DB);
+    const columns = getDb().query('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+    expect(columns.map(column => column.name)).toContain('version');
+    expect((getDb().query('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count).toBe(0);
+  });
 
   test('create and fetch conversation messages', () => {
     createMessage(

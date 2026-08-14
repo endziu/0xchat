@@ -25,14 +25,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
   const [showScanner, setShowScanner] = useState(false)
 
-  const handleSSERef = useRef((data: any) => {
+  const handleSSERef = useRef((data: unknown) => {
     refreshConversations()
-    if (recipientAddress && (
-      data.sender.toLowerCase() === recipientAddress.toLowerCase() ||
-      data.sender.toLowerCase() === identity.address.toLowerCase()
-    )) {
-      addMessage(data)
-    }
+    if (recipientAddress) addMessage(data)
   })
 
   const handleDisconnectRef = useRef((address: string) => {
@@ -43,16 +38,11 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   })
 
   useEffect(() => {
-    handleSSERef.current = (data: any) => {
+    handleSSERef.current = (data: unknown) => {
       refreshConversations()
-      if (recipientAddress && (
-        data.sender.toLowerCase() === recipientAddress.toLowerCase() ||
-        data.sender.toLowerCase() === identity.address.toLowerCase()
-      )) {
-        addMessage(data)
-      }
+      if (recipientAddress) addMessage(data)
     }
-  }, [recipientAddress, identity.address, refreshConversations, addMessage])
+  }, [recipientAddress, refreshConversations, addMessage])
 
   useEffect(() => {
     handleDisconnectRef.current = (address: string) => {
