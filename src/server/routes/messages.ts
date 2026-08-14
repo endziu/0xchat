@@ -1,99 +1,97 @@
-import { randomBytes } from 'node:crypto';
-import { createMessage, getConversationMessages, getConversations, getPubkey } from '../db.ts';
+import { createMessage, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
 import { isRateLimited } from '../rate-limit.ts';
-import { isValidAddress, isHex, normalizeHex } from '../validation.ts';
 import { notify } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, error, VALID_TTLS } from '../constants.ts';
+import {
+  MESSAGE_ENVELOPE_VERSION,
+  parseMessageEnvelope,
+  verifyMessageEnvelope,
+  type DeliveredMessage,
+  type MessageEnvelope,
+} from '../../shared/message-envelope.ts';
 import type { Context } from '../http.ts';
 
+function delivered(envelope: MessageEnvelope, createdAt: number, expiresAt: number): DeliveredMessage {
+  return { ...envelope, created_at: createdAt, expires_at: expiresAt };
+}
+
+function deliveredRow(row: MessageRow): Record<string, unknown> {
+  return {
+    version: row.version,
+    id: row.id,
+    sender: row.sender,
+    recipient: row.recipient,
+    ttl: row.ttl_seconds,
+    ct_recipient: row.ct_recipient,
+    ephemeral_pub_recipient: row.ephemeral_pub_recipient,
+    iv_recipient: row.iv_recipient,
+    ct_sender: row.ct_sender,
+    ephemeral_pub_sender: row.ephemeral_pub_sender,
+    iv_sender: row.iv_sender,
+    signature: row.signature,
+    created_at: row.created_at,
+    expires_at: row.expires_at,
+  };
+}
+
 export async function handleSendMessage({ req, ip }: Context): Promise<Response> {
-  const sender = getSessionAddress(req);
-  if (!sender) {
+  const sessionAddress = getSessionAddress(req);
+  if (!sessionAddress) {
     warn('[unauth] message no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  if (isRateLimited(`${ip}:${sender}:msg`)) {
-    warn('[rate-limit] msg', sender, ip);
+  if (isRateLimited(`${ip}:${sessionAddress}:msg`)) {
+    warn('[rate-limit] msg', sessionAddress, ip);
     return json({ error: 'Too many requests' }, 429);
   }
 
-  let body: {
-    recipient?: unknown;
-    ct_recipient?: unknown; ephemeral_pub_recipient?: unknown; iv_recipient?: unknown;
-    ct_sender?: unknown; ephemeral_pub_sender?: unknown; iv_sender?: unknown;
-    ttl?: unknown;
-  };
+  let body: unknown;
   try {
-    body = (await req.json()) as typeof body;
+    body = await req.json();
   } catch {
     warn('[invalid] message malformed JSON');
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  const recipient = typeof body.recipient === 'string' ? body.recipient.trim().toLowerCase() : '';
-  const ctRecipient = normalizeHex(body.ct_recipient);
-  const ephPubRecipient = normalizeHex(body.ephemeral_pub_recipient);
-  const ivRecipient = normalizeHex(body.iv_recipient);
-  const ctSender = normalizeHex(body.ct_sender);
-  const ephPubSender = normalizeHex(body.ephemeral_pub_sender);
-  const ivSender = normalizeHex(body.iv_sender);
-  const ttl = typeof body.ttl === 'number' ? body.ttl : 300;
-
-  if (!isValidAddress(recipient)) {
-    warn('[invalid] message bad recipient', recipient);
-    return json({ error: 'invalid recipient address' }, 400);
+  if (typeof body === 'object' && body !== null
+    && (body as Record<string, unknown>)['version'] !== MESSAGE_ENVELOPE_VERSION) {
+    return json({ error: 'unsupported message envelope version' }, 400);
   }
-  if (recipient === sender) {
-    warn('[invalid] message self-message', sender);
+  const parsed = parseMessageEnvelope(body);
+  if (!parsed) return json({ error: 'malformed message envelope' }, 400);
+  if (parsed.sender !== sessionAddress) {
+    warn('[invalid] message sender/session mismatch', parsed.sender, sessionAddress);
+    return json({ error: 'envelope sender does not match session' }, 403);
+  }
+  if (parsed.recipient === sessionAddress) {
     return json({ error: 'cannot message yourself' }, 400);
   }
-  if (!VALID_TTLS.has(ttl)) {
-    warn('[invalid] message bad ttl', ttl);
-    return json({ error: 'invalid TTL' }, 400);
-  }
-  if (!isHex(ctRecipient) || ctRecipient.length > 2_000_000) {
-    return json({ error: 'ct_recipient must be non-empty hex (max 1 MB)' }, 400);
-  }
-  if (!isHex(ephPubRecipient, 33)) {
-    return json({ error: 'ephemeral_pub_recipient must be 33-byte hex' }, 400);
-  }
-  if (!isHex(ivRecipient, 12)) {
-    return json({ error: 'iv_recipient must be 12-byte hex' }, 400);
-  }
-  if (!isHex(ctSender) || ctSender.length > 2_000_000) {
-    return json({ error: 'ct_sender must be non-empty hex (max 1 MB)' }, 400);
-  }
-  if (!isHex(ephPubSender, 33)) {
-    return json({ error: 'ephemeral_pub_sender must be 33-byte hex' }, 400);
-  }
-  if (!isHex(ivSender, 12)) {
-    return json({ error: 'iv_sender must be 12-byte hex' }, 400);
-  }
-  if (!getPubkey(recipient)) {
-    warn('[invalid] message recipient not registered', recipient);
-    return json({ error: 'Recipient not registered' }, 400);
+  if (!VALID_TTLS.has(parsed.ttl)) return json({ error: 'invalid TTL' }, 400);
+  if (!getPubkey(parsed.recipient)) return json({ error: 'Recipient not registered' }, 400);
+
+  const envelope = await verifyMessageEnvelope(parsed);
+  if (!envelope) {
+    warn('[invalid] message signature', sessionAddress);
+    return json({ error: 'invalid envelope signature' }, 400);
   }
 
-  const id = randomBytes(8).toString('hex');
-  createMessage(id, sender, recipient, ctRecipient, ephPubRecipient, ivRecipient, ctSender, ephPubSender, ivSender, ttl);
+  const stored = createMessage(envelope);
+  if (!stored) {
+    warn('[invalid] message replay', envelope.id, sessionAddress);
+    return json({ error: 'duplicate message ID' }, 409);
+  }
 
-  const now = Date.now();
-  const expiresAt = now + ttl * 1000;
-  const event = {
-    id, sender, recipient,
-    ct_recipient: ctRecipient, ephemeral_pub_recipient: ephPubRecipient, iv_recipient: ivRecipient,
-    ct_sender: ctSender, ephemeral_pub_sender: ephPubSender, iv_sender: ivSender,
-    ttl, created_at: now, expires_at: expiresAt,
-  };
-  notify(recipient, 'message', event);
-  notify(sender, 'message', event);
-  pushNotify(recipient, ttl).catch((err) => error('[push] notify failed', recipient, err));
+  const event = delivered(envelope, stored.createdAt, stored.expiresAt);
+  notify(envelope.recipient, 'message', event);
+  notify(envelope.sender, 'message', event);
+  pushNotify(envelope.recipient, envelope.ttl).catch((err) => error('[push] notify failed', envelope.recipient, err));
 
-  log('[msg]', id, sender, '→', recipient, `ttl=${ttl}s`, `ct_r=${ctRecipient.length / 2}B`, `ct_s=${ctSender.length / 2}B`);
-  return json({ id, created_at: now, expires_at: expiresAt }, 201);
+  log('[msg]', envelope.id, envelope.sender, '→', envelope.recipient, `ttl=${envelope.ttl}s`,
+    `ct_r=${(envelope.ct_recipient.length - 2) / 2}B`, `ct_s=${(envelope.ct_sender.length - 2) / 2}B`);
+  return json(event, 201);
 }
 
 export async function handleGetMessages({ req, url, path, ip }: Context): Promise<Response> {
@@ -115,18 +113,9 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
   const limitParam = url.searchParams.get('limit');
   const limit = limitParam ? Math.min(Math.max(Number(limitParam), 1), 100) : 50;
 
-  const msgs = getConversationMessages(address, counterparty, limit, before);
-  const prefixedMsgs = msgs.map((m) => ({
-    ...m,
-    ct_recipient: `0x${m.ct_recipient}`,
-    ephemeral_pub_recipient: `0x${m.ephemeral_pub_recipient}`,
-    iv_recipient: `0x${m.iv_recipient}`,
-    ct_sender: `0x${m.ct_sender}`,
-    ephemeral_pub_sender: `0x${m.ephemeral_pub_sender}`,
-    iv_sender: `0x${m.iv_sender}`,
-  }));
-
-  return json({ messages: prefixedMsgs });
+  return json({
+    messages: getConversationMessages(address, counterparty, limit, before).map(deliveredRow),
+  });
 }
 
 export async function handleGetConversations({ req, ip }: Context): Promise<Response> {

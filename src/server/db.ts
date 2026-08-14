@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite';
+import type { MessageEnvelope } from '../shared/message-envelope.ts';
 
 let db: Database;
 
@@ -21,7 +22,32 @@ export function initDb(path = 'chat.db'): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_expires
       ON sessions(expires_at);
 
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint   TEXT PRIMARY KEY,
+      address    TEXT NOT NULL,
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_address
+      ON push_subscriptions(address);
+  `);
+
+  const messageColumns = db.query('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+  const requiredMessageColumns = [
+    'version', 'id', 'sender', 'recipient', 'ct_recipient', 'ephemeral_pub_recipient',
+    'iv_recipient', 'ct_sender', 'ephemeral_pub_sender', 'iv_sender', 'ttl_seconds',
+    'signature', 'created_at', 'expires_at',
+  ];
+  const existingMessageColumns = new Set(messageColumns.map((column) => column.name));
+  if (messageColumns.length > 0
+    && requiredMessageColumns.some((column) => !existingMessageColumns.has(column))) {
+    // Protocol v1 cutover: legacy messages have no authenticated envelope and cannot be upgraded safely.
+    db.run('DROP TABLE messages');
+  }
+  db.run(`
     CREATE TABLE IF NOT EXISTS messages (
+      version                 INTEGER NOT NULL,
       id                      TEXT PRIMARY KEY,
       sender                  TEXT NOT NULL,
       recipient               TEXT NOT NULL,
@@ -32,6 +58,7 @@ export function initDb(path = 'chat.db'): void {
       ephemeral_pub_sender    TEXT NOT NULL,
       iv_sender               TEXT NOT NULL,
       ttl_seconds             INTEGER NOT NULL,
+      signature               TEXT NOT NULL,
       created_at              INTEGER NOT NULL,
       expires_at              INTEGER NOT NULL
     );
@@ -41,16 +68,6 @@ export function initDb(path = 'chat.db'): void {
       ON messages(recipient, created_at);
     CREATE INDEX IF NOT EXISTS idx_msg_expires
       ON messages(expires_at);
-
-    CREATE TABLE IF NOT EXISTS push_subscriptions (
-      endpoint   TEXT PRIMARY KEY,
-      address    TEXT NOT NULL,
-      p256dh     TEXT NOT NULL,
-      auth       TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_push_address
-      ON push_subscriptions(address);
   `);
 }
 
@@ -103,35 +120,28 @@ export function deleteExpiredSessions(): void {
 }
 
 export function createMessage(
-  id: string,
-  sender: string,
-  recipient: string,
-  ctRecipient: string,
-  ephPubRecipient: string,
-  ivRecipient: string,
-  ctSender: string,
-  ephPubSender: string,
-  ivSender: string,
-  ttlSeconds: number,
-): void {
-  const now = Date.now();
-  const expiresAt = now + ttlSeconds * 1000;
-  db.query(
-    `INSERT INTO messages (
-      id, sender, recipient,
+  envelope: MessageEnvelope,
+): { createdAt: number; expiresAt: number } | null {
+  const createdAt = Date.now();
+  const expiresAt = createdAt + envelope.ttl * 1000;
+  const result = db.query(
+    `INSERT OR IGNORE INTO messages (
+      version, id, sender, recipient,
       ct_recipient, ephemeral_pub_recipient, iv_recipient,
       ct_sender, ephemeral_pub_sender, iv_sender,
-      ttl_seconds, created_at, expires_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ttl_seconds, signature, created_at, expires_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    id, sender, recipient,
-    ctRecipient, ephPubRecipient, ivRecipient,
-    ctSender, ephPubSender, ivSender,
-    ttlSeconds, now, expiresAt,
+    envelope.version, envelope.id, envelope.sender, envelope.recipient,
+    envelope.ct_recipient, envelope.ephemeral_pub_recipient, envelope.iv_recipient,
+    envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
+    envelope.ttl, envelope.signature, createdAt, expiresAt,
   );
+  return result.changes === 1 ? { createdAt, expiresAt } : null;
 }
 
 export interface MessageRow {
+  version: number;
   id: string;
   sender: string;
   recipient: string;
@@ -142,6 +152,7 @@ export interface MessageRow {
   ephemeral_pub_sender: string;
   iv_sender: string;
   ttl_seconds: number;
+  signature: string;
   created_at: number;
   expires_at: number;
 }

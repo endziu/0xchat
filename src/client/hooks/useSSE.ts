@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { api } from '../lib/api'
 
-export function useSSE(token: string | null, onMessage: (data: any) => void, onDisconnect?: (address: string) => void) {
+export function useSSE(token: string | null, onMessage: (data: unknown) => void, onDisconnect?: (address: string) => void) {
   const [connected, setConnected] = useState(false)
 
   useEffect(() => {

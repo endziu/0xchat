@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": ["server.ts", "src/server/**/*.ts"]
+  "include": ["server.ts", "src/server/**/*.ts", "src/shared/**/*.ts"]
 }

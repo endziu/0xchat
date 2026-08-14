@@ -9,6 +9,13 @@ import { Database } from 'bun:sqlite';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { decrypt } from './src/client/lib/crypto.ts';
+import { createSignedMessageEnvelope } from './src/client/lib/message-envelope.ts';
+import {
+  canonicalMessageAad,
+  verifyDeliveredMessage,
+  type MessageEnvelope,
+} from './src/shared/message-envelope.ts';
 
 function registrationIdentity(byte: string) {
   const privateKey = `0x${byte.repeat(64)}` as `0x${string}`;
@@ -37,6 +44,25 @@ async function issueRegistration(base: string, identity: ReturnType<typeof regis
     response,
     data: (await response.json()) as { challenge: string; nonce: string; error?: string },
   };
+}
+
+const messageSender = registrationIdentity('7');
+const messageRecipient = registrationIdentity('8');
+const senderToken = 'message-sender-token';
+const recipientToken = 'message-recipient-token';
+
+async function authenticatedEnvelope(plaintext = 'authenticated hello', ttl = 300) {
+  return createSignedMessageEnvelope(
+    plaintext,
+    ttl,
+    {
+      privateKey: messageSender.privateKey,
+      publicKey: messageSender.pubkey,
+      address: messageSender.address,
+    },
+    messageRecipient.address,
+    messageRecipient.pubkey,
+  );
 }
 
 const PORT = 9876 + Math.floor(Math.random() * 100);
@@ -81,6 +107,17 @@ beforeAll(async () => {
     Date.now(),
     Date.now() + 3600_000,
   );
+  for (const identity of [messageSender, messageRecipient]) {
+    db.query('INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)')
+      .run(identity.address, identity.pubkey.slice(2));
+  }
+  for (const [token, address] of [
+    [senderToken, messageSender.address],
+    [recipientToken, messageRecipient.address],
+  ]) {
+    db.query('INSERT OR REPLACE INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run(token, address, Date.now(), Date.now() + 3600_000);
+  }
   db.close();
 });
 
@@ -268,29 +305,120 @@ describe('authenticated routes', () => {
     expect(Array.isArray(data.conversations)).toBe(true);
   });
 
-  test('POST /api/messages sends a message', async () => {
-    const res = await fetch(baseUrl + '/api/messages', {
+  test('persists, fetches, streams, verifies, and decrypts both copies', async () => {
+    const sseTokenResponse = await fetch(baseUrl + '/api/events/token', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${recipientToken}` },
+    });
+    const { sse_token: sseToken } = await sseTokenResponse.json() as { sse_token: string };
+    const sseAbort = new AbortController();
+    const sseResponsePromise = fetch(`${baseUrl}/api/events?token=${sseToken}`, { signal: sseAbort.signal });
+
+    const envelope = await authenticatedEnvelope();
+    const sent = await fetch(baseUrl + '/api/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + token,
+        Authorization: `Bearer ${senderToken}`,
       },
-      body: JSON.stringify({
-        recipient,
-        ct_recipient: 'aa'.repeat(32),
-        ephemeral_pub_recipient: 'bb'.repeat(33),
-        iv_recipient: 'cc'.repeat(12),
-        ct_sender: 'dd'.repeat(32),
-        ephemeral_pub_sender: 'ee'.repeat(33),
-        iv_sender: 'ff'.repeat(12),
-        ttl: 300,
-      }),
+      body: JSON.stringify(envelope),
     });
-    expect(res.status).toBe(201);
-    const data = (await res.json()) as {
-      id: string; created_at: number; expires_at: number;
-    };
-    expect(data.id).toBeTruthy();
+    expect(sent.status).toBe(201);
+    const delivered = await verifyDeliveredMessage(await sent.json());
+    expect(delivered).not.toBeNull();
+
+    const fetchedForRecipient = await fetch(`${baseUrl}/api/messages/${messageSender.address}`, {
+      headers: { Authorization: `Bearer ${recipientToken}` },
+    });
+    const recipientMessages = await fetchedForRecipient.json() as { messages: unknown[] };
+    const recipientCopy = await verifyDeliveredMessage(recipientMessages.messages[0]);
+    expect(recipientCopy).not.toBeNull();
+
+    const fetchedForSender = await fetch(`${baseUrl}/api/messages/${messageRecipient.address}`, {
+      headers: { Authorization: `Bearer ${senderToken}` },
+    });
+    const senderMessages = await fetchedForSender.json() as { messages: unknown[] };
+    const senderCopy = await verifyDeliveredMessage(senderMessages.messages[0]);
+    expect(senderCopy).not.toBeNull();
+
+    expect(await decrypt(
+      recipientCopy!.ct_recipient,
+      recipientCopy!.ephemeral_pub_recipient,
+      recipientCopy!.iv_recipient,
+      messageRecipient.privateKey,
+      canonicalMessageAad(recipientCopy!),
+    )).toBe('authenticated hello');
+    expect(await decrypt(
+      senderCopy!.ct_sender,
+      senderCopy!.ephemeral_pub_sender,
+      senderCopy!.iv_sender,
+      messageSender.privateKey,
+      canonicalMessageAad(senderCopy!),
+    )).toBe('authenticated hello');
+
+    const sseResponse = await sseResponsePromise;
+    const reader = sseResponse.body!.getReader();
+    const decoder = new TextDecoder();
+    let sseText = '';
+    for (let i = 0; i < 3 && !sseText.includes('event: message'); i++) {
+      sseText += decoder.decode((await reader.read()).value);
+    }
+    sseAbort.abort();
+    const eventData = sseText.match(/event: message\ndata: (.+)\n/)?.[1];
+    expect(eventData).toBeTruthy();
+    expect(await verifyDeliveredMessage(JSON.parse(eventData!))).not.toBeNull();
+  });
+
+  test('rejects forged sender/recipient/signature, legacy version, and replay', async () => {
+    const original = await authenticatedEnvelope('mutation test');
+    const otherIdentity = registrationIdentity('9');
+    const mutations: Array<Partial<MessageEnvelope>> = [
+      { sender: messageRecipient.address },
+      { recipient: otherIdentity.address },
+      { signature: `0x${'00'.repeat(65)}` },
+    ];
+    for (const mutation of mutations) {
+      const response = await fetch(baseUrl + '/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+        body: JSON.stringify({ ...original, ...mutation }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+    }
+
+    const wrongSignerEnvelope = await createSignedMessageEnvelope(
+      'wrong signer',
+      300,
+      { privateKey: otherIdentity.privateKey, publicKey: otherIdentity.pubkey, address: otherIdentity.address },
+      messageRecipient.address,
+      messageRecipient.pubkey,
+    );
+    const wrongSigner = await fetch(baseUrl + '/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      body: JSON.stringify({ ...wrongSignerEnvelope, sender: messageSender.address }),
+    });
+    expect(wrongSigner.status).toBe(400);
+
+    const legacy = await fetch(baseUrl + '/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      body: JSON.stringify({ ...original, version: 0 }),
+    });
+    expect(legacy.status).toBe(400);
+
+    const accepted = await fetch(baseUrl + '/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      body: JSON.stringify(original),
+    });
+    expect(accepted.status).toBe(201);
+    const replay = await fetch(baseUrl + '/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      body: JSON.stringify(original),
+    });
+    expect(replay.status).toBe(409);
   });
 });
 
