@@ -71,3 +71,17 @@ there are a separate commit. Never deploy unless asked.
 
 Push notifications need `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` in the droplet's env
 for the systemd unit — soft-disabled (503 on the vapid-key route) without them, not a boot failure.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `endziu/0xchat`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default triage label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. See `docs/agents/domain.md`.
