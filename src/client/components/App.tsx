@@ -1,17 +1,45 @@
-import { useState, useEffect, useCallback } from 'preact/hooks'
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
 import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
 import { usePushSubscription } from '../hooks/usePushSubscription'
+import { createIdentityTransition, type IdentityTransitionDeps } from '../lib/identity-transition'
+import type { Keypair } from '../lib/burner'
 import { Layout } from './Layout'
 import { ChatView } from './ChatView'
 import { ToastProvider } from './Toast'
 
 function AppContent() {
-  const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, importIdentity } = useIdentity()
-  const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout } = useSession(identity)
+  const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, prepareIdentity, commitIdentity } = useIdentity()
+  const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout, createSession, commitSession } = useSession(identity)
   const push = usePushSubscription(token)
   const [path, setPath] = useState(window.location.pathname)
   const [sseConnected, setSseConnected] = useState(false)
+  const [transitioning, setTransitioning] = useState(false)
+  const transitionDeps = useRef<IdentityTransitionDeps>(null!)
+  transitionDeps.current = {
+    setTransitioning,
+    unsubscribePush: push.unsubscribe,
+    clearSession: sessionLogout,
+    prepareIdentity,
+    createSession,
+    commit: (keypair, newToken) => {
+      commitIdentity(keypair)
+      commitSession(keypair.address, newToken)
+    },
+  }
+  const transition = useRef<ReturnType<typeof createIdentityTransition> | null>(null)
+  if (!transition.current) {
+    transition.current = createIdentityTransition({
+      setTransitioning: (value) => transitionDeps.current.setTransitioning(value),
+      unsubscribePush: () => transitionDeps.current.unsubscribePush(),
+      clearSession: () => transitionDeps.current.clearSession(),
+      prepareIdentity: (keypair) => transitionDeps.current.prepareIdentity(keypair),
+      createSession: (keypair) => transitionDeps.current.createSession(keypair),
+      commit: (keypair, newToken) => transitionDeps.current.commit(keypair, newToken),
+    })
+  }
+
+  const importIdentity = useCallback((keypair: Keypair) => transition.current!(keypair), [])
 
   const handleLogout = async () => {
     await push.unsubscribe()
@@ -25,8 +53,8 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
-    if (identity && isRegistered && !token && !sessionLoading) login()
-  }, [identity, isRegistered, token, sessionLoading, login])
+    if (identity && isRegistered && !token && !sessionLoading && !transitioning) login()
+  }, [identity, isRegistered, token, sessionLoading, transitioning, login])
 
   useEffect(() => {
     const handleAuthExpired = () => sessionLogout()
@@ -52,6 +80,10 @@ function AppContent() {
         )}
       </div>
     )
+  }
+
+  if (transitioning) {
+    return <div className="flex items-center justify-center h-dvh text-neutral-600">Switching identity...</div>
   }
 
   if (!token) {

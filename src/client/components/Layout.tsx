@@ -11,7 +11,7 @@ interface LayoutProps {
   children: ComponentChildren
   identity: Keypair | null
   onLogout: () => void
-  onImport?: (keypair: Keypair) => void
+  onImport?: (keypair: Keypair) => Promise<void>
   navigate?: (to: string) => void
   error?: string | null
   sseConnected?: boolean
@@ -123,7 +123,10 @@ export function Layout({
             </div>
             <KeyManagement
               identity={identity}
-              onImport={(kp) => { onImport?.(kp); setShowSettings(false) }}
+              onImport={async (keypair) => {
+                await onImport?.(keypair)
+                setShowSettings(false)
+              }}
             />
             {pushSupported && (
               <div className="mt-4">
