@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { buildRegistrationChallenge, verifyEncryptionPublicKey } from './encryption-key'
+import { buildRegistrationChallenge } from '../../shared/registration-challenge'
+import { verifyEncryptionPublicKey } from './encryption-key'
 
 const privateKey = `0x${'11'.repeat(32)}` as const
 const address = privateKeyToAccount(privateKey).address

@@ -1,21 +1,6 @@
 import * as secp from '@noble/secp256k1'
 import { hexToBytes, keccak256 } from 'viem'
 
-export function buildRegistrationChallenge(
-  origin: string,
-  address: string,
-  publicKey: string,
-  nonce: string,
-): string {
-  return [
-    '0xChat key registration v1',
-    `Origin: ${origin}`,
-    `Address: ${address.toLowerCase()}`,
-    `Public key: ${publicKey.toLowerCase()}`,
-    `Nonce: ${nonce}`,
-  ].join('\n')
-}
-
 export function verifyEncryptionPublicKey(address: string, value: string): string {
   const normalizedAddress = address.trim().toLowerCase()
   const trimmed = value.trim()

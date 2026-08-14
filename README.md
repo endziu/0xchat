@@ -95,6 +95,7 @@ src/
       Toast.tsx                   Transient notifications
   shared/
     message-envelope.ts           Canonical envelope types, parsing, and verification
+    registration-challenge.ts     Canonical registration challenge encoding
 ```
 
 ## Architecture

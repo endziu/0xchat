@@ -1,5 +1,6 @@
 import { getToken, clearToken } from './session'
-import { buildRegistrationChallenge, verifyEncryptionPublicKey } from './encryption-key'
+import { verifyEncryptionPublicKey } from './encryption-key'
+import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-envelope'
 
 export type Message = DeliveredMessage

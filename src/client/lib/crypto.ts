@@ -12,6 +12,28 @@ type RandomBytes = (length: number) => Uint8Array
 
 const secureRandomBytes: RandomBytes = (length) => crypto.getRandomValues(new Uint8Array(length))
 
+async function deriveAesKey(
+  sharedSecret: Uint8Array,
+  ephemeralPublicKey: Uint8Array,
+  usage: 'encrypt' | 'decrypt',
+): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    'raw', sharedSecret, { name: 'HKDF' }, false, ['deriveKey']
+  )
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: ephemeralPublicKey,
+      info: new TextEncoder().encode('ETH-Gate AES-GCM v1'),
+    },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    [usage]
+  )
+}
+
 export async function encrypt(
   plaintext: string,
   recipientPubkeyHex: string,
@@ -25,22 +47,7 @@ export async function encrypt(
   const ephemPub = secp.getPublicKey(ephemPriv, true)
 
   const sharedSecret = secp.getSharedSecret(ephemPriv, recipientPubBytes, true)
-
-  const baseKey = await crypto.subtle.importKey(
-    'raw', sharedSecret, { name: 'HKDF' }, false, ['deriveKey']
-  )
-  const aesKey = await crypto.subtle.deriveKey(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: ephemPub,
-      info: new TextEncoder().encode('ETH-Gate AES-GCM v1'),
-    },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt']
-  )
+  const aesKey = await deriveAesKey(sharedSecret, ephemPub, 'encrypt')
 
   const iv = randomBytes(12)
   const ctBuf = await crypto.subtle.encrypt(
@@ -64,22 +71,7 @@ export async function decrypt(
   const ephemPubBytes = hexToBytes(ensure0x(ephemeralPubkeyHex))
   const privBytes = hexToBytes(ensure0x(privKey))
   const sharedSecret = secp.getSharedSecret(privBytes, ephemPubBytes, true)
-
-  const baseKey = await crypto.subtle.importKey(
-    'raw', sharedSecret, { name: 'HKDF' }, false, ['deriveKey']
-  )
-  const aesKey = await crypto.subtle.deriveKey(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: ephemPubBytes,
-      info: new TextEncoder().encode('ETH-Gate AES-GCM v1'),
-    },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt']
-  )
+  const aesKey = await deriveAesKey(sharedSecret, ephemPubBytes, 'decrypt')
 
   const iv = hexToBytes(ensure0x(ivHex))
   const ciphertextBytes = hexToBytes(ensure0x(ciphertextHex))

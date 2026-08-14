@@ -5,6 +5,7 @@ import { isRateLimited } from '../rate-limit.ts';
 import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn } from '../constants.ts';
+import { buildRegistrationChallenge } from '../../shared/registration-challenge.ts';
 import type { Context } from '../http.ts';
 
 export const regStore = new ChallengeStore();
@@ -22,21 +23,6 @@ function requestOrigin(req: Request): string | null {
   } catch {
     return null;
   }
-}
-
-export function buildRegistrationChallenge(
-  origin: string,
-  address: string,
-  pubkey: string,
-  nonce: string,
-): string {
-  return [
-    '0xChat key registration v1',
-    `Origin: ${origin}`,
-    `Address: ${address}`,
-    `Public key: 0x${pubkey}`,
-    `Nonce: ${nonce}`,
-  ].join('\n');
 }
 
 export async function handleRegisterChallenge({ req, ip }: Context): Promise<Response> {
