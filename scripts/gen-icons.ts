@@ -14,6 +14,22 @@ const crc32 = (buf: Uint8Array) => {
   return (c ^ 0xffffffff) >>> 0
 }
 
+const zlib = (data: Uint8Array) => {
+  const deflated = new Uint8Array(Bun.deflateSync(data))
+  const out = new Uint8Array(deflated.length + 6)
+  out[0] = 0x78 // deflate, 32 KiB window
+  out[1] = 0x01 // valid FCHECK; compression level is informational
+  out.set(deflated, 2)
+
+  let a = 1, b = 0
+  for (const byte of data) {
+    a = (a + byte) % 65521
+    b = (b + a) % 65521
+  }
+  new DataView(out.buffer).setUint32(out.length - 4, (b << 16) | a)
+  return out
+}
+
 const chunk = (type: string, data: Uint8Array) => {
   const out = new Uint8Array(12 + data.length)
   const view = new DataView(out.buffer)
@@ -40,7 +56,7 @@ function encodePng(rgba: Uint8Array, size: number): Uint8Array {
   const parts = [
     new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
-    chunk('IDAT', new Uint8Array(Bun.deflateSync(raw))),
+    chunk('IDAT', zlib(raw)),
     chunk('IEND', new Uint8Array(0)),
   ]
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
