@@ -1,242 +1,147 @@
 # 0xChat
 
-E2E encrypted ephemeral chat between Ethereum addresses. Guidance for working in this repository.
+0xChat is a pseudonymous, end-to-end encrypted chat app where an Ethereum address is your identity. There is no signup, email address, phone number, username, friend request, or wallet connection.
 
-## Commands
+Open the app and it creates a fresh **burner identity** in your browser. Share its address or QR code, start a conversation with another registered address, and choose how long each message should exist—from 5 seconds to 24 hours.
+
+> **Important:** your private key is your account. Export it if you want to keep the identity. Losing browser storage without a backup means losing access permanently. Use a dedicated burner key; do not import a wallet that holds valuable assets.
+
+## What 0xChat does
+
+- Creates and registers an Ethereum-compatible burner identity automatically.
+- Lets people contact each other directly by address or QR code.
+- Encrypts and signs messages in the browser before sending them.
+- Delivers messages live and can send optional, content-free push alerts.
+- Deletes messages after the sender-selected expiry time.
+- Supports text and encrypted image attachments.
+- Works as an installable PWA on mobile and desktop.
+- Lets you export/import your identity and delete your account.
+
+0xChat uses Ethereum cryptography and address formatting, but chatting is **not an onchain transaction**. It does not require a wallet extension, network connection, tokens, or gas.
+
+---
+
+## User documentation
+
+See the **[0xChat user guide](docs/user-guide.md)** for:
+
+- getting started, sharing your address, and starting conversations;
+- sending expiring text and image messages;
+- managing contacts, notifications, and PWA installation;
+- backing up, restoring, or deleting your burner identity;
+- understanding encryption, metadata, expiry, and browser-local data; and
+- troubleshooting registration, identity, notification, camera, and contact issues.
+
+---
+
+# Running the repository
+
+## Requirements
+
+- [Bun](https://bun.sh/)
+- A modern browser with Web Crypto support
+- HTTPS for production PWA, camera, and notification behavior
+
+SQLite is built into Bun; no separate database server is required.
+
+## Install
 
 ```sh
-bun install          # install deps
-bun run dev          # start Vite dev server + backend with debug logs (concurrently)
-bun run build        # build frontend SPA (Vite)
-bun run icons        # regenerate public/ icon set + favicon.svg
+git clone https://github.com/endziu/0xchat.git
+cd 0xchat
+bun install
+cp .env.example .env
+```
+
+The default environment is enough for local chat. Push notifications remain disabled until VAPID keys are configured.
+
+## Development
+
+```sh
+bun run dev
+```
+
+This starts both:
+
+- the Bun API server on `http://localhost:3000`; and
+- the Vite development server, which proxies `/api` to port 3000.
+
+Open the URL printed by Vite. Debug logging is enabled by the development script.
+
+## Environment variables
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `PORT` | `3000` | Bun server port |
+| `DEBUG` | unset | Set to `1` or `true` for verbose server logs |
+| `VAPID_PUBLIC_KEY` | empty | Web Push public key |
+| `VAPID_PRIVATE_KEY` | empty | Web Push private key |
+| `VAPID_SUBJECT` | mailto value | VAPID contact URI, normally `mailto:you@example.com` |
+
+Generate a VAPID pair with:
+
+```sh
+bunx web-push generate-vapid-keys
+```
+
+Copy the generated values into `.env`. Rotating the pair invalidates existing browser push subscriptions. Missing keys do not stop the server; they soft-disable push support.
+
+## Build and run
+
+Build the frontend into `dist/`:
+
+```sh
+bun run build
+```
+
+Run an already-built production server:
+
+```sh
+bun run start:prod
+```
+
+For a clean local demonstration—delete the database, rebuild, and start with debug logs:
+
+```sh
+bun run start
+```
+
+`start` is destructive to the local database. Use `start:prod` when existing data must be preserved.
+
+## Checks
+
+Run the fast required checks before considering a change complete:
+
+```sh
+bun run typecheck
+bun run lint
+```
+
+Run the full test command:
+
+```sh
+bun run test
+```
+
+The full command deletes the local database and `dist/`, builds the app, then runs `bun test`. It is intentionally destructive and slower than the individual checks.
+
+## All repository commands
+
+```sh
+bun install          # install dependencies
+bun run dev          # start Vite + backend with debug logs
+bun run build        # build frontend SPA into dist/
+bun run icons        # regenerate public icons and favicon
 bun run start        # clear db, build, start server with debug logs
-bun run start:prod   # start already-built server (assumes dist/ exists)
+bun run start:prod   # start server using an existing dist/
 bun run clear:db     # delete chat.db and WAL/SHM files only
 bun run clear:dist   # delete dist/ only
-bun run clear:all    # both of the above
-bun run typecheck    # tsc --noEmit
-bun run lint         # oxlint src server.ts
-bun run test         # clear, build, then run bun test
+bun run clear:all    # delete database files and dist/
+bun run typecheck    # TypeScript checks without emitting files
+bun run lint         # lint src and server.ts
+bun run test         # clear all, build, then run Bun tests
 ```
 
-## Project
+Runtime data is stored in `chat.db` beside the project. The database, build output, dependencies, and `.env` are ignored by Git.
 
-**0xChat** — a Preact-based E2E encrypted ephemeral chat between Ethereum addresses using auto-generated **Burner Wallets**.
-
-- **Frontend:** Preact SPA, Tailwind CSS v4, Vite.
-- **Identity:** Burner keypairs generated locally and stored in `localStorage`.
-- **Encryption:** Messages are double-encrypted (once for recipient, once for sender) using ECIES (AES-GCM-256).
-- **Delivery:** Real-time delivery via SSE (Server-Sent Events).
-- **Backend:** Bun HTTP server + SQLite (`bun:sqlite`).
-
-## Source Layout
-
-```
-server.ts                         Entry point — initDb, cleanup timers, Bun.serve
-server.test.ts                    HTTP integration tests
-index.html                        SPA entry point (viewport-fit, manifest, theme-color, apple meta)
-scripts/gen-icons.ts              PWA icon generator — raw PNG encoding, no image deps
-public/
-  manifest.webmanifest            PWA manifest (standalone, start_url /chat)
-  sw.js                           App-shell service worker (never touches /api/)
-  icon-*.png, apple-touch-icon.png, favicon.svg   generated by `bun run icons`
-vite.config.ts                    Frontend build config
-src/
-  server/
-    router.ts                     Route table (method + path matcher → handler), createFetch
-    http.ts                       json() helper, session/bearer extraction
-    constants.ts                  PORT, TTLs, limits, log/warn/error
-    validation.ts                 Address/payload validators
-    challenge.ts                  Challenge store (issue, verify, cleanup)
-    db.ts                         SQLite schema + CRUD
-    sse.ts                        SSE client tracking + push
-    push.ts                       Web Push dispatch (VAPID, no payload)
-    rate-limit.ts                 In-memory rate limiter
-    verify.ts                     EIP-191 signature recovery (viem)
-    routes/
-      register.ts                 Registration challenge + pubkey registration
-      auth.ts                     Auth challenge + session token issuance
-      pubkey.ts                   Pubkey lookup
-      messages.ts                 Send / fetch messages, conversation list
-      account.ts                  Account deletion (cascades + notifies partners)
-      events.ts                   SSE token + event stream
-      push.ts                     VAPID key, push subscribe/unsubscribe
-      static.ts                   Serves dist/ with SPA fallback
-  client/
-    main.tsx                      Preact entry point
-    styles.css                    Tailwind v4 entry point
-    lib/
-      burner.ts                   Key generation, storage, EIP-191 signing
-      crypto.ts                   ECIES encrypt/decrypt (Web Crypto API)
-      api.ts                      Typed API client
-      contacts.ts                 localStorage contact memory, deletions, last-seen
-      session.ts                  Identity-bound bearer token storage
-      identity-transition.ts      Coordinated push/session/identity import transition
-      encryption-key.ts           Registration challenge + fetched pubkey verification
-      message-envelope.ts         Signed protocol-v1 envelope construction
-      hex.ts                      Hex helpers
-    hooks/
-      useIdentity.ts              Local account lifecycle (auto-registers on first visit)
-      useSession.ts               Auth token management
-      useConversations.ts         Conversation list, merged with local contacts + unread state
-      useMessages.ts              Message loading/decryption/sending
-      useSSE.ts                   SSE listener lifecycle
-      useInstallPrompt.ts         beforeinstallprompt / iOS add-to-home-screen detection
-      usePushSubscription.ts      Web Push opt-in/out (explicit gesture only)
-    components/
-      App.tsx                     Root router & layout wrapper
-      Layout.tsx                  Page shell
-      ChatView.tsx                Main chat interface
-      MessagePane.tsx             Message bubbles & input (supports image paste)
-      ConversationList.tsx        Sidebar contacts, delete conversation, unread dot
-      KeyManagement.tsx           Key export/import settings
-      QRModal.tsx                 Address QR display + camera scanner
-      InstallBanner.tsx           Dismissible "install as an app" bar
-      Toast.tsx                   Transient notifications
-  shared/
-    message-envelope.ts           Canonical envelope types, parsing, and verification
-    registration-challenge.ts     Canonical registration challenge encoding
-```
-
-## Architecture
-
-**Identity & Registration:**
-- Unique secp256k1 keypair is generated on first visit and stored in `localStorage`. Registration is automatic — there is no onboarding screen.
-- `POST /api/register/challenge { address, pubkey }` validates the compressed secp256k1 key and
-  returns a single-use challenge binding the `0xChat key registration v1` context, request origin,
-  normalized address, normalized key, and nonce. Issuance is rate-limited and pending state bounded.
-- Client verifies the canonical challenge before signing. `POST /api/register` accepts only the exact
-  challenged address/key pair and revalidates that the key derives the claimed Ethereum address.
-- Fetched encryption keys are independently point- and address-validated client-side before use.
-
-**Contacts & conversations:**
-- The sidebar merges server-side conversations with a local contact list in `localStorage` (`eth_chat_known_contacts_v1`), so a contact stays visible after its messages expire.
-- Deleting a conversation records it in `eth_chat_deleted_contacts_v1`; it stays hidden until a newer `last_message_at` supersedes the deletion. Deletion is local-only.
-- Unread state is tracked per address via `last_seen_<address>` keys.
-- `DELETE /api/addresses/:addr` (self only) removes the pubkey, sessions, and conversations server-side, and notifies partners over SSE with `user:disconnected`.
-
-**Session Authentication:**
-- `POST /api/auth/challenge { address }` → returns a unique challenge + nonce.
-- Client signs challenge → `POST /api/auth/session` → returns 24h bearer token.
-- Tokens are stored with their owning address and loaded only when it matches the active identity;
-  legacy unbound tokens are discarded. 401 errors trigger local token clearing.
-- Explicit identity import unsubscribes old push state, clears old auth, registers and authenticates
-  the imported key, then commits the new identity and fresh address-bound token together.
-
-**Message flow:**
-- Sender encrypts plaintext twice: ECIES with recipient pubkey + ECIES with own pubkey.
-- `POST /api/messages` with ciphertexts, ephemeral keys, and IVs.
-- Server stores message, notifies both parties via SSE.
-- Clients decrypt their respective ciphertext using their private key.
-- Supports image pasting: images are converted to data URLs and encrypted as text.
-
-**Push notifications (offline wakeup):**
-- Standards-based Web Push (VAPID) — the right fit for a PWA with an existing
-  service worker, and on iOS/iPadOS Home Screen apps the push service is
-  APNs with no Apple Developer Program membership required.
-- SSE remains the live-delivery channel. Push is a side-channel wakeup
-  only — not the transport, not a delivery/read receipt, not durable
-  storage. The server persists the message and notifies over SSE first;
-  `pushNotify(recipient, ttl)` fires after, fire-and-forget, never blocking
-  or failing the send. `ttl` is passed through as the Web Push `TTL` header,
-  capping delivery to the message's own remaining lifetime.
-- **Payload-less by design:** `sendNotification` carries no payload, so the
-  relay (FCM/Mozilla/Apple) learns only that some subscription was pinged,
-  at some time — never sender, recipient, message id, or conversation hint.
-  The service worker's `push` handler ignores `event.data` and shows a
-  static "0xChat / New message" from its own hardcoded strings. One
-  consequence: tapping a notification always opens `/chat` (the
-  conversation list), never a specific thread — the service worker has no
-  thread info to route to.
-- **Storage:** `push_subscriptions(endpoint PK, address, p256dh, auth,
-  created_at)`, indexed on `address`. One address can hold multiple
-  subscriptions (phone, desktop, several browsers) — `pushNotify` fans out
-  to all of them. Rows are purged on account deletion and pruned
-  individually when a provider reports a subscription dead (404/410 from
-  `sendNotification`).
-- **Opt-in only:** the client never auto-subscribes — browsers block
-  `Notification.requestPermission()` outside a direct user gesture.
-  `usePushSubscription` only checks for an *existing* subscription on
-  mount; `subscribe()` is wired to an explicit "Enable notifications"
-  button in the settings panel. Logout unsubscribes first, both
-  browser-side and server-side.
-- **Config:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, read
-  from env (`.env.example`). Soft-disabled (not a boot failure) if unset, so
-  dev works without them configured.
-- **Not implemented — deferred:** `pushsubscriptionchange` handling in the
-  service worker (a stale client-side subscription is only cleaned up
-  server-side once a push to it 404s/410s); installation-level presence
-  suppression (a device with the conversation already open via SSE still
-  gets pushed to — simpler, and preferred over silently missing an offline
-  device).
-
-**Authenticated message protocol cutover:**
-- Protocol v1 is the only accepted message format. Clients generate a 128-bit message ID, use the
-  canonical version/ID/sender/recipient/TTL metadata as AES-GCM AAD for both encrypted copies, then
-  EIP-191-sign the canonical envelope containing both ciphertexts, ephemeral keys, and IVs.
-- The server verifies the session sender, version, shape, TTL, recipient, signature, and unique ID
-  before persistence or notification. Fetch and SSE clients repeat envelope and participant
-  verification before decryption.
-- This is a hard cutover: on first startup with the v1 schema, all unexpired legacy message rows are
-  deleted because they cannot be authenticated safely. Old clients receive 400 for missing or
-  unsupported envelope versions; there is no legacy read/write fallback or silent downgrade.
-
-**Expiry:**
-- Messages auto-delete after TTL — the composer offers 5s, 10s, 30s, 1m, 5m, 30m, 1h, 6h, 24h
-  (`VALID_TTLS` in `src/server/constants.ts` is the authority; the server rejects anything else).
-- Server cleans DB every 30s; client removes messages from state via timers or refreshes.
-
-## Mobile & Installability
-
-The app is an installable PWA and is built touch-first.
-
-- **Standalone launch:** `manifest.webmanifest` (`display: standalone`, `start_url: /chat`) plus
-  `apple-mobile-web-app-capable` gives a home-screen icon and a chromeless window on both platforms.
-- **Install prompt:** `useInstallPrompt` defers Chromium's `beforeinstallprompt` behind an in-app
-  banner and, on iOS Safari where there is no such API, shows Share-sheet instructions instead.
-  Dismissal is remembered in `eth_chat_install_dismissed_v1`.
-- **Offline shell:** `public/sw.js` precaches `/chat` and the icons, serves navigations
-  network-first and hashed assets cache-first. `/api/*` is excluded outright, so no ciphertext,
-  token or SSE traffic is ever cached. The same worker also handles `push` (shows a static,
-  payload-less notification) and `notificationclick` (focuses an existing window or opens `/chat`).
-- **Touch targets:** `@media (pointer: coarse)` in `styles.css` gives every `button`/`select` a
-  44×44 minimum, and `touch-action: manipulation` removes the double-tap-zoom delay.
-- **Hover affordances:** the `can-hover:` custom variant (`(hover: hover) and (pointer: fine)`)
-  guards anything hidden until hover — conversation rename/delete stay visible on touch, where the
-  delete then takes two taps to confirm.
-- **Safe areas:** `viewport-fit=cover` plus `safe-top` / `safe-bottom` / `safe-x` utilities on the
-  Layout shell keep content clear of the notch and home indicator.
-- **Icons:** `scripts/gen-icons.ts` rasterises the ⬡ mark and writes PNGs directly (CRC32 + zlib via
-  `Bun.deflateSync`), including a 28%-padded maskable variant. Regenerate with `bun run icons`.
-
-## Crypto Scheme
-
-- **Key Derivation:** `crypto.getRandomValues(32)` for raw entropy.
-- **Encryption:** ECIES — ephemeral ECDH + HKDF-SHA-256 + AES-GCM-256, with canonical envelope
-  metadata supplied as AES-GCM additional authenticated data for both message copies.
-- **Authentication:** EIP-191 signature over the complete canonical protocol-v1 envelope.
-- **Standards:** All hex strings in API/DB use the `0x` prefix for compatibility with `viem`.
-- **Library:** `@noble/secp256k1` (v3) for curve math, `viem` for addresses/signatures.
-
-## API
-
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| GET | `/*` | - | Serves `dist/` or `index.html` (SPA fallback) |
-| POST | `/api/register/challenge` | - | Issue single-use registration challenge |
-| POST | `/api/register` | - | Verify sig → register pubkey for an address |
-| GET | `/api/pubkey/:addr` | - | Lookup a registered pubkey (returns null if not found) |
-| POST | `/api/auth/challenge`| - | Issue unique auth challenge |
-| POST | `/api/auth/session` | - | Verify sig → return bearer token |
-| POST | `/api/messages` | Bearer | Send double-encrypted message/image |
-| GET | `/api/messages/:addr`| Bearer | Fetch conversation history (reversed for UI) |
-| GET | `/api/conversations`| Bearer | List active conversations |
-| DELETE | `/api/addresses/:addr` | Bearer | Delete own account (pubkey, sessions, conversations) |
-| POST | `/api/events/token` | Bearer | Exchange bearer token for a short-lived SSE token |
-| GET | `/api/events?token=` | Token | SSE event stream |
-| GET | `/api/push/vapid-public-key` | - | Return the VAPID public key (503 if push unconfigured) |
-| POST | `/api/push/subscribe` | Bearer | Upsert a push subscription for the session address |
-| POST | `/api/push/unsubscribe` | Bearer | Delete a push subscription by `(address, endpoint)` |
-
-Only `/api/*`, static asset extensions, `/chat`, `/chat/*`, `/pk`, and exact `/` are reachable in
-production — Nginx returns `444` for everything else. New routes must live under `/api/`.
+---
