@@ -2,57 +2,76 @@ import { randomBytes } from 'node:crypto';
 
 interface ChallengeEntry {
   challenge: string;
-  address: string;
+  subject: string;
   expiresAt: number;
 }
 
-const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+interface ChallengeStoreOptions {
+  ttlMs?: number;
+  maxEntries?: number;
+  now?: () => number;
+}
+
+const DEFAULT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_MAX_ENTRIES = 10_000;
 
 export class ChallengeStore {
   private readonly entries = new Map<string, ChallengeEntry>();
-  private readonly addressToNonce = new Map<string, string>();
+  private readonly subjectToNonce = new Map<string, string>();
+  private readonly ttlMs: number;
+  private readonly maxEntries: number;
+  private readonly now: () => number;
 
-  /**
-   * Issue a new challenge for `address`.
-   * `buildChallenge` receives the generated nonce and returns the challenge string.
-   * Replaces any existing outstanding challenge for this address.
-   */
-  issue(address: string, buildChallenge: (nonce: string) => string): { challenge: string; nonce: string } {
+  constructor(options: ChallengeStoreOptions = {}) {
+    this.ttlMs = options.ttlMs ?? DEFAULT_CHALLENGE_TTL_MS;
+    this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    this.now = options.now ?? Date.now;
+  }
+
+  /** Issue one challenge per subject, evicting the oldest entry at the hard limit. */
+  issue(subject: string, buildChallenge: (nonce: string) => string): { challenge: string; nonce: string } {
     const nonce = randomBytes(16).toString('hex');
     const challenge = buildChallenge(nonce);
 
-    const oldNonce = this.addressToNonce.get(address);
+    const oldNonce = this.subjectToNonce.get(subject);
     if (oldNonce) this.entries.delete(oldNonce);
 
-    this.addressToNonce.set(address, nonce);
-    this.entries.set(nonce, { challenge, address, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+    if (!oldNonce && this.entries.size >= this.maxEntries) {
+      const oldestNonce = this.entries.keys().next().value as string | undefined;
+      if (oldestNonce) {
+        const oldest = this.entries.get(oldestNonce)!;
+        this.entries.delete(oldestNonce);
+        this.subjectToNonce.delete(oldest.subject);
+      }
+    }
+
+    this.subjectToNonce.set(subject, nonce);
+    this.entries.set(nonce, { challenge, subject, expiresAt: this.now() + this.ttlMs });
 
     return { challenge, nonce };
   }
 
-  /**
-   * Consume a challenge by nonce + address. Returns the challenge string on success,
-   * or null if not found, expired, or address mismatch.
-   */
-  consume(nonce: string, address: string): string | null {
+  /** Consume once by nonce + exact subject. */
+  consume(nonce: string, subject: string): string | null {
     const entry = this.entries.get(nonce);
-    if (!entry || entry.expiresAt < Date.now()) {
+    if (!entry || entry.expiresAt <= this.now()) {
+      if (entry) this.subjectToNonce.delete(entry.subject);
       this.entries.delete(nonce);
       return null;
     }
-    if (entry.address !== address) return null;
+    if (entry.subject !== subject) return null;
 
     this.entries.delete(nonce);
-    this.addressToNonce.delete(address);
+    this.subjectToNonce.delete(subject);
     return entry.challenge;
   }
 
   cleanup(): void {
-    const now = Date.now();
+    const now = this.now();
     for (const [nonce, entry] of this.entries) {
-      if (entry.expiresAt < now) {
+      if (entry.expiresAt <= now) {
         this.entries.delete(nonce);
-        this.addressToNonce.delete(entry.address);
+        this.subjectToNonce.delete(entry.subject);
       }
     }
   }

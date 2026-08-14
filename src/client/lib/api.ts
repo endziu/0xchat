@@ -1,4 +1,5 @@
 import { getToken, clearToken } from './session'
+import { buildRegistrationChallenge, verifyEncryptionPublicKey } from './encryption-key'
 
 export interface Message {
   id: string
@@ -46,12 +47,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  getRegChallenge: (address: string): Promise<{ challenge: string; nonce: string }> =>
-    request('/api/register/challenge', {
+  getRegChallenge: async (address: string, pubkey: string): Promise<{ challenge: string; nonce: string }> => {
+    const normalizedAddress = address.toLowerCase()
+    const normalizedPubkey = verifyEncryptionPublicKey(normalizedAddress, pubkey)
+    const result = await request<{ challenge: string; nonce: string }>('/api/register/challenge', {
       method: 'POST',
-      body: JSON.stringify({ address }),
+      body: JSON.stringify({ address: normalizedAddress, pubkey: normalizedPubkey }),
       headers: { 'Content-Type': 'application/json' },
-    }),
+    })
+    const expected = buildRegistrationChallenge(
+      window.location.origin,
+      normalizedAddress,
+      normalizedPubkey,
+      result.nonce,
+    )
+    if (result.challenge !== expected) throw new Error('Invalid registration challenge')
+    return result
+  },
 
   register: (address: string, pubkey: string, signature: string, nonce: string) =>
     request('/api/register', {
@@ -60,8 +72,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  getPubkey: (address: string): Promise<{ pubkey: string | null }> =>
-    request(`/api/pubkey/${address}`),
+  getPubkey: async (address: string): Promise<{ pubkey: string | null }> => {
+    const result = await request<{ pubkey: string | null }>(`/api/pubkey/${address}`)
+    return {
+      pubkey: result.pubkey === null ? null : verifyEncryptionPublicKey(address, result.pubkey),
+    }
+  },
 
   getChallenge: (address: string): Promise<{ challenge: string; nonce: string }> =>
     request('/api/auth/challenge', {

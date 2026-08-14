@@ -15,7 +15,7 @@ export function useIdentity() {
   }, [])
 
   const registerIdentity = useCallback(async (keypair: Keypair): Promise<void> => {
-    const { challenge, nonce } = await api.getRegChallenge(keypair.address)
+    const { challenge, nonce } = await api.getRegChallenge(keypair.address, keypair.publicKey)
     const signature = await signEIP191(challenge, keypair.privateKey)
     await api.register(keypair.address, keypair.publicKey, signature, nonce)
   }, [])

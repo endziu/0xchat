@@ -6,6 +6,38 @@ import {
   test,
 } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import * as secp from '@noble/secp256k1';
+import { bytesToHex, hexToBytes } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+function registrationIdentity(byte: string) {
+  const privateKey = `0x${byte.repeat(64)}` as `0x${string}`;
+  return {
+    privateKey,
+    address: privateKeyToAccount(privateKey).address.toLowerCase(),
+    pubkey: bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true)),
+  };
+}
+
+function registrationPayload(
+  identity: ReturnType<typeof registrationIdentity>,
+  signature: string,
+  nonce: string,
+) {
+  return { address: identity.address, pubkey: identity.pubkey, signature, nonce };
+}
+
+async function issueRegistration(base: string, identity: ReturnType<typeof registrationIdentity>) {
+  const response = await fetch(base + '/api/register/challenge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: identity.address, pubkey: identity.pubkey }),
+  });
+  return {
+    response,
+    data: (await response.json()) as { challenge: string; nonce: string; error?: string },
+  };
+}
 
 const PORT = 9876 + Math.floor(Math.random() * 100);
 let baseUrl: string;
@@ -128,6 +160,95 @@ describe('auth routes', () => {
       }),
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe('registration routes', () => {
+  test('registers an address-bound key with a canonical challenge', async () => {
+    const identity = registrationIdentity('1');
+    const { response, data } = await issueRegistration(baseUrl, identity);
+
+    expect(response.status).toBe(200);
+    expect(data.challenge).toBe(
+      `0xChat key registration v1\nOrigin: ${baseUrl}\nAddress: ${identity.address}\nPublic key: ${identity.pubkey}\nNonce: ${data.nonce}`,
+    );
+
+    const signature = await privateKeyToAccount(identity.privateKey).signMessage({ message: data.challenge });
+    const registered = await fetch(baseUrl + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload(identity, signature, data.nonce)),
+    });
+    expect(registered.status).toBe(200);
+
+    const fetched = await fetch(baseUrl + `/api/pubkey/${identity.address}`);
+    expect(await fetched.json()).toEqual({ pubkey: identity.pubkey });
+
+    const second = await issueRegistration(baseUrl, identity);
+    const secondSignature = await privateKeyToAccount(identity.privateKey).signMessage({
+      message: second.data.challenge,
+    });
+    const reregistered = await fetch(baseUrl + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload(identity, secondSignature, second.data.nonce)),
+    });
+    expect(reregistered.status).toBe(200);
+  });
+
+  test('rejects malformed, off-curve, and address-mismatched keys at challenge issuance', async () => {
+    const identity = registrationIdentity('2');
+    for (const pubkey of ['0x1234', `0x02${'00'.repeat(32)}`, registrationIdentity('3').pubkey]) {
+      const challengeResponse = await fetch(baseUrl + '/api/register/challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: identity.address, pubkey }),
+      });
+      expect(challengeResponse.status).toBe(400);
+    }
+  });
+
+  test('consumes challenges only for the exact address and key', async () => {
+    const first = registrationIdentity('4');
+    const other = registrationIdentity('5');
+    const { data } = await issueRegistration(baseUrl, first);
+    const otherSignature = await privateKeyToAccount(other.privateKey).signMessage({ message: data.challenge });
+
+    const mismatch = await fetch(baseUrl + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload(other, otherSignature, data.nonce)),
+    });
+    expect(mismatch.status).toBe(401);
+
+    const signature = await privateKeyToAccount(first.privateKey).signMessage({ message: data.challenge });
+    const exact = await fetch(baseUrl + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload(first, signature, data.nonce)),
+    });
+    expect(exact.status).toBe(200);
+  });
+
+  test('rejects altered challenge fields and challenge replay', async () => {
+    const identity = registrationIdentity('6');
+    const { data } = await issueRegistration(baseUrl, identity);
+    const altered = data.challenge.replace('0xChat key registration v1', '0xChat key registration v2');
+    const alteredSignature = await privateKeyToAccount(identity.privateKey).signMessage({ message: altered });
+
+    const rejected = await fetch(baseUrl + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload(identity, alteredSignature, data.nonce)),
+    });
+    expect(rejected.status).toBe(401);
+
+    const replay = await fetch(baseUrl + '/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload(identity, alteredSignature, data.nonce)),
+    });
+    expect(replay.status).toBe(401);
   });
 });
 
