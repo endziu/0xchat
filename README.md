@@ -72,6 +72,8 @@ src/
       contacts.ts                 localStorage contact memory, deletions, last-seen
       session.ts                  Identity-bound bearer token storage
       identity-transition.ts      Coordinated push/session/identity import transition
+      encryption-key.ts           Registration challenge + fetched pubkey verification
+      message-envelope.ts         Signed protocol-v1 envelope construction
       hex.ts                      Hex helpers
     hooks/
       useIdentity.ts              Local account lifecycle (auto-registers on first visit)
@@ -88,8 +90,11 @@ src/
       MessagePane.tsx             Message bubbles & input (supports image paste)
       ConversationList.tsx        Sidebar contacts, delete conversation, unread dot
       KeyManagement.tsx           Key export/import settings
+      QRModal.tsx                 Address QR display + camera scanner
       InstallBanner.tsx           Dismissible "install as an app" bar
       Toast.tsx                   Transient notifications
+  shared/
+    message-envelope.ts           Canonical envelope types, parsing, and verification
 ```
 
 ## Architecture
