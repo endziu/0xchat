@@ -70,7 +70,8 @@ src/
       crypto.ts                   ECIES encrypt/decrypt (Web Crypto API)
       api.ts                      Typed API client
       contacts.ts                 localStorage contact memory, deletions, last-seen
-      session.ts                  Bearer token storage
+      session.ts                  Identity-bound bearer token storage
+      identity-transition.ts      Coordinated push/session/identity import transition
       hex.ts                      Hex helpers
     hooks/
       useIdentity.ts              Local account lifecycle (auto-registers on first visit)
@@ -107,7 +108,10 @@ src/
 **Session Authentication:**
 - `POST /api/auth/challenge { address }` → returns a unique challenge + nonce.
 - Client signs challenge → `POST /api/auth/session` → returns 24h bearer token.
-- Token is sent in `Authorization: Bearer <token>` headers. 401 errors trigger local token clearing.
+- Tokens are stored with their owning address and loaded only when it matches the active identity;
+  legacy unbound tokens are discarded. 401 errors trigger local token clearing.
+- Explicit identity import unsubscribes old push state, clears old auth, registers and authenticates
+  the imported key, then commits the new identity and fresh address-bound token together.
 
 **Message flow:**
 - Sender encrypts plaintext twice: ECIES with recipient pubkey + ECIES with own pubkey.

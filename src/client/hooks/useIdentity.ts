@@ -9,63 +9,46 @@ export function useIdentity() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const checkRegistration = useCallback(async (address: string): Promise<boolean> => {
-    try {
-      const { pubkey } = await api.getPubkey(address)
-      const registered = !!pubkey
-      setIsRegistered(registered)
-      return registered
-    } catch (err) {
-      console.error('Failed to check registration:', err)
-      setIsRegistered(false)
-      return false
-    }
+  const isAddressRegistered = useCallback(async (address: string): Promise<boolean> => {
+    const { pubkey } = await api.getPubkey(address)
+    return !!pubkey
   }, [])
 
-  const register = useCallback(async (kp?: Keypair): Promise<void> => {
-    const key = kp ?? identity
-    if (!key) return
-    setLoading(true)
-    try {
-      const { challenge, nonce } = await api.getRegChallenge(key.address)
-      const sig = await signEIP191(challenge, key.privateKey)
-      await api.register(key.address, key.publicKey, sig, nonce)
-      setIsRegistered(true)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Registration failed'
-      setError(msg)
-      console.error('Registration failed:', err)
-      throw err
-    } finally {
-      setLoading(false)
+  const registerIdentity = useCallback(async (keypair: Keypair): Promise<void> => {
+    const { challenge, nonce } = await api.getRegChallenge(keypair.address)
+    const signature = await signEIP191(challenge, keypair.privateKey)
+    await api.register(keypair.address, keypair.publicKey, signature, nonce)
+  }, [])
+
+  const prepareIdentity = useCallback(async (keypair: Keypair): Promise<void> => {
+    if (!await isAddressRegistered(keypair.address)) {
+      await registerIdentity(keypair)
     }
-  }, [identity])
+  }, [isAddressRegistered, registerIdentity])
+
+  const commitIdentity = useCallback((keypair: Keypair): void => {
+    saveKeypair(keypair)
+    setIdentity(keypair)
+    setIsRegistered(true)
+    setError(null)
+  }, [])
 
   useEffect(() => {
     async function init() {
       setLoading(true)
       try {
-        // Load existing or generate new keypair
         const loaded = loadKeypair()
-        const kp = loaded ?? (() => {
-          const generated = generateKeypair()
-          saveKeypair(generated)
-          return generated
-        })()
+        const keypair = loaded ?? generateKeypair()
+        if (!loaded) saveKeypair(keypair)
 
-        setIdentity(kp)
+        setIdentity(keypair)
         setError(null)
-
-        // Check registration status
-        const registered = await checkRegistration(kp.address)
-
-        // Auto-register if not yet registered
-        if (!registered) {
-          await register(kp)
-        }
+        await prepareIdentity(keypair)
+        setIsRegistered(true)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Initialization failed'
-        setError(msg)
+        const message = err instanceof Error ? err.message : 'Initialization failed'
+        setError(message)
+        setIsRegistered(false)
         console.error('Identity init failed:', err)
       } finally {
         setLoading(false)
@@ -73,19 +56,17 @@ export function useIdentity() {
     }
 
     init()
-  }, [])
+  }, [prepareIdentity])
 
   const logout = useCallback(async () => {
-    const token = getToken()
+    const token = identity ? getToken(identity.address) : null
     let deleteError: string | null = null
 
-    // Only try to delete if we have a valid token
     if (identity && token) {
       try {
         await api.deleteAddress(identity.address)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to notify server'
-        deleteError = msg
+        deleteError = err instanceof Error ? err.message : 'Failed to notify server'
         console.error('Failed to delete address:', err)
       }
     }
@@ -100,33 +81,22 @@ export function useIdentity() {
       saveKeypair(generated)
       setIdentity(generated)
       setError(deleteError ? `Logged out locally. Server cleanup failed: ${deleteError}` : null)
-      const registered = await checkRegistration(generated.address)
-      if (!registered) {
-        await register(generated)
-      }
+      await prepareIdentity(generated)
+      setIsRegistered(true)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to save new key'
-      setError(msg)
+      const message = err instanceof Error ? err.message : 'Failed to save new key'
+      setError(message)
       console.error('Failed to save new keypair:', err)
     }
-  }, [identity, checkRegistration, register])
+  }, [identity, prepareIdentity])
 
-  const importIdentity = useCallback(async (keypair: Keypair): Promise<void> => {
-    try {
-      saveKeypair(keypair)
-      setIdentity(keypair)
-      setError(null)
-      const registered = await checkRegistration(keypair.address)
-      if (!registered) {
-        await register(keypair)
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to import identity'
-      setError(msg)
-      console.error('Import identity failed:', err)
-      throw err
-    }
-  }, [checkRegistration, register])
-
-  return { identity, isRegistered, loading, error, logout, importIdentity }
+  return {
+    identity,
+    isRegistered,
+    loading,
+    error,
+    logout,
+    prepareIdentity,
+    commitIdentity,
+  }
 }

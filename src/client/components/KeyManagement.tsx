@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'preact/hooks'
-import { Keypair, saveKeypair, deriveKeypair } from '../lib/burner'
+import { Keypair, deriveKeypair } from '../lib/burner'
 import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
 import { useToast } from './Toast'
 
 interface KeyManagementProps {
   identity: Keypair
-  onImport: (keypair: Keypair) => void
+  onImport: (keypair: Keypair) => Promise<void>
 }
 
 export function KeyManagement({ identity, onImport }: KeyManagementProps) {
@@ -30,11 +30,10 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
     } catch (err: any) { toast(err.message, 'error') }
   }
 
-  const handleImportConfirm = () => {
+  const handleImportConfirm = async () => {
     if (!previewKeypair) return
     try {
-      saveKeypair(previewKeypair)
-      onImport(previewKeypair)
+      await onImport(previewKeypair)
       setImportHex('')
       setPreviewKeypair(null)
       toast('Key imported', 'success')
