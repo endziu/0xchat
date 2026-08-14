@@ -21,7 +21,7 @@ bun run test         # clear, build, then run bun test
 
 ## Project
 
-**ETH-Chat** — a Preact-based E2E encrypted ephemeral chat between Ethereum addresses using auto-generated **Burner Wallets**.
+**0xChat** — a Preact-based E2E encrypted ephemeral chat between Ethereum addresses using auto-generated **Burner Wallets**.
 
 - **Frontend:** Preact SPA, Tailwind CSS v4, Vite.
 - **Identity:** Burner keypairs generated locally and stored in `localStorage`.

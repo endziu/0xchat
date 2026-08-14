@@ -1,5 +1,5 @@
 {
-  "name": "0xChat — Ephemeral & E2E Encrypted",
+  "name": "0xChat",
   "short_name": "0xChat",
   "description": "End-to-end encrypted ephemeral chat between Ethereum addresses.",
   "id": "/chat",

@@ -181,7 +181,7 @@ describe('auth routes', () => {
     const data = (await res.json()) as {
       challenge: string; nonce: string;
     };
-    expect(data.challenge).toContain('ETH-Chat session request');
+    expect(data.challenge).toContain('0xChat session request');
     expect(data.nonce).toBeTruthy();
   });
 

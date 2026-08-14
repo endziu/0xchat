@@ -32,7 +32,7 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
 
   const { challenge, nonce } = authStore.issue(
     address,
-    (n) => `ETH-Chat session request\nAddress: ${address}\nNonce: ${n}`,
+    (n) => `0xChat session request\nAddress: ${address}\nNonce: ${n}`,
   );
 
   return json({ challenge, nonce });

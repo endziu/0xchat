@@ -26,4 +26,4 @@ Bun.serve({
   },
 });
 
-console.log(`eth-chat server running on http://localhost:${PORT}`);
+console.log(`0xChat server running on http://localhost:${PORT}`);
