@@ -2,15 +2,50 @@ import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
 import { json } from '../http.ts';
 import { isRateLimited } from '../rate-limit.ts';
-import { isValidAddress, isHex, isValidSig } from '../validation.ts';
+import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
 
 export const regStore = new ChallengeStore();
 
-export async function handleRegisterChallenge({ req }: Context): Promise<Response> {
-  let body: { address?: unknown };
+function registrationSubject(address: string, pubkey: string): string {
+  return `${address}:${pubkey}`;
+}
+
+function requestOrigin(req: Request): string | null {
+  const value = req.headers.get('Origin') ?? new URL(req.url).origin;
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.origin !== value) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function buildRegistrationChallenge(
+  origin: string,
+  address: string,
+  pubkey: string,
+  nonce: string,
+): string {
+  return [
+    '0xChat key registration v1',
+    `Origin: ${origin}`,
+    `Address: ${address}`,
+    `Public key: 0x${pubkey}`,
+    `Nonce: ${nonce}`,
+  ].join('\n');
+}
+
+export async function handleRegisterChallenge({ req, ip }: Context): Promise<Response> {
+  if (isRateLimited(`${ip}:register-challenge`)) {
+    warn('[rate-limit] register-challenge', ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
+
+  let body: { address?: unknown; pubkey?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -23,9 +58,18 @@ export async function handleRegisterChallenge({ req }: Context): Promise<Respons
     return json({ error: 'Invalid address' }, 400);
   }
 
+  const pubkey = normalizeAddressBoundPubkey(address, body.pubkey);
+  if (!pubkey) {
+    warn('[invalid]', '/api/register/challenge', 'bad or mismatched pubkey');
+    return json({ error: 'Invalid public key for address' }, 400);
+  }
+
+  const origin = requestOrigin(req);
+  if (!origin) return json({ error: 'Invalid origin' }, 400);
+
   const { challenge, nonce } = regStore.issue(
-    address,
-    (n) => `ETH-Gate keypair v1\nAddress: ${address}\nNonce: ${n}`,
+    registrationSubject(address, pubkey),
+    (n) => buildRegistrationChallenge(origin, address, pubkey, n),
   );
 
   return json({ challenge, nonce });
@@ -46,8 +90,6 @@ export async function handleRegister({ req, ip }: Context): Promise<Response> {
   }
 
   const address = typeof body.address === 'string' ? body.address.trim().toLowerCase() : '';
-  let pubkey = typeof body.pubkey === 'string' ? body.pubkey.trim().toLowerCase() : '';
-  if (pubkey.startsWith('0x')) pubkey = pubkey.slice(2);
   const signature = typeof body.signature === 'string' ? body.signature : '';
   const nonce = typeof body.nonce === 'string' ? body.nonce : '';
 
@@ -55,16 +97,17 @@ export async function handleRegister({ req, ip }: Context): Promise<Response> {
     warn('[invalid] register bad address', address);
     return json({ error: 'invalid address' }, 400);
   }
-  if (!isHex(pubkey, 33)) {
-    warn('[invalid] register bad pubkey', pubkey);
-    return json({ error: 'pubkey must be 33-byte compressed hex' }, 400);
+  const pubkey = normalizeAddressBoundPubkey(address, body.pubkey);
+  if (!pubkey) {
+    warn('[invalid] register bad or mismatched pubkey');
+    return json({ error: 'invalid public key for address' }, 400);
   }
   if (!isValidSig(signature)) {
     warn('[invalid] register bad signature format');
     return json({ error: 'invalid signature format' }, 400);
   }
 
-  const challenge = regStore.consume(nonce, address);
+  const challenge = regStore.consume(nonce, registrationSubject(address, pubkey));
   if (!challenge) {
     warn('[invalid] register challenge not found/expired', nonce);
     return json({ error: 'Invalid or expired challenge' }, 401);

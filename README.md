@@ -96,8 +96,12 @@ src/
 
 **Identity & Registration:**
 - Unique secp256k1 keypair is generated on first visit and stored in `localStorage`. Registration is automatic — there is no onboarding screen.
-- `POST /api/register/challenge { address }` → returns a nonce-bound challenge (`"ETH-Gate keypair v1\nAddress: …\nNonce: …"`).
-- Client signs it → `POST /api/register` with address, compressed pubkey, signature, and nonce. The challenge is single-use.
+- `POST /api/register/challenge { address, pubkey }` validates the compressed secp256k1 key and
+  returns a single-use challenge binding the `0xChat key registration v1` context, request origin,
+  normalized address, normalized key, and nonce. Issuance is rate-limited and pending state bounded.
+- Client verifies the canonical challenge before signing. `POST /api/register` accepts only the exact
+  challenged address/key pair and revalidates that the key derives the claimed Ethereum address.
+- Fetched encryption keys are independently point- and address-validated client-side before use.
 
 **Contacts & conversations:**
 - The sidebar merges server-side conversations with a local contact list in `localStorage` (`eth_chat_known_contacts_v1`), so a contact stays visible after its messages expire.
