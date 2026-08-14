@@ -18,12 +18,14 @@ export function warn(...args: unknown[]): void {
   console.warn(...args);
 }
 
+const FRAGMENT_GUARD_SCRIPT_HASH = "'sha256-Olc28AYxu82N88jdJ2+7hDwwbaJ+eX53CxH6VnKnGNI='";
+
 export const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src 'self' ${FRAGMENT_GUARD_SCRIPT_HASH}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "connect-src 'self'",

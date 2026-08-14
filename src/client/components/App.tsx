@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'preact/hooks'
 import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
 import { usePushSubscription } from '../hooks/usePushSubscription'
-import { deriveKeypair } from '../lib/burner'
 import { Layout } from './Layout'
 import { ChatView } from './ChatView'
 import { ToastProvider } from './Toast'
@@ -54,23 +53,6 @@ function AppContent() {
       </div>
     )
   }
-
-  useEffect(() => {
-    const hash = window.location.hash.slice(1)
-    if (!hash) return
-    const hex = hash.startsWith('0x') ? hash : `0x${hash}`
-    if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) { window.location.hash = ''; return }
-    (async () => {
-      try {
-        await importIdentity(deriveKeypair(hex))
-        window.location.hash = ''
-        navigate('/chat')
-      } catch (err) {
-        console.error('Failed to import key from hash:', err)
-        window.location.hash = ''
-      }
-    })()
-  }, [navigate, importIdentity])
 
   if (!token) {
     if (loginError) {

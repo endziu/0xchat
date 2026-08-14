@@ -2,6 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Fragments are never application input. Clear them before the app module loads. -->
+    <script data-clear-fragment>
+      if (window.location.hash) {
+        window.history.replaceState(
+          window.history.state,
+          '',
+          window.location.pathname + window.location.search,
+        )
+      }
+    </script>
     <!-- viewport-fit=cover lets the app paint under the notch/home indicator;
          styles.css pays that back with env(safe-area-inset-*) padding. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
