@@ -6,6 +6,7 @@ import { KeyManagement } from './KeyManagement'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { useToast } from './Toast'
+import { version } from '../../../package.json'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -150,6 +151,9 @@ export function Layout({
         )}
         {children}
       </main>
+      <div className="shrink-0 px-1 text-[10px] leading-3 text-neutral-700" aria-label={`Version ${version}`}>
+        v{version}
+      </div>
       {showQR && identity && (
         <QRModal
           mode="show"
