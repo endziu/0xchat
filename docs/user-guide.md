@@ -86,7 +86,6 @@ Installation gives 0xChat a home-screen icon and standalone window. The app shel
 
 On iOS/iPadOS, Web Push is available to Home Screen apps. The host must use HTTPS in production; localhost is accepted for development.
 
-
 ## Identity and account safety
 
 ### Your burner identity
@@ -120,7 +119,6 @@ Select the logout icon twice within three seconds. 0xChat attempts to remove the
 
 If server cleanup fails, the app still logs out locally and reports the failure. Other participants may retain local contact labels or already-decrypted content. Account deletion cannot erase copies, screenshots, or exports held elsewhere.
 
-
 ## How privacy works
 
 ### End-to-end encryption
@@ -130,15 +128,17 @@ Each outgoing message is encrypted twice in the browser:
 - one copy for the recipient; and
 - one copy for the sender, so the sender can reopen it while it exists.
 
-The app uses ECIES: ephemeral ECDH, HKDF-SHA-256, and AES-GCM-256. Canonical message metadata is authenticated as AES-GCM additional data. The complete envelope is also signed with EIP-191, allowing the server and clients to reject tampered, forged, replayed, or mismatched messages.
+The app uses ECIES: ephemeral ECDH, HKDF-SHA-256, and AES-GCM-256. Canonical message metadata is authenticated as AES-GCM additional data. The complete envelope is also signed with EIP-191, allowing the server and clients to reject tampered, forged, or mismatched messages. The normal server rejects duplicate message IDs, but delivery timestamps and ordering are not signed; a malicious server could replay a previously signed message with a new apparent delivery time.
 
-The server stores encrypted envelopes, not plaintext, and never receives private keys. Clients validate fetched public keys and message envelopes before decrypting them.
+The current client sends encrypted envelopes, not plaintext, and does not transmit private keys to the server. Clients validate fetched public keys and message envelopes before decrypting them. Because the host delivers the browser code, a compromised host or build could serve altered code that reads private keys or plaintext. This protection assumes HTTPS and authentic, unmodified client code.
+
+The protocol does not provide forward secrecy or post-compromise security. Anyone who obtains an identity's private key may decrypt retained ciphertext for that identity and impersonate it until the user switches identities.
 
 ### Ephemeral messages
 
 The server records each message with its selected expiry time and removes expired rows during cleanup every 30 seconds. Clients also hide messages on local timers or refresh.
 
-Expiry limits retention by 0xChat; it cannot prevent a recipient from copying plaintext, saving an image, taking a screenshot, modifying their client, or recording the screen. Do not treat self-destruction as control over a recipient's device.
+Expiry limits retention by the normal 0xChat service; it cannot prevent a recipient from copying plaintext, saving an image, taking a screenshot, modifying their client, or recording the screen. It also cannot guarantee deletion from operator logs, backups, snapshots, or modified deployments. Do not treat self-destruction as secure deletion or control over another device.
 
 ### What the server can still observe
 
@@ -147,7 +147,6 @@ End-to-end encryption protects message content, not all metadata. The server nec
 ### Browser-local information
 
 Your private key, contact labels, remembered contacts, hidden-contact markers, unread state, install-banner preference, and address-bound session token are stored in the current browser. The service worker caches only the application shell and icons; `/api/*` is excluded.
-
 
 ## Troubleshooting
 
@@ -177,4 +176,3 @@ Grant camera permission, use HTTPS (or localhost during development), and make s
 ### An old contact remains after messages expire
 
 This is intentional. Contacts are remembered locally after server messages expire. Delete the conversation twice to hide it.
-
