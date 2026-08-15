@@ -1,6 +1,6 @@
 {
   "name": "0xchat",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "scripts": {
     "clear:db": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
@@ -12,7 +12,7 @@
     "start": "bun clear:db; bun run build; DEBUG=1 bun run server.ts",
     "start:prod": "bun run server.ts",
     "test": "bun clear:all && bun run build && bun test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.server.json",
     "lint": "oxlint src server.ts"
   },
   "dependencies": {

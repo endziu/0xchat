@@ -22,7 +22,7 @@ describe('URL fragment guard', () => {
     '#0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     '#not-a-private-key',
     '#unrelated',
-  ])('clears %s before application startup without touching identity storage', async (hash) => {
+  ])('clears %s before application startup without touching identity storage', async (hash: string) => {
     const existingIdentity = 'existing-private-key'
     let replacement: { state: unknown; url: string } | undefined
     const window: StartupWindow = {

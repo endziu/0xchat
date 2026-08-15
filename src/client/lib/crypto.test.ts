@@ -24,7 +24,7 @@ const metadata = {
 }
 const aad = canonicalMessageAad(metadata)
 
-function vectorRandom(length: number): Uint8Array {
+function vectorRandom(length: number): Uint8Array<ArrayBuffer> {
   if (length === 32) return new Uint8Array(32).fill(0x33)
   if (length === 12) return new Uint8Array(12).fill(0x66)
   throw new Error(`Unexpected random length: ${length}`)

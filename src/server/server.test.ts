@@ -9,13 +9,13 @@ import { Database } from 'bun:sqlite';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { decrypt } from './src/client/lib/crypto.ts';
-import { createSignedMessageEnvelope } from './src/client/lib/message-envelope.ts';
+import { decrypt } from '../client/lib/crypto.ts';
+import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import {
   canonicalMessageAad,
   verifyDeliveredMessage,
   type MessageEnvelope,
-} from './src/shared/message-envelope.ts';
+} from '../shared/message-envelope.ts';
 
 function registrationIdentity(byte: string) {
   const privateKey = `0x${byte.repeat(64)}` as `0x${string}`;
@@ -290,8 +290,6 @@ describe('registration routes', () => {
 });
 
 describe('authenticated routes', () => {
-  const sender = '0x' + 'a'.repeat(40);
-  const recipient = '0x' + 'b'.repeat(40);
   const token = 'test-token-integration';
 
   test('GET /api/conversations with auth returns list', async () => {

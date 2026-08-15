@@ -8,13 +8,13 @@ export interface EncryptedData {
   iv: string
 }
 
-type RandomBytes = (length: number) => Uint8Array
+type RandomBytes = (length: number) => Uint8Array<ArrayBuffer>
 
 const secureRandomBytes: RandomBytes = (length) => crypto.getRandomValues(new Uint8Array(length))
 
 async function deriveAesKey(
-  sharedSecret: Uint8Array,
-  ephemeralPublicKey: Uint8Array,
+  sharedSecret: Uint8Array<ArrayBuffer>,
+  ephemeralPublicKey: Uint8Array<ArrayBuffer>,
   usage: 'encrypt' | 'decrypt',
 ): Promise<CryptoKey> {
   const baseKey = await crypto.subtle.importKey(
@@ -46,8 +46,8 @@ export async function encrypt(
   const ephemPriv = randomBytes(32)
   const ephemPub = secp.getPublicKey(ephemPriv, true)
 
-  const sharedSecret = secp.getSharedSecret(ephemPriv, recipientPubBytes, true)
-  const aesKey = await deriveAesKey(sharedSecret, ephemPub, 'encrypt')
+  const sharedSecret = new Uint8Array(secp.getSharedSecret(ephemPriv, recipientPubBytes, true))
+  const aesKey = await deriveAesKey(sharedSecret, new Uint8Array(ephemPub), 'encrypt')
 
   const iv = randomBytes(12)
   const ctBuf = await crypto.subtle.encrypt(
@@ -70,11 +70,11 @@ export async function decrypt(
 ): Promise<string> {
   const ephemPubBytes = hexToBytes(ensure0x(ephemeralPubkeyHex))
   const privBytes = hexToBytes(ensure0x(privKey))
-  const sharedSecret = secp.getSharedSecret(privBytes, ephemPubBytes, true)
-  const aesKey = await deriveAesKey(sharedSecret, ephemPubBytes, 'decrypt')
+  const sharedSecret = new Uint8Array(secp.getSharedSecret(privBytes, ephemPubBytes, true))
+  const aesKey = await deriveAesKey(sharedSecret, new Uint8Array(ephemPubBytes), 'decrypt')
 
-  const iv = hexToBytes(ensure0x(ivHex))
-  const ciphertextBytes = hexToBytes(ensure0x(ciphertextHex))
+  const iv = new Uint8Array(hexToBytes(ensure0x(ivHex)))
+  const ciphertextBytes = new Uint8Array(hexToBytes(ensure0x(ciphertextHex)))
   const plaintextBuf = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(additionalData) }, aesKey, ciphertextBytes
   )

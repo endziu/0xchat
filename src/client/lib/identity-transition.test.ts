@@ -49,7 +49,7 @@ describe('identity transition', () => {
     expect(events).toContain('commit:0xb:token:0xb')
   })
 
-  test.each(['registration', 'login'] as const)('keeps the old identity and clears auth when %s fails', async (failure) => {
+  test.each(['registration', 'login'] as const)('keeps the old identity and clears auth when %s fails', async (failure: 'registration' | 'login') => {
     let active: Keypair = oldIdentity
     const { events, transition } = harness({
       prepareIdentity: async () => { if (failure === 'registration') throw new Error('registration failed') },
