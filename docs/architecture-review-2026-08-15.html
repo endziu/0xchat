@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture review — 0xChat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { curve: "basis" } });
+  </script>
+  <style>
+    .seam { border-style: dashed; }
+    .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+    .paper { box-shadow: 0 18px 45px rgba(15,23,42,.07); }
+    .arrow { color: #94a3b8; font-size: 1.3rem; line-height: 1; }
+    .leak { color: #dc2626; }
+    code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-6xl mx-auto px-5 py-12 space-y-12">
+  <header class="border-b border-slate-300 pb-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+    <div>
+      <p class="text-xs uppercase tracking-[.28em] text-emerald-700 font-semibold">Architecture review</p>
+      <h1 class="mt-2 text-4xl font-serif font-semibold">0xChat</h1>
+      <p class="mt-2 text-sm text-slate-500">15 August 2026 · recent-change scope</p>
+    </div>
+    <div class="grid grid-cols-2 gap-x-5 gap-y-2 text-xs text-slate-600">
+      <span class="flex items-center gap-2"><i class="w-5 h-3 border border-slate-500 bg-white"></i> module</span>
+      <span class="flex items-center gap-2"><i class="w-5 border-t-2 border-dashed border-slate-500"></i> seam</span>
+      <span class="flex items-center gap-2"><i class="w-5 border-t-2 border-red-600"></i> leakage</span>
+      <span class="flex items-center gap-2"><i class="w-5 h-3 bg-slate-900"></i> deep module</span>
+    </div>
+  </header>
+
+  <section id="candidates" class="space-y-12">
+    <article id="identity" class="paper rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div class="p-7 md:p-9 space-y-7">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-slate-500">Candidate 01</p>
+            <h2 class="mt-1 text-2xl font-serif font-semibold">Concentrate the identity lifecycle</h2>
+          </div>
+          <div class="flex gap-2"><span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span><span class="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs">in-process</span></div>
+        </div>
+        <div>
+          <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Files</h3>
+          <div class="font-mono text-sm text-slate-700 grid md:grid-cols-2 gap-1">
+            <code>src/client/components/App.tsx</code><code>src/client/hooks/useIdentity.ts</code>
+            <code>src/client/hooks/useSession.ts</code><code>src/client/lib/identity-transition.ts</code>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-5">
+          <figure class="rounded-xl border border-red-200 bg-red-50/40 p-5 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-red-700 font-semibold mb-5">Before · policy leaks into the root</figcaption>
+            <div class="space-y-3 text-xs">
+              <div class="border border-slate-400 bg-white p-3 text-center font-semibold">AppContent</div>
+              <div class="grid grid-cols-3 gap-2 text-center">
+                <span class="leak">↙ ordering</span><span class="leak">↓ refs</span><span class="leak">↘ rollback</span>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <div class="border border-slate-300 bg-white p-3 text-center">identity<br><span class="text-slate-400">prepare / commit</span></div>
+                <div class="border border-slate-300 bg-white p-3 text-center">session<br><span class="text-slate-400">create / commit</span></div>
+                <div class="border border-slate-300 bg-white p-3 text-center">push<br><span class="text-slate-400">unsubscribe</span></div>
+              </div>
+              <div class="border-t-2 border-dashed border-slate-400 pt-3 text-center text-slate-500">seam crossed by six transaction steps</div>
+              <div class="border border-slate-300 bg-white p-3 text-center">identity-transition implementation</div>
+            </div>
+          </figure>
+          <figure class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-5 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-emerald-800 font-semibold mb-5">After · one deep lifecycle module</figcaption>
+            <div class="flex flex-col items-center gap-4 text-xs">
+              <div class="border border-slate-400 bg-white px-10 py-3 text-center font-semibold">AppContent</div>
+              <div class="arrow">↓</div>
+              <div class="w-full border-2 border-dashed border-emerald-700 rounded-lg p-2">
+                <div class="deep text-white rounded-md min-h-[180px] p-5 text-center">
+                  <div class="uppercase tracking-wider font-semibold">Identity lifecycle module</div>
+                  <div class="mt-5 grid grid-cols-3 gap-2 text-slate-300">
+                    <span>identity</span><span>session</span><span>push</span>
+                    <span class="col-span-3 border-t border-slate-600 pt-3">ordering · stale-attempt safety · commit</span>
+                  </div>
+                </div>
+                <p class="text-center mt-2 text-emerald-800">small external seam</p>
+              </div>
+            </div>
+          </figure>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 text-sm">
+          <p><b>Problem.</b> Identity switching, login, logout, push cleanup, stale-attempt safety, and commit ordering span four modules; the root must know the transaction.</p>
+          <p><b>Solution.</b> Deepen the identity lifecycle module so its implementation owns transition invariants and the root consumes outcomes, without deleting the tested transition logic.</p>
+        </div>
+        <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+          <li class="rounded-lg bg-slate-50 p-3"><b>locality:</b> sequencing concentrates</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>leverage:</b> root learns less</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>tests:</b> one lifecycle seam</li>
+        </ul>
+      </div>
+    </article>
+
+    <article id="client-messages" class="paper rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div class="p-7 md:p-9 space-y-7">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs uppercase tracking-wider text-slate-500">Candidate 02</p><h2 class="mt-1 text-2xl font-serif font-semibold">Deepen the client message lifecycle</h2></div>
+          <div class="flex gap-2"><span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span><span class="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs">in-process</span></div>
+        </div>
+        <div>
+          <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Files</h3>
+          <div class="font-mono text-sm text-slate-700 grid md:grid-cols-2 gap-1">
+            <code>src/client/hooks/useMessages.ts</code><code>src/client/components/ChatView.tsx</code>
+            <code>src/client/hooks/useSSE.ts</code><code>src/client/lib/message-envelope.ts</code>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-5">
+          <figure class="rounded-xl border border-red-200 bg-red-50/40 p-4 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-red-700 font-semibold mb-2">Before · integration tree exposed</figcaption>
+            <pre class="mermaid">
+flowchart TD
+  C[ChatView] --> R[mutable refs]
+  C --> S[useSSE]
+  R --> A[addMessage]
+  A --> V[verify envelope]
+  A --> D[decrypt]
+  C --> M[useMessages]
+  M --> F[fetch]
+  M --> T[expiry timers]
+  M --> E[encrypt + sign]
+  S -. callback choreography .-> R
+  classDef leak stroke:#dc2626,stroke-width:2px,color:#991b1b;
+  class R,S leak;
+            </pre>
+          </figure>
+          <figure class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-5 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-emerald-800 font-semibold mb-5">After · call graph collapses</figcaption>
+            <div class="flex flex-col items-center gap-3 text-xs">
+              <div class="border border-slate-400 bg-white px-12 py-3 font-semibold">ChatView</div>
+              <div class="arrow">↓</div>
+              <div class="deep text-white border-2 border-slate-900 rounded-xl w-full p-5 min-h-[190px]">
+                <p class="text-center uppercase tracking-wider font-semibold">Client message lifecycle module</p>
+                <div class="mt-5 grid grid-cols-2 gap-2 text-slate-300">
+                  <span class="border border-slate-600 rounded p-2 text-center">authenticate</span><span class="border border-slate-600 rounded p-2 text-center">decrypt</span>
+                  <span class="border border-slate-600 rounded p-2 text-center">dedupe</span><span class="border border-slate-600 rounded p-2 text-center">expire</span>
+                  <span class="border border-slate-600 rounded p-2 text-center">load</span><span class="border border-slate-600 rounded p-2 text-center">send</span>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 text-sm">
+          <p><b>Problem.</b> Envelope authentication, decryption, fetching, recipient changes, expiry timers, sending, SSE insertion, and dedupe share one hook while callback mechanics leak into ChatView.</p>
+          <p><b>Solution.</b> Keep the valuable message module seam, but deepen it around security and lifecycle policy so SSE mechanics and ambient time stop shaping callers and tests.</p>
+        </div>
+        <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+          <li class="rounded-lg bg-slate-50 p-3"><b>locality:</b> races concentrate</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>leverage:</b> SSE glue disappears</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>tests:</b> security through interface</li>
+        </ul>
+      </div>
+    </article>
+
+    <article id="message-admission" class="paper rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div class="p-7 md:p-9 space-y-7">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs uppercase tracking-wider text-slate-500">Candidate 03</p><h2 class="mt-1 text-2xl font-serif font-semibold">Concentrate message admission and fanout</h2></div>
+          <div class="flex gap-2"><span class="rounded-full bg-amber-100 text-amber-900 px-3 py-1 text-xs font-semibold">Worth exploring</span><span class="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs">in-process</span></div>
+        </div>
+        <div>
+          <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Files</h3>
+          <div class="font-mono text-sm text-slate-700 grid md:grid-cols-2 gap-1">
+            <code>src/server/routes/messages.ts</code><code>src/server/db.ts</code>
+            <code>src/server/sse.ts</code><code>src/server/push.ts</code>
+            <code>src/shared/message-envelope.ts</code>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-5">
+          <figure class="rounded-xl border border-red-200 bg-red-50/40 p-4 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-red-700 font-semibold mb-2">Before · one route knows every mechanism</figcaption>
+            <pre class="mermaid">
+sequenceDiagram
+  participant R as route
+  participant E as envelope
+  participant D as DB
+  participant S as SSE
+  participant P as push
+  R->>R: auth + rate + TTL + participant
+  R->>E: parse + verify
+  R->>D: persist / replay
+  D-->>R: server time
+  R->>R: map delivered fields
+  R->>S: notify sender
+  R->>S: notify recipient
+  R-)P: best-effort wakeup
+            </pre>
+          </figure>
+          <figure class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-emerald-800 font-semibold mb-2">After · policy behind one seam</figcaption>
+            <pre class="mermaid">
+flowchart TD
+  R[route] -->|request| M[message admission module]
+  M --> E[envelope implementation]
+  M --> D[persistence implementation]
+  M --> F[fanout implementation]
+  F --> S[SSE]
+  F --> P[push]
+  M -->|delivered result| R
+  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a,stroke-width:3px;
+  class M deep;
+            </pre>
+          </figure>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 text-sm">
+          <p><b>Problem.</b> The route owns admission policy, replay persistence, server time, delivered mapping, synchronous SSE, detached push, and failure ordering; focused verification requires the full server.</p>
+          <p><b>Solution.</b> Deepen message admission so one implementation owns persistence and fanout ordering while the proven envelope module remains the cryptographic authority.</p>
+        </div>
+        <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+          <li class="rounded-lg bg-slate-50 p-3"><b>locality:</b> ordering concentrates</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>leverage:</b> route learns less</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>tests:</b> failures become focused</li>
+        </ul>
+      </div>
+    </article>
+
+    <article id="registration" class="paper rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      <div class="p-7 md:p-9 space-y-7">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div><p class="text-xs uppercase tracking-wider text-slate-500">Candidate 04</p><h2 class="mt-1 text-2xl font-serif font-semibold">Deepen the registration ceremony</h2></div>
+          <div class="flex gap-2"><span class="rounded-full bg-amber-100 text-amber-900 px-3 py-1 text-xs font-semibold">Worth exploring</span><span class="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs">in-process</span></div>
+        </div>
+        <div>
+          <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Files</h3>
+          <div class="font-mono text-sm text-slate-700 grid md:grid-cols-2 gap-1">
+            <code>src/server/routes/register.ts</code><code>src/server/challenge.ts</code>
+            <code>src/server/validation.ts</code><code>src/shared/registration-challenge.ts</code>
+            <code>src/client/lib/api.ts</code><code>src/client/hooks/useIdentity.ts</code>
+          </div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-5">
+          <figure class="rounded-xl border border-red-200 bg-red-50/40 p-5 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-red-700 font-semibold mb-5">Before · shallow bands expose ceremony</figcaption>
+            <div class="space-y-1 text-xs text-center">
+              <div class="h-10 border-l-4 border-red-500 bg-white border-y border-r border-slate-200 flex items-center justify-center">client reconstructs challenge</div>
+              <div class="h-10 border-l-4 border-red-500 bg-white border-y border-r border-slate-200 flex items-center justify-center">route normalizes address + key</div>
+              <div class="h-10 border-l-4 border-red-500 bg-white border-y border-r border-slate-200 flex items-center justify-center">route derives origin + subject</div>
+              <div class="h-10 border-l-4 border-slate-400 bg-white border-y border-r border-slate-200 flex items-center justify-center">challenge store issues / consumes</div>
+              <div class="h-10 border-l-4 border-red-500 bg-white border-y border-r border-slate-200 flex items-center justify-center">route verifies signature</div>
+              <div class="h-10 border-l-4 border-red-500 bg-white border-y border-r border-slate-200 flex items-center justify-center">route records public key</div>
+              <p class="pt-3 text-red-700">security invariant assembled by callers</p>
+            </div>
+          </figure>
+          <figure class="rounded-xl border border-emerald-200 bg-emerald-50/40 p-5 min-h-[320px]">
+            <figcaption class="text-xs uppercase tracking-wider text-emerald-800 font-semibold mb-5">After · depth absorbs ceremony</figcaption>
+            <div class="border-2 border-dashed border-emerald-700 rounded-xl p-2">
+              <div class="deep rounded-lg min-h-[245px] text-white p-6 flex flex-col justify-between">
+                <p class="text-center uppercase tracking-wider text-xs font-semibold">Registration ceremony module</p>
+                <div class="space-y-2 text-xs text-slate-300">
+                  <div class="border border-slate-600 rounded p-2">origin · address · public-key binding</div>
+                  <div class="border border-slate-600 rounded p-2">nonce lifetime · one-time use</div>
+                  <div class="border border-slate-600 rounded p-2">canonical challenge · signature verification</div>
+                  <div class="border border-slate-600 rounded p-2">recording policy</div>
+                </div>
+                <p class="text-center text-emerald-300 text-xs">small external seam; store remains internal</p>
+              </div>
+            </div>
+          </figure>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6 text-sm">
+          <p><b>Problem.</b> Origin binding, address/public-key validation, challenge text, nonce consumption, signature verification, and recording form an implicit protocol spread across client, route, store, and validation modules.</p>
+          <p><b>Solution.</b> Deepen the registration ceremony around the shared canonical artifact; keep challenge storage as implementation detail rather than exposing more transaction steps.</p>
+        </div>
+        <ul class="grid sm:grid-cols-3 gap-3 text-sm">
+          <li class="rounded-lg bg-slate-50 p-3"><b>locality:</b> protocol changes concentrate</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>leverage:</b> canonical rules reused</li>
+          <li class="rounded-lg bg-slate-50 p-3"><b>tests:</b> ceremony through seam</li>
+        </ul>
+      </div>
+    </article>
+  </section>
+
+  <section id="top-recommendation" class="rounded-2xl bg-slate-900 text-white p-8 md:p-10">
+    <p class="text-xs uppercase tracking-[.25em] text-emerald-300 font-semibold">Top recommendation</p>
+    <h2 class="mt-2 text-3xl font-serif font-semibold"><a class="underline decoration-emerald-400 underline-offset-4" href="#identity">Concentrate the identity lifecycle</a></h2>
+    <p class="mt-3 text-slate-300">It is the clearest shallow interface around a proven deep implementation: security-sensitive sequencing currently leaks into the root, and focused tests already show where the leverage is.</p>
+  </section>
+</main>
+</body>
+</html>

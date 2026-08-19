@@ -18,7 +18,7 @@ You are on a WSL on Windows.
   and builds first, so it is slow but is the real check.
 - Three tsconfigs: `tsconfig.client.json`, `tsconfig.server.json`, `tsconfig.json`. Client code is
   Preact, not React.
-- Bump `package.json` version with every change. The UI reads its version from there.
+- Bump `package.json` version with every non-documentation change. Documentation-only changes are exempt. The UI reads its version from there.
 
 ## Agent skills
 
