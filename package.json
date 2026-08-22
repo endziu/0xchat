@@ -1,6 +1,6 @@
 {
   "name": "0xchat",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "type": "module",
   "scripts": {
     "clear:db": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
