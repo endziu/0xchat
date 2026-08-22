@@ -1,6 +1,6 @@
-import { ComponentChildren } from 'preact'
+import type { ComponentChildren } from 'preact'
 import { useState, useRef, useEffect } from 'preact/hooks'
-import { Keypair } from '../lib/burner'
+import type { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { InstallBanner } from './InstallBanner'
@@ -19,6 +19,7 @@ interface LayoutProps {
   pushSupported?: boolean
   pushSubscribed?: boolean
   pushPermission?: NotificationPermission | null
+  pushError?: string | null
   onPushSubscribe?: () => void
   onPushUnsubscribe?: () => void
 }
@@ -34,6 +35,7 @@ export function Layout({
   pushSupported,
   pushSubscribed,
   pushPermission,
+  pushError,
   onPushSubscribe,
   onPushUnsubscribe,
 }: LayoutProps) {
@@ -133,7 +135,7 @@ export function Layout({
               <div className="mt-4">
                 <h3 className="text-sm text-neutral-400">Notifications</h3>
                 <p className="text-sm text-neutral-500 mt-1">
-                  Get a phone alert when a new message arrives. No message content or contact info is ever sent through the notification — just a wakeup.
+                  Get an alert on this device when a new message arrives. No message content or contact info is ever sent through the notification — just a wakeup.
                 </p>
                 {pushPermission === 'denied' ? (
                   <p className="text-sm text-neutral-500 mt-2">Notifications blocked — enable them in your browser/OS settings.</p>
@@ -145,6 +147,7 @@ export function Layout({
                     {pushSubscribed ? 'Disable notifications' : 'Enable notifications'}
                   </button>
                 )}
+                {pushError && <p className="text-sm text-red-400 mt-2">{pushError}</p>}
               </div>
             )}
           </section>
