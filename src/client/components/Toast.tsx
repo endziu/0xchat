@@ -27,11 +27,10 @@ const borderColor = { success: 'border-green-900', error: 'border-red-900', info
 export const ToastProvider = ({ children }: { children: any }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const toast = (message: string, type: ToastType = 'info') => {
+  const toast = (message: string, type: ToastType = 'info'): void => {
     const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, message, type }]);
-    const timer = setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
-    return () => clearTimeout(timer);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
   return (

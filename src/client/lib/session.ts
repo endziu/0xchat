@@ -6,21 +6,15 @@ interface StoredSession {
   token: string
 }
 
-let activeAddress: string | null = null
-
-export function setActiveSessionAddress(address: string | null): void {
-  activeAddress = address?.toLowerCase() ?? null
-}
-
 export function saveToken(address: string, token: string): void {
-  activeAddress = address.toLowerCase()
+  const normalized = address.toLowerCase()
   localStorage.removeItem(LEGACY_TOKEN_KEY)
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ address: activeAddress, token }))
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ address: normalized, token }))
 }
 
-export function getToken(address = activeAddress): string | null {
+export function getToken(address: string): string | null {
   localStorage.removeItem(LEGACY_TOKEN_KEY)
-  if (!address) return null
+  const normalized = address.toLowerCase()
 
   const raw = localStorage.getItem(SESSION_KEY)
   if (!raw) return null
@@ -30,7 +24,7 @@ export function getToken(address = activeAddress): string | null {
     if (
       typeof session.address !== 'string'
       || typeof session.token !== 'string'
-      || session.address.toLowerCase() !== address.toLowerCase()
+      || session.address.toLowerCase() !== normalized
     ) {
       localStorage.removeItem(SESSION_KEY)
       return null

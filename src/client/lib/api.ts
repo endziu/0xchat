@@ -10,8 +10,16 @@ export interface Conversation {
   last_message_at: number
 }
 
+// Address the api attaches its bearer token to. Set explicitly by useSession
+// whenever the active identity changes; null when no session is active.
+let authAddress: string | null = null
+
+export function setAuthAddress(address: string | null): void {
+  authAddress = address?.toLowerCase() ?? null
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken()
+  const token = authAddress ? getToken(authAddress) : null
   const headers = new Headers(options.headers)
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)

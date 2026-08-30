@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
-import { getToken, saveToken, clearToken, setActiveSessionAddress } from '../lib/session'
+import { getToken, saveToken, clearToken } from '../lib/session'
 import { Keypair, signEIP191 } from '../lib/burner'
-import { api } from '../lib/api'
+import { api, setAuthAddress } from '../lib/api'
 
 export function useSession(identity: Keypair | null) {
   const [token, setToken] = useState<string | null>(null)
@@ -11,7 +11,7 @@ export function useSession(identity: Keypair | null) {
 
   useEffect(() => {
     sessionEpoch.current++
-    setActiveSessionAddress(identity?.address ?? null)
+    setAuthAddress(identity?.address ?? null)
     setToken(identity ? getToken(identity.address) : null)
     setError(null)
   }, [identity?.address])
