@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
 import { reuploadExistingSubscription } from '../lib/push-reupload'
+import { requestPushPermission } from '../lib/push-permission'
 import { createSerialQueue } from '../lib/push-queue'
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
@@ -73,13 +74,16 @@ export function usePushSubscription(token: string | null) {
 
     return queueRef.current.enqueue(async () => {
       try {
-        const perm = await Notification.requestPermission()
-        setPermission(perm)
-        if (perm !== 'granted') {
+        const perm = await requestPushPermission({
+          requestPermission: () => Notification.requestPermission(),
+          isStale,
+        })
+        if (perm.superseded) return false
+        setPermission(perm.permission)
+        if (!perm.granted) {
           setError('Notification permission was not granted.')
           return false
         }
-        if (isStale()) return false
 
         const reg = await navigator.serviceWorker.ready
         const { publicKey } = await api.getVapidPublicKey()
