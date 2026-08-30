@@ -60,28 +60,54 @@ describe('api per-request auth', () => {
 
     await api.getConversations('token-a')
     await api.getConversations('token-b')
-    await api.getConversations(null)
+    await api.getVapidPublicKey() // public endpoint: no auth header
 
     expect(seen).toEqual(['Bearer token-a', 'Bearer token-b', null])
   })
 
-  test('a stale or empty-token request does not delete a stored session', async () => {
-    // A newer identity just committed its session to storage.
+  test('a stale-token 401 does not delete a newer session or sign it out', async () => {
+    // A newer identity (B) has committed its session.
     globalThis.localStorage.setItem(
       'eth_chat_session_v1',
-      JSON.stringify({ address: '0xbb', token: 'new-token' }),
+      JSON.stringify({ address: '0xbb', token: 'token-b' }),
     )
+    let expired = 0
+    const onExp = () => { expired++ }
+    globalThis.addEventListener('auth:expired', onExp)
 
     globalThis.fetch = Object.assign(
-      async () => new Response(null, { status: 204 }),
+      async () => Response.json({ error: "unauthorized" }, { status: 401 }),
       { preconnect: originalFetch.preconnect },
     )
 
-    // An authenticated request issued with the old (now empty) token must
-    // neither look up nor clobber the newly stored session.
-    await api.getConversations(null)
+    // A delayed request still carrying the previous identity (A) token 401s.
+    await expect(api.getMessages('0xbb', 'token-a')).rejects.toThrow()
 
-    const raw = globalThis.localStorage.getItem('eth_chat_session_v1')
-    expect(JSON.parse(raw!).token).toBe('new-token')
+    // B's session survives and B is not signed out.
+    expect(JSON.parse(globalThis.localStorage.getItem('eth_chat_session_v1')!).token).toBe('token-b')
+    expect(expired).toBe(0)
+    globalThis.removeEventListener('auth:expired', onExp)
+  })
+
+  test('a current-token 401 clears the session and signs out', async () => {
+    globalThis.localStorage.setItem(
+      'eth_chat_session_v1',
+      JSON.stringify({ address: '0xbb', token: 'token-b' }),
+    )
+    let expired = 0
+    const onExp = () => { expired++ }
+    globalThis.addEventListener('auth:expired', onExp)
+
+    globalThis.fetch = Object.assign(
+      async () => Response.json({ error: "unauthorized" }, { status: 401 }),
+      { preconnect: originalFetch.preconnect },
+    )
+
+    // The active identity's own token is rejected.
+    await expect(api.getMessages('0xbb', 'token-b')).rejects.toThrow()
+
+    expect(globalThis.localStorage.getItem('eth_chat_session_v1')).toBeNull()
+    expect(expired).toBe(1)
+    globalThis.removeEventListener('auth:expired', onExp)
   })
 })

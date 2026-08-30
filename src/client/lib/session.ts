@@ -40,3 +40,24 @@ export function clearToken(): void {
   localStorage.removeItem(SESSION_KEY)
   localStorage.removeItem(LEGACY_TOKEN_KEY)
 }
+
+// Clear the stored session only if it still matches the given token. Returns
+// true when a matching session was removed. Used on 401 so a stale request
+// from a previous identity cannot wipe out a newer committed session.
+export function clearTokenIfMatches(token: string): boolean {
+  localStorage.removeItem(LEGACY_TOKEN_KEY)
+  const raw = localStorage.getItem(SESSION_KEY)
+  if (!raw) return false
+
+  try {
+    const session = JSON.parse(raw) as Partial<StoredSession>
+    if (typeof session.token === 'string' && session.token === token) {
+      localStorage.removeItem(SESSION_KEY)
+      return true
+    }
+    return false
+  } catch {
+    localStorage.removeItem(SESSION_KEY)
+    return true
+  }
+}

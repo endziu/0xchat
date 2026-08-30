@@ -63,7 +63,7 @@ export function usePushSubscription(token: string | null) {
   }
 
   const unsubscribe = async (): Promise<void> => {
-    if (!supported) return
+    if (!supported || !token) return
     try {
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.getSubscription()
