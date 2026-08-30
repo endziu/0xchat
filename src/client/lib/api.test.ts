@@ -46,3 +46,42 @@ describe('api.getPubkey', () => {
     )
   })
 })
+
+describe('api per-request auth', () => {
+  test('sends exactly the token passed per request, with no shared state', async () => {
+    const seen: (string | null)[] = []
+    globalThis.fetch = Object.assign(
+      async (_url: unknown, init?: RequestInit) => {
+        seen.push(new Headers(init?.headers).get('Authorization'))
+        return new Response(null, { status: 204 })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+
+    await api.getConversations('token-a')
+    await api.getConversations('token-b')
+    await api.getConversations(null)
+
+    expect(seen).toEqual(['Bearer token-a', 'Bearer token-b', null])
+  })
+
+  test('a stale or empty-token request does not delete a stored session', async () => {
+    // A newer identity just committed its session to storage.
+    globalThis.localStorage.setItem(
+      'eth_chat_session_v1',
+      JSON.stringify({ address: '0xbb', token: 'new-token' }),
+    )
+
+    globalThis.fetch = Object.assign(
+      async () => new Response(null, { status: 204 }),
+      { preconnect: originalFetch.preconnect },
+    )
+
+    // An authenticated request issued with the old (now empty) token must
+    // neither look up nor clobber the newly stored session.
+    await api.getConversations(null)
+
+    const raw = globalThis.localStorage.getItem('eth_chat_session_v1')
+    expect(JSON.parse(raw!).token).toBe('new-token')
+  })
+})

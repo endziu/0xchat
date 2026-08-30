@@ -40,7 +40,7 @@ export function useConversations(token: string | null) {
     }
     setLoading(true)
     try {
-      const data = await api.getConversations()
+      const data = await api.getConversations(token)
       setConversations(withKnownContacts(data.conversations))
     } catch (err) {
       console.error('Failed to load conversations:', err)

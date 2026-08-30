@@ -2,7 +2,7 @@ import { createContext } from 'preact';
 import { X } from 'lucide-preact';
 import { useContext, useState } from 'preact/hooks';
 
-export type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info';
 
 interface ToastMessage {
   id: string;

@@ -17,7 +17,7 @@ export function useSSE(token: string | null, onMessage: (data: unknown) => void,
     const setupSSE = async () => {
       try {
         // Get a short-lived SSE token
-        const { sse_token } = await api.getSseToken()
+        const { sse_token } = await api.getSseToken(token)
         if (!mounted) return
 
         es = new EventSource(`/api/events?token=${sse_token}`)

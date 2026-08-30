@@ -53,7 +53,7 @@ export function usePushSubscription(token: string | null) {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       })
-      await api.subscribePush(sub.toJSON() as PushSubscriptionJSON)
+      await api.subscribePush(sub.toJSON() as PushSubscriptionJSON, token)
       setSubscribed(true)
       return true
     } catch (err) {
@@ -68,7 +68,7 @@ export function usePushSubscription(token: string | null) {
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.getSubscription()
       if (sub) {
-        await api.unsubscribePush(sub.endpoint).catch(() => {})
+        await api.unsubscribePush(sub.endpoint, token).catch(() => {})
         await sub.unsubscribe()
       }
       setSubscribed(false)
