@@ -24,7 +24,7 @@ You are on a WSL on Windows.
 
 ### Issue tracker
 
-Issues live in GitHub Issues for `endziu/0xchat`. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues for `endziu/0xChat`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
