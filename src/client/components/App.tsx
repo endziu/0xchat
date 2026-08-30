@@ -109,6 +109,7 @@ function AppContent() {
       pushSupported={push.supported}
       pushSubscribed={push.subscribed}
       pushPermission={push.permission}
+      pushError={push.error}
       onPushSubscribe={push.subscribe}
       onPushUnsubscribe={push.unsubscribe}
     >

@@ -40,6 +40,7 @@ const ALLOWED_PUSH_HOSTS = [
   'fcm.googleapis.com',
   'updates.push.services.mozilla.com',
   'web.push.apple.com',
+  'notify.windows.com',
 ];
 
 function isAllowedPushHost(hostname: string): boolean {

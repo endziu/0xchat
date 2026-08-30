@@ -15,22 +15,36 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 export function usePushSubscription(token: string | null) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | null>(
-    typeof Notification !== 'undefined' ? Notification.permission : null,
+    typeof Notification === 'undefined' ? null : Notification.permission,
   )
 
   useEffect(() => {
     const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined'
     setSupported(isSupported)
     if (!isSupported || !token) return
+    const activeToken: string = token
 
     let mounted = true
     ;(async () => {
       try {
         const reg = await navigator.serviceWorker.ready
         const existing = await reg.pushManager.getSubscription()
-        if (mounted) setSubscribed(!!existing)
+        if (existing) {
+          // A browser subscription alone is not enough: the server may have
+          // rejected or lost it. Re-upload it whenever a session starts.
+          await api.subscribePush(existing.toJSON() as PushSubscriptionJSON, activeToken)
+        }
+        if (mounted) {
+          setSubscribed(!!existing)
+          setError(null)
+        }
       } catch (err) {
+        if (mounted) {
+          setSubscribed(false)
+          setError('Could not connect notifications. Try enabling them again.')
+        }
         console.error('Push subscription check failed:', err)
       }
     })()
@@ -42,10 +56,14 @@ export function usePushSubscription(token: string | null) {
 
   const subscribe = async (): Promise<boolean> => {
     if (!supported || !token) return false
+    setError(null)
     try {
       const perm = await Notification.requestPermission()
       setPermission(perm)
-      if (perm !== 'granted') return false
+      if (perm !== 'granted') {
+        setError('Notification permission was not granted.')
+        return false
+      }
 
       const reg = await navigator.serviceWorker.ready
       const { publicKey } = await api.getVapidPublicKey()
@@ -57,6 +75,7 @@ export function usePushSubscription(token: string | null) {
       setSubscribed(true)
       return true
     } catch (err) {
+      setError('Could not enable notifications. Please try again.')
       console.error('Push subscribe failed:', err)
       return false
     }
@@ -64,6 +83,7 @@ export function usePushSubscription(token: string | null) {
 
   const unsubscribe = async (): Promise<void> => {
     if (!supported || !token) return
+    setError(null)
     try {
       const reg = await navigator.serviceWorker.ready
       const sub = await reg.pushManager.getSubscription()
@@ -73,9 +93,10 @@ export function usePushSubscription(token: string | null) {
       }
       setSubscribed(false)
     } catch (err) {
+      setError('Could not disable notifications. Please try again.')
       console.error('Push unsubscribe failed:', err)
     }
   }
 
-  return { supported, subscribed, permission, subscribe, unsubscribe }
+  return { supported, subscribed, permission, error, subscribe, unsubscribe }
 }
