@@ -8,7 +8,7 @@
 // perform the server write (a stale upload would re-create the endpoint
 // association under the previous identity).
 
-export interface ReuploadResult {
+interface ReuploadResult {
   // True when this call is still the current operation and callers should
   // update their local state. False when superseded: leave state alone.
   handled: boolean

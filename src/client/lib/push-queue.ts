@@ -4,7 +4,7 @@
 // operations now execute sequentially, and a caller that is no longer the
 // current generation (see isStale checks) skips its server write when its turn
 // arrives.
-export interface SerialQueue {
+interface SerialQueue {
   enqueue<T>(fn: () => Promise<T>): Promise<T>
 }
 

@@ -3,7 +3,7 @@
 // generation (identity switch / another op) while it waits in the queue; in
 // that case we must neither prompt the user nor touch UI state (a late denial
 // would otherwise overwrite the current error).
-export interface PermissionResult {
+interface PermissionResult {
   // True when this call was superseded before or during the prompt. Callers
   // must leave all state alone and drop the operation.
   superseded: boolean
