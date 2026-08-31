@@ -43,11 +43,3 @@ export function notify(
   }
   if (set.size === 0) clients.delete(address);
 }
-
-export function clientCount(address: string): number {
-  return clients.get(address)?.size ?? 0;
-}
-
-export function connectedAddresses(): string[] {
-  return [...clients.keys()];
-}

@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
-
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64)
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
-}
+import { reuploadExistingSubscription } from '../lib/push-reupload'
+import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
+import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 
 // Push notifications carry no payload (server design: relay only ever sees a
 // bare wakeup, never who messaged whom or what). Unlike SSE, subscribing
 // requires an explicit user gesture — browsers block/ignore permission
 // prompts not triggered by a click — so this hook never auto-subscribes.
+//
+// All server-mutating push operations (session-start re-upload, subscribe,
+// unsubscribe) are serialized on a single queue and each claims a generation.
+// Only the newest generation may perform its server write and update state; a
+// superseded operation skips its write when its turn arrives, so a stale
+// re-upload can never re-create an endpoint under a previous identity.
+// Per-op flows live in push-ops; this hook owns queue, generations, and state.
 export function usePushSubscription(token: string | null) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
@@ -19,82 +22,78 @@ export function usePushSubscription(token: string | null) {
   const [permission, setPermission] = useState<NotificationPermission | null>(
     typeof Notification === 'undefined' ? null : Notification.permission,
   )
+  const generationRef = useRef(0)
+  const queueRef = useRef(createSerialQueue())
 
   useEffect(() => {
     const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined'
     setSupported(isSupported)
     if (!isSupported || !token) return
+    const activeToken: string = token
+    const isStale = claimGeneration(generationRef)
 
-    let mounted = true
-    ;(async () => {
+    queueRef.current.enqueue(async () => {
       try {
         const reg = await navigator.serviceWorker.ready
-        const existing = await reg.pushManager.getSubscription()
-        if (existing) {
-          // A browser subscription alone is not enough: the server may have
-          // rejected or lost it. Re-upload it whenever a session starts.
-          await api.subscribePush(existing.toJSON() as PushSubscriptionJSON)
-        }
-        if (mounted) {
-          setSubscribed(!!existing)
+        if (isStale()) return
+        const result = await reuploadExistingSubscription({
+          getSubscription: () => reg.pushManager.getSubscription(),
+          upload: (sub) => api.subscribePush(sub, activeToken),
+          isStale,
+        })
+        if (!result.superseded) {
+          setSubscribed(result.subscribed)
           setError(null)
         }
       } catch (err) {
-        if (mounted) {
+        if (!isStale()) {
           setSubscribed(false)
           setError('Could not connect notifications. Try enabling them again.')
         }
         console.error('Push subscription check failed:', err)
       }
-    })()
+    })
 
     return () => {
-      mounted = false
+      generationRef.current++
     }
   }, [token])
 
   const subscribe = async (): Promise<boolean> => {
     if (!supported || !token) return false
     setError(null)
-    try {
-      const perm = await Notification.requestPermission()
-      setPermission(perm)
-      if (perm !== 'granted') {
-        setError('Notification permission was not granted.')
-        return false
-      }
+    const isStale = claimGeneration(generationRef)
+    const activeToken: string = token
 
-      const reg = await navigator.serviceWorker.ready
-      const { publicKey } = await api.getVapidPublicKey()
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      })
-      await api.subscribePush(sub.toJSON() as PushSubscriptionJSON)
-      setSubscribed(true)
-      return true
-    } catch (err) {
-      setError('Could not enable notifications. Please try again.')
-      console.error('Push subscribe failed:', err)
-      return false
-    }
+    return queueRef.current.enqueue(() =>
+      runSubscribeOp({
+        isStale,
+        ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+        requestPermission: () => Notification.requestPermission(),
+        getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
+        upload: (sub) => api.subscribePush(sub, activeToken),
+        setPermission,
+        setSubscribed,
+        setError,
+      }),
+    )
   }
 
   const unsubscribe = async (): Promise<void> => {
-    if (!supported) return
+    if (!supported || !token) return
     setError(null)
-    try {
-      const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.getSubscription()
-      if (sub) {
-        await api.unsubscribePush(sub.endpoint).catch(() => {})
-        await sub.unsubscribe()
-      }
-      setSubscribed(false)
-    } catch (err) {
-      setError('Could not disable notifications. Please try again.')
-      console.error('Push unsubscribe failed:', err)
-    }
+    const isStale = claimGeneration(generationRef)
+    const activeToken: string = token
+
+    return queueRef.current.enqueue(() =>
+      runUnsubscribeOp({
+        isStale,
+        ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+        deleteEndpoint: (endpoint) => api.unsubscribePush(endpoint, activeToken),
+        setSubscribed,
+        setError,
+      }),
+    )
   }
 
   return { supported, subscribed, permission, error, subscribe, unsubscribe }
