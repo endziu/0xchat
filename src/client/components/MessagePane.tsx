@@ -38,8 +38,9 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // fetch sequence so a stale (superseded) fetch can only touch its own
   // pending state.
   const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; fetchSeq: number } | null>(null)
-  // Set on the commit of a real prepend; consumed by the layout effect.
-  const prependCommittedRef = useRef(false)
+  // Set on the commit of a real prepend, tagged with the fetch that made
+  // it; consumed by the layout effect.
+  const prependCommittedRef = useRef<{ seq: number } | null>(null)
   const fetchSeqRef = useRef(0)
   const lastNewestIdRef = useRef<string | null>(null)
 
@@ -48,28 +49,31 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     if (!el) return
     if (messages.length === 0) {
       pendingPreserveRef.current = null
-      prependCommittedRef.current = false
+      prependCommittedRef.current = null
       lastNewestIdRef.current = null
       return
     }
     const newestId = messages[messages.length - 1].id
     // Only an explicitly signalled prepend applies the anchor — SSE appends
-    // and expiry removals must not consume the pending state.
+    // and expiry removals must not consume the pending state. A commit is
+    // only applied to the pending state of the fetch that made it; a
+    // pending state from a newer fetch survives for its own commit.
     if (prependCommittedRef.current) {
-      prependCommittedRef.current = false
+      const seq = prependCommittedRef.current.seq
+      prependCommittedRef.current = null
       const pending = pendingPreserveRef.current
-      pendingPreserveRef.current = null
-      if (pending !== null && pending.anchor !== null && pending.anchor.isConnected) {
-        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-      } else if (pending !== null && pending.anchor === null) {
-        // Nothing was visible at capture: fall back to the height delta,
-        // best effort.
-        el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.height)
+      if (pending !== null && pending.fetchSeq === seq) {
+        pendingPreserveRef.current = null
+        if (pending.anchor !== null && pending.anchor.isConnected) {
+          el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
+        } else {
+          // Anchor gone (nothing visible at capture, or it expired
+          // mid-fetch): no surviving reference point to restore the exact
+          // position, so stay with the newest content — the same policy as
+          // the append path.
+          el.scrollTop = el.scrollHeight
+        }
       }
-      // Intentional no-op when the anchor was invalidated mid-fetch (the
-      // visible list expired): with no surviving reference point there is no
-      // preserved position to restore, and leaving the viewport at the top
-      // is what makes the loaded older page visible.
     } else if (newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     }
@@ -107,7 +111,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     // The anchor is scroll-UX only — never a gate: the cursor has already
     // advanced, so the page is always prepended. Preact defers the render,
     // so the layout effect sees the commit flag on the prepend commit.
-    prependCommittedRef.current = true
+    prependCommittedRef.current = { seq: fetchSeq }
     prependMessages(fresh)
   }
 
