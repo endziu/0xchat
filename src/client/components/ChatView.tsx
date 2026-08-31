@@ -138,6 +138,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
         {disconnectNotice && <p className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</p>}
         {recipientAddress ? (
           <MessagePane
+            key={recipientAddress}
             recipientAddress={recipientAddress}
             messages={messages}
             loading={messagesLoading}
