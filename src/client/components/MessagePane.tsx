@@ -54,10 +54,13 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
       return
     }
     const newestId = messages[messages.length - 1].id
-    // Only an explicitly signalled prepend applies the anchor — SSE appends
-    // and expiry removals must not consume the pending state. A commit is
-    // only applied to the pending state of the fetch that made it; a
-    // pending state from a newer fetch survives for its own commit.
+    // A commit always applies a scroll policy. The pending anchor only
+    // supplies the exact reference for the fetch that made the commit; when
+    // it was cleared (e.g. the visible list expired mid-fetch) or the
+    // anchor itself is gone, no surviving reference point exists, so the
+    // policy degrades to staying with the newest content — the same policy
+    // as the append path. SSE appends and expiry removals never consume the
+    // pending state.
     if (prependCommittedRef.current) {
       const seq = prependCommittedRef.current.seq
       prependCommittedRef.current = null
@@ -66,15 +69,15 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
         pendingPreserveRef.current = null
         if (pending.anchor !== null && pending.anchor.isConnected) {
           el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-        } else {
-          // Anchor gone (nothing visible at capture, or it expired
-          // mid-fetch): no surviving reference point to restore the exact
-          // position, so stay with the newest content — the same policy as
-          // the append path.
-          el.scrollTop = el.scrollHeight
+          lastNewestIdRef.current = newestId
+          return
         }
       }
-    } else if (newestId !== lastNewestIdRef.current) {
+      el.scrollTop = el.scrollHeight
+      lastNewestIdRef.current = newestId
+      return
+    }
+    if (newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     }
     lastNewestIdRef.current = newestId
