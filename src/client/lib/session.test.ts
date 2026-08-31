@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { clearToken, getToken, saveToken, setActiveSessionAddress } from './session'
+import { clearToken, clearTokenIfMatches, getToken, saveToken } from './session'
 
 const values = new Map<string, string>()
 
@@ -14,24 +14,21 @@ globalThis.localStorage = {
 
 beforeEach(() => {
   values.clear()
-  setActiveSessionAddress(null)
 })
 
 describe('identity-bound session storage', () => {
-  test('loads a token only for its active identity', () => {
+  test('loads a token only for its stored identity', () => {
     saveToken('0xAa', 'token-a')
 
-    expect(getToken()).toBe('token-a')
-    setActiveSessionAddress('0xBb')
-    expect(getToken()).toBeNull()
+    expect(getToken('0xAa')).toBe('token-a')
+    expect(getToken('0xBb')).toBeNull()
     expect(values.has('eth_chat_session_v1')).toBe(false)
   })
 
   test('discards legacy unbound tokens', () => {
     values.set('eth_chat_token', 'legacy-token')
-    setActiveSessionAddress('0xAa')
 
-    expect(getToken()).toBeNull()
+    expect(getToken('0xAa')).toBeNull()
     expect(values.has('eth_chat_token')).toBe(false)
   })
 
@@ -42,6 +39,25 @@ describe('identity-bound session storage', () => {
     clearToken()
 
     expect(values.size).toBe(0)
-    expect(getToken()).toBeNull()
+    expect(getToken('0xAa')).toBeNull()
+  })
+})
+
+describe('clearTokenIfMatches', () => {
+  test('clears and reports a match for the stored token', () => {
+    saveToken('0xAa', 'token-a')
+    expect(clearTokenIfMatches('token-a')).toBe(true)
+    expect(values.has('eth_chat_session_v1')).toBe(false)
+  })
+
+  test('keeps a newer session when the token does not match', () => {
+    saveToken('0xAa', 'token-b')
+    expect(clearTokenIfMatches('token-a')).toBe(false)
+    expect(getToken('0xAa')).toBe('token-b')
+  })
+
+  test('a stale token against corrupt storage does not report a match', () => {
+    values.set('eth_chat_session_v1', '{not-json')
+    expect(clearTokenIfMatches('token-a')).toBe(false)
   })
 })

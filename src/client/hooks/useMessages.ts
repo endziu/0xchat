@@ -54,7 +54,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       const { pubkey } = await api.getPubkey(recipientAddress)
       setRecipientPubkey(pubkey)
 
-      const { messages: rawMessages } = await api.getMessages(recipientAddress)
+      const { messages: rawMessages } = await api.getMessages(recipientAddress, token)
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
       setMessages(decrypted.filter((message): message is Message & { plaintext: string } => message !== null).reverse())
     } catch (err) {
@@ -133,7 +133,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     )
 
     try {
-      return await api.sendMessage(envelope)
+      return await api.sendMessage(envelope, token)
     } catch (err: any) {
       throw new Error(err.message || 'Server rejected the message')
     }
