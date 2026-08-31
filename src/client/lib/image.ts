@@ -12,8 +12,12 @@ const QUALITY_STEPS = [0.85, 0.7, 0.55, 0.4, 0.25]
 
 export class ImageTooLargeError extends Error {}
 
-/** Downscales/recompresses an image file to a JPEG data URL that fits the envelope's ciphertext cap. */
+/** Downscales/recompresses an image file to a data URL that fits the envelope's ciphertext cap. */
 export async function compressImageFile(file: File): Promise<string> {
+  // Already small enough: send as-is so format and transparency survive untouched.
+  const original = await readAsDataUrl(file)
+  if (original.length <= MAX_DATA_URL_LENGTH) return original
+
   const bitmap = await loadBitmap(file)
   try {
     let width = bitmap.width
@@ -35,6 +39,15 @@ export async function compressImageFile(file: File): Promise<string> {
   } finally {
     bitmap.close()
   }
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('Failed to read image'))
+    reader.readAsDataURL(file)
+  })
 }
 
 async function loadBitmap(file: File): Promise<ImageBitmap> {

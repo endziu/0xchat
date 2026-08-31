@@ -218,7 +218,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
           <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
             <Plus size={18} />
           </button>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleImageFile(f) }} hidden />
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleImageFile(f) }} hidden />
           <select value={ttl} onChange={(e: any) => setTtl(Number(e.target.value))} aria-label="Message expiry" className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer">
             <option value={5}>5s</option>
             <option value={10}>10s</option>

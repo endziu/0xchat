@@ -3,6 +3,7 @@ import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import {
+  MAX_CIPHERTEXT_HEX_LEN,
   MESSAGE_ENVELOPE_VERSION,
   canonicalMessageAad,
   canonicalMessageEnvelope,
@@ -84,5 +85,15 @@ describe('message envelope protocol', () => {
     expect(parseMessageEnvelope({ ...envelope, sender: envelope.sender.toUpperCase() })).toBeNull()
     expect(parseMessageEnvelope({ ...envelope, ephemeral_pub_sender: `0x02${'00'.repeat(32)}` })).toBeNull()
     expect(parseMessageEnvelope({ ...envelope, id: 'legacy-server-id' })).toBeNull()
+  })
+
+  test('accepts ciphertext exactly at the size cap and rejects one byte over', async () => {
+    const envelope = await signedEnvelope()
+    const maxCiphertext = `0x${'ab'.repeat((MAX_CIPHERTEXT_HEX_LEN - 2) / 2)}`
+    expect(maxCiphertext.length).toBe(MAX_CIPHERTEXT_HEX_LEN)
+    expect(parseMessageEnvelope({ ...envelope, ct_recipient: maxCiphertext })).not.toBeNull()
+
+    const oversizedCiphertext = `${maxCiphertext}ab`
+    expect(parseMessageEnvelope({ ...envelope, ct_recipient: oversizedCiphertext })).toBeNull()
   })
 })
