@@ -41,6 +41,9 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // Set on the commit of a real prepend, tagged with the fetch that made
   // it; consumed by the layout effect.
   const prependCommittedRef = useRef<{ seq: number } | null>(null)
+  // Highest commit seq that already applied a scroll policy. A later commit
+  // with an older seq (a late, superseded fetch) must not undo it.
+  const scrolledSeqRef = useRef(0)
   const fetchSeqRef = useRef(0)
   const lastNewestIdRef = useRef<string | null>(null)
 
@@ -57,10 +60,10 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     // A commit applies a scroll policy when it owns the pending state:
     // exact anchor correction while the anchor is alive, otherwise stay
     // with the newest content (no surviving reference point — the same
-    // policy as the append path). When the pending state was cleared
-    // (visible list expired mid-fetch) the same stay-newest policy applies.
-    // When the pending state belongs to a NEWER fetch, its own commit will
-    // apply the policy, so this stale commit leaves the viewport alone.
+    // policy as the append path). A pending state cleared mid-fetch
+    // (visible list expired) gets the same stay-newest policy. A commit
+    // older than one that already applied a policy — or one whose pending
+    // state belongs to a newer fetch — leaves the viewport alone.
     // SSE appends and expiry removals never consume the pending state.
     if (prependCommittedRef.current) {
       const seq = prependCommittedRef.current.seq
@@ -73,8 +76,10 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
         } else {
           el.scrollTop = el.scrollHeight
         }
-      } else if (pending === null) {
+        scrolledSeqRef.current = Math.max(scrolledSeqRef.current, seq)
+      } else if (pending === null && seq > scrolledSeqRef.current) {
         el.scrollTop = el.scrollHeight
+        scrolledSeqRef.current = seq
       }
       lastNewestIdRef.current = newestId
       return
