@@ -46,7 +46,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     if (!el) return
     if (messages.length === 0) {
       pendingPreserveRef.current = null
-      prependCommittedRef.current = null
+      prependCommittedRef.current = false
       lastNewestIdRef.current = null
       return
     }
