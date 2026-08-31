@@ -66,7 +66,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       if (gen !== loadGenRef.current) return
       setRecipientPubkey(pubkey)
 
-      const page = await api.getMessages(recipientAddress, undefined, undefined, PAGE_SIZE)
+      const page = await api.getMessages(recipientAddress, token, undefined, undefined, PAGE_SIZE)
       if (gen !== loadGenRef.current) return
       const rawMessages = page.messages
       cursorRef.current = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
@@ -92,7 +92,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     const gen = loadGenRef.current
     setLoadingOlder(true)
     try {
-      const page = await api.getMessages(recipientAddress, cursor.before, cursor.rowid ?? undefined, PAGE_SIZE)
+      const page = await api.getMessages(recipientAddress, token, cursor.before, cursor.rowid ?? undefined, PAGE_SIZE)
       if (gen !== loadGenRef.current) return []
       cursorRef.current = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
       setHasMore(page.messages.length === PAGE_SIZE)
@@ -194,7 +194,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     )
 
     try {
-      return await api.sendMessage(envelope)
+      return await api.sendMessage(envelope, token)
     } catch (err: any) {
       throw new Error(err.message || 'Server rejected the message')
     }

@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   addClient,
-  clientCount,
-  connectedAddresses,
   notify,
   removeClient,
 } from './sse.ts';
@@ -28,13 +26,14 @@ function makeCtrl(): {
 
 describe('SSE', () => {
   test('addClient and removeClient', () => {
-    const { ctrl } = makeCtrl();
+    const { ctrl, chunks } = makeCtrl();
     const addr = `0xsse-${Date.now()}`;
-    expect(clientCount(addr)).toBe(0);
     addClient(addr, ctrl);
-    expect(clientCount(addr)).toBe(1);
+    notify(addr, 'message', { id: 'test' });
+    expect(chunks).toHaveLength(1);
     removeClient(addr, ctrl);
-    expect(clientCount(addr)).toBe(0);
+    notify(addr, 'message', { id: 'after-removal' });
+    expect(chunks).toHaveLength(1);
   });
 
   test('notify sends data to clients', () => {
@@ -53,12 +52,4 @@ describe('SSE', () => {
     notify('0xnobody', 'ping', {});
   });
 
-  test('connectedAddresses lists active clients', () => {
-    const { ctrl } = makeCtrl();
-    const addr = `0xsse3-${Date.now()}`;
-    addClient(addr, ctrl);
-    expect(connectedAddresses()).toContain(addr);
-    removeClient(addr, ctrl);
-    expect(connectedAddresses()).not.toContain(addr);
-  });
 });

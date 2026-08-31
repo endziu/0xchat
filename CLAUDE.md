@@ -4,13 +4,6 @@ Commands, source layout, architecture, crypto scheme, and the API table are in t
 
 @README.md
 
-## Environment
-
-You are on a WSL on Windows.
-
-- In all interactions and commit messages, be extremely concise and sacrifice grammar for the sake
-  of concision.
-
 ## Working here
 
 - Bun only — never `node` / `npm` / `npx`.
@@ -18,7 +11,6 @@ You are on a WSL on Windows.
   and builds first, so it is slow but is the real check.
 - Three tsconfigs: `tsconfig.client.json`, `tsconfig.server.json`, `tsconfig.json`. Client code is
   Preact, not React.
-- Bump `package.json` version with every non-documentation change. Documentation-only changes are exempt. The UI reads its version from there.
 
 ## Agent skills
 

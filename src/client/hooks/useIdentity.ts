@@ -64,7 +64,7 @@ export function useIdentity() {
 
     if (identity && token) {
       try {
-        await api.deleteAddress(identity.address)
+        await api.deleteAddress(identity.address, token)
       } catch (err) {
         deleteError = err instanceof Error ? err.message : 'Failed to notify server'
         console.error('Failed to delete address:', err)
