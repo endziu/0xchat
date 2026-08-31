@@ -1,9 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from 'preact/hooks'
+import { useState, useEffect } from 'preact/hooks'
 import { ConversationList } from './ConversationList'
 import { MessagePane } from './MessagePane'
 import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { useSSE } from '../hooks/useSSE'
+import { useLatest } from '../hooks/useLatest'
 import { Keypair } from '../lib/burner'
 import { api } from '../lib/api'
 import { Plus, X, QrCode } from 'lucide-preact'
@@ -25,37 +26,19 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
   const [showScanner, setShowScanner] = useState(false)
 
-  const handleSSERef = useRef((data: unknown) => {
+  const handleSSE = useLatest((data: unknown) => {
     refreshConversations()
     if (recipientAddress) addMessage(data)
   })
 
-  const handleDisconnectRef = useRef((address: string) => {
+  const handleDisconnect = useLatest((address: string) => {
     refreshConversations()
     if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
       setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
     }
   })
 
-  useEffect(() => {
-    handleSSERef.current = (data: unknown) => {
-      refreshConversations()
-      if (recipientAddress) addMessage(data)
-    }
-  }, [recipientAddress, refreshConversations, addMessage])
-
-  useEffect(() => {
-    handleDisconnectRef.current = (address: string) => {
-      refreshConversations()
-      if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
-        setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
-      }
-    }
-  }, [recipientAddress, refreshConversations])
-
-  const stableHandleSSE = useCallback((data: any) => handleSSERef.current(data), [])
-  const stableHandleDisconnect = useCallback((address: string) => handleDisconnectRef.current(address), [])
-  const { connected } = useSSE(token, stableHandleSSE, stableHandleDisconnect)
+  const { connected } = useSSE(token, handleSSE, handleDisconnect)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
 
