@@ -34,7 +34,13 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // topmost visible message element rather than container arithmetic, so the
   // anchor stays put even when the load button itself unmounts on the final
   // page.
-  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; prependExpected: boolean } | null>(null)
+  // Scroll anchor captured for a pending "load older" fetch, tagged with a
+  // fetch sequence so a stale (superseded) fetch can only touch its own
+  // pending state.
+  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; fetchSeq: number } | null>(null)
+  // Set on the commit of a real prepend; consumed by the layout effect.
+  const prependCommittedRef = useRef(false)
+  const fetchSeqRef = useRef(0)
   const lastNewestIdRef = useRef<string | null>(null)
 
   useLayoutEffect(() => {
@@ -42,23 +48,29 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     if (!el) return
     if (messages.length === 0) {
       pendingPreserveRef.current = null
+      prependCommittedRef.current = false
       lastNewestIdRef.current = null
       return
     }
     const newestId = messages[messages.length - 1].id
-    const pending = pendingPreserveRef.current
     // Only an explicitly signalled prepend applies the anchor — SSE appends
     // and expiry removals must not consume the pending state.
-    if (pending?.prependExpected) {
+    if (prependCommittedRef.current) {
+      prependCommittedRef.current = false
+      const pending = pendingPreserveRef.current
       pendingPreserveRef.current = null
-      if (pending.anchor !== null && pending.anchor.isConnected) {
+      if (pending !== null && pending.anchor !== null && pending.anchor.isConnected) {
         el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-      } else {
-        // No anchor (nothing visible at capture) or it expired mid-fetch:
-        // fall back to the height delta, best effort.
+      } else if (pending !== null && pending.anchor === null) {
+        // Nothing was visible at capture: fall back to the height delta,
+        // best effort.
         el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.height)
       }
-    } else if (!pending && newestId !== lastNewestIdRef.current) {
+      // Intentional no-op when the anchor was invalidated mid-fetch (the
+      // visible list expired): with no surviving reference point there is no
+      // preserved position to restore, and leaving the viewport at the top
+      // is what makes the loaded older page visible.
+    } else if (newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     }
     lastNewestIdRef.current = newestId
@@ -73,27 +85,29 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
       for (const article of Array.from(el.querySelectorAll('article'))) {
         if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
       }
+    }
+    const fetchSeq = ++fetchSeqRef.current
+    if (el) {
       pendingPreserveRef.current = {
         anchor,
         anchorTop: anchor?.getBoundingClientRect().top ?? 0,
         scrollTop: el.scrollTop,
         height: el.scrollHeight,
-        prependExpected: false,
+        fetchSeq,
       }
     }
     const fresh = await fetchOlder()
+    // Only manage the pending state of this fetch — a superseded fetch must
+    // not clear or flag the pending state of a newer one.
+    const mine = () => pendingPreserveRef.current?.fetchSeq === fetchSeq
     if (fresh.length === 0) {
-      pendingPreserveRef.current = null
+      if (mine()) pendingPreserveRef.current = null
       return
     }
-    // The pending anchor is scroll-UX only — never a gate: the cursor has
-    // already advanced, so the page must be prepended even if the anchor was
-    // invalidated (e.g. the loaded list expired mid-fetch).
-    if (pendingPreserveRef.current) {
-      pendingPreserveRef.current = { ...pendingPreserveRef.current, prependExpected: true }
-    }
-    // Preact defers the render, so the layout effect sees the flag (when
-    // present) on the prepend commit itself.
+    // The anchor is scroll-UX only — never a gate: the cursor has already
+    // advanced, so the page is always prepended. Preact defers the render,
+    // so the layout effect sees the commit flag on the prepend commit.
+    prependCommittedRef.current = true
     prependMessages(fresh)
   }
 
