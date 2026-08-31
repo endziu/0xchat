@@ -82,7 +82,11 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     const gen = loadGenRef.current
     setLoadingOlder(true)
     try {
-      const { messages: rawMessages } = await api.getMessages(recipientAddress, oldest.created_at, PAGE_SIZE)
+      // Pages arrive newest-first; the server's `before` cutoff is strict, so
+      // +1 keeps messages sharing the boundary millisecond reachable (the
+      // id-dedupe below drops the repeats) and reverse restores ascending
+      // order for the prepend.
+      const { messages: rawMessages } = await api.getMessages(recipientAddress, oldest.created_at + 1, PAGE_SIZE)
       if (gen !== loadGenRef.current) return 0
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
       if (gen !== loadGenRef.current) return 0
@@ -90,6 +94,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       const fresh = decrypted
         .filter((message): message is Message & { plaintext: string } => message !== null)
         .filter(message => !existingIds.has(message.id))
+        .reverse()
       if (fresh.length > 0) {
         setMessages(prev => {
           const freshIds = new Set(fresh.map(message => message.id))
