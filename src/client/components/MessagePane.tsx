@@ -33,21 +33,12 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // re-anchored once the older messages are prepended. We anchor on the
   // topmost visible message element rather than container arithmetic, so the
   // anchor stays put even when the load button itself unmounts on the final
-  // page.
-  // Scroll anchor captured for a pending "load older" fetch, tagged with a
-  // fetch sequence so a stale (superseded) fetch can only touch its own
-  // pending state.
-  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; fetchSeq: number } | null>(null)
-  // Set on the commit of a real prepend, tagged with the fetch that made
-  // it; consumed by the layout effect.
-  const prependCommittedRef = useRef<{ seq: number } | null>(null)
-  // Highest commit seq that already applied a scroll policy. A later commit
-  // with an older seq (a late, superseded fetch) must not undo it.
-  const scrolledSeqRef = useRef(0)
-  // Set when a commit deferred its policy because a newer fetch owns the
-  // pending state; cleared once any policy actually applied.
-  const deferredScrollRef = useRef(false)
-  const fetchSeqRef = useRef(0)
+  // page. Only one fetch is ever in flight (busyRef), so there is exactly
+  // one pending capture and one commit to reason about.
+  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number } | null>(null)
+  // Set on the commit of a real prepend; consumed by the layout effect.
+  const prependCommittedRef = useRef(false)
+  const busyRef = useRef(false)
   const lastNewestIdRef = useRef<string | null>(null)
 
   useLayoutEffect(() => {
@@ -60,95 +51,55 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
       return
     }
     const newestId = messages[messages.length - 1].id
-    // A commit applies a scroll policy when it owns the pending state:
-    // exact anchor correction while the anchor is alive, otherwise stay
-    // with the newest content (no surviving reference point — the same
-    // policy as the append path). A pending state cleared mid-fetch
-    // (visible list expired) gets the same stay-newest policy. A commit
-    // older than one that already applied a policy — or one whose pending
-    // state belongs to a newer fetch — leaves the viewport alone.
-    // SSE appends and expiry removals never consume the pending state.
+    // A real prepend committed: re-anchor on the captured topmost visible
+    // article. When the anchor is gone (nothing visible at capture, or it
+    // expired mid-fetch) no reference point survives, so stay with the
+    // newest content — the same policy as the append path. SSE appends and
+    // expiry removals never consume the pending state.
     if (prependCommittedRef.current) {
-      const seq = prependCommittedRef.current.seq
-      prependCommittedRef.current = null
+      prependCommittedRef.current = false
       const pending = pendingPreserveRef.current
-      if (pending !== null && pending.fetchSeq === seq) {
-        pendingPreserveRef.current = null
-        if (pending.anchor !== null && pending.anchor.isConnected) {
-          el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-        } else {
-          el.scrollTop = el.scrollHeight
-        }
-        scrolledSeqRef.current = Math.max(scrolledSeqRef.current, seq)
-        deferredScrollRef.current = false
-      } else if (pending === null && seq > scrolledSeqRef.current) {
+      pendingPreserveRef.current = null
+      if (pending !== null && pending.anchor !== null && pending.anchor.isConnected) {
+        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
+      } else {
         el.scrollTop = el.scrollHeight
-        scrolledSeqRef.current = seq
-        deferredScrollRef.current = false
-      } else if (pending !== null) {
-        // Pending state belongs to a newer fetch: its commit (or its
-        // empty-result handler) will apply the policy.
-        deferredScrollRef.current = true
       }
-      lastNewestIdRef.current = newestId
-      return
-    }
-    if (newestId !== lastNewestIdRef.current) {
+    } else if (newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     }
     lastNewestIdRef.current = newestId
   }, [messages])
 
   const handleLoadOlder = async () => {
-    if (!fetchOlder || !prependMessages) return
-    const el = scrollRef.current
-    let anchor: Element | null = null
-    if (el) {
-      const viewportTop = el.getBoundingClientRect().top
-      for (const article of Array.from(el.querySelectorAll('article'))) {
-        if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
+    if (!fetchOlder || !prependMessages || busyRef.current) return
+    busyRef.current = true
+    try {
+      const el = scrollRef.current
+      let anchor: Element | null = null
+      if (el) {
+        const viewportTop = el.getBoundingClientRect().top
+        for (const article of Array.from(el.querySelectorAll('article'))) {
+          if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
+        }
       }
-    }
-    const fetchSeq = ++fetchSeqRef.current
-    if (el) {
       pendingPreserveRef.current = {
         anchor,
         anchorTop: anchor?.getBoundingClientRect().top ?? 0,
-        scrollTop: el.scrollTop,
-        height: el.scrollHeight,
-        fetchSeq,
       }
-    }
-    const fresh = await fetchOlder()
-    // Only manage the pending state of this fetch — a superseded fetch must
-    // not clear or flag the pending state of a newer one.
-    const pending = pendingPreserveRef.current
-    if (fresh.length === 0) {
-      if (pending !== null && pending.fetchSeq === fetchSeq) {
+      const fresh = await fetchOlder()
+      // The anchor is scroll-UX only — never a gate: the cursor has already
+      // advanced, so the page is always prepended. Preact defers the render,
+      // so the layout effect sees the flag on the prepend commit.
+      if (fresh.length > 0) {
+        prependCommittedRef.current = true
+        prependMessages(fresh)
+      } else {
         pendingPreserveRef.current = null
-        if (deferredScrollRef.current) {
-          // A previous commit deferred its policy to this fetch; an empty
-          // result never runs the layout effect, so apply it here with the
-          // same policy (exact anchor while alive, else stay-newest).
-          deferredScrollRef.current = false
-          const scroller = scrollRef.current
-          if (scroller) {
-            if (pending.anchor !== null && pending.anchor.isConnected) {
-              scroller.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-            } else {
-              scroller.scrollTop = scroller.scrollHeight
-            }
-            scrolledSeqRef.current = Math.max(scrolledSeqRef.current, fetchSeq)
-          }
-        }
       }
-      return
+    } finally {
+      busyRef.current = false
     }
-    // The anchor is scroll-UX only — never a gate: the cursor has already
-    // advanced, so the page is always prepended. Preact defers the render,
-    // so the layout effect sees the commit flag on the prepend commit.
-    prependCommittedRef.current = { seq: fetchSeq }
-    prependMessages(fresh)
   }
 
   useEffect(() => {
