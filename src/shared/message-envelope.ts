@@ -3,6 +3,10 @@ import { hexToBytes, recoverMessageAddress } from 'viem'
 
 export const MESSAGE_ENVELOPE_VERSION = 1 as const
 export const MESSAGE_ID_BYTES = 16
+// "0x" prefix + hex digits, 2 hex digits per ciphertext byte
+export const MAX_CIPHERTEXT_HEX_LEN = 2_000_002
+export const GCM_TAG_BYTES = 16
+export const MAX_PLAINTEXT_BYTES = (MAX_CIPHERTEXT_HEX_LEN - 2) / 2 - GCM_TAG_BYTES
 
 export interface MessageMetadata {
   version: typeof MESSAGE_ENVELOPE_VERSION
@@ -79,7 +83,7 @@ function validCompressedPoint(value: unknown): value is string {
 function validCiphertext(value: unknown): value is string {
   return typeof value === 'string'
     && value.length >= 34 // AES-GCM's 16-byte authentication tag, even for empty plaintext
-    && value.length <= 2_000_002
+    && value.length <= MAX_CIPHERTEXT_HEX_LEN
     && HEX.test(value)
 }
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
+import { compressImageFile, ImageTooLargeError } from '../lib/image'
 import { useToast } from './Toast'
 
 interface MessagePaneProps {
@@ -25,6 +26,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [compressingImage, setCompressingImage] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -113,11 +115,16 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     }
   }, [inputText])
 
-  const handleImageFile = (file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => { if (e.target?.result) setImagePreview(e.target.result as string) }
-    reader.onerror = () => toast('Failed to read image', 'error')
-    reader.readAsDataURL(file)
+  const handleImageFile = async (file: File) => {
+    setCompressingImage(true)
+    try {
+      const dataUrl = await compressImageFile(file)
+      setImagePreview(dataUrl)
+    } catch (err: any) {
+      toast(err instanceof ImageTooLargeError ? err.message : (err.message || 'Failed to read image'), 'error')
+    } finally {
+      setCompressingImage(false)
+    }
   }
 
   const handlePaste = (e: ClipboardEvent) => {
@@ -196,6 +203,9 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
       </div>
 
       <form className="p-2 shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
+        {compressingImage && (
+          <div className="mb-2 border border-neutral-800 p-2 text-xs text-neutral-500">Compressing image…</div>
+        )}
         {imagePreview && (
           <div className="mb-2 border border-neutral-800 p-2">
             <figure className="inline-flex relative m-0">
@@ -205,7 +215,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
           </div>
         )}
         <div className="flex items-center border border-neutral-800 rounded-lg bg-neutral-950">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
             <Plus size={18} />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleImageFile(f) }} hidden />
