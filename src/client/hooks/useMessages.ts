@@ -71,6 +71,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       const rawMessages = page.messages
       cursorRef.current = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
+      if (gen !== loadGenRef.current) return
       setMessages(decrypted.filter((message): message is Message & { plaintext: string } => message !== null).reverse())
       setHasMore(rawMessages.length === PAGE_SIZE)
     } catch (err) {

@@ -82,13 +82,18 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
       }
     }
     const fresh = await fetchOlder()
-    if (fresh.length === 0 || !pendingPreserveRef.current) {
+    if (fresh.length === 0) {
       pendingPreserveRef.current = null
       return
     }
-    // Flag the prepend before the state commit: Preact defers the render,
-    // so the layout effect sees the flag on the prepend commit itself.
-    pendingPreserveRef.current = { ...pendingPreserveRef.current, prependExpected: true }
+    // The pending anchor is scroll-UX only — never a gate: the cursor has
+    // already advanced, so the page must be prepended even if the anchor was
+    // invalidated (e.g. the loaded list expired mid-fetch).
+    if (pendingPreserveRef.current) {
+      pendingPreserveRef.current = { ...pendingPreserveRef.current, prependExpected: true }
+    }
+    // Preact defers the render, so the layout effect sees the flag (when
+    // present) on the prepend commit itself.
     prependMessages(fresh)
   }
 
