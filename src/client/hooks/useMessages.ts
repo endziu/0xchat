@@ -19,6 +19,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
   const timerRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
   const loadGenRef = useRef(0)
+  // Oldest created_at seen from the server, kept even after those messages
+  // expire so "load older" still has a cursor when the visible list is empty.
+  const oldestCursorRef = useRef<number | null>(null)
 
   const decryptMessage = useCallback(async (input: unknown): Promise<(Message & { plaintext: string }) | null> => {
     if (!identity || !recipientAddress) return null
@@ -64,6 +67,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
       const { messages: rawMessages } = await api.getMessages(recipientAddress, undefined, PAGE_SIZE)
       if (gen !== loadGenRef.current) return
+      if (rawMessages.length > 0) {
+        oldestCursorRef.current = (rawMessages[rawMessages.length - 1] as { created_at: number }).created_at
+      }
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
       setMessages(decrypted.filter((message): message is Message & { plaintext: string } => message !== null).reverse())
       setHasMore(rawMessages.length === PAGE_SIZE)
@@ -76,8 +82,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
   const loadOlder = useCallback(async (): Promise<number> => {
     if (!recipientAddress || !identity || !token || loadingOlder || !hasMore) return 0
-    const oldest = messages[0]
-    if (!oldest) return 0
+    const cursor = messages[0]?.created_at ?? oldestCursorRef.current
+    if (cursor == null) return 0
 
     const gen = loadGenRef.current
     setLoadingOlder(true)
@@ -86,8 +92,11 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       // +1 keeps messages sharing the boundary millisecond reachable (the
       // id-dedupe below drops the repeats) and reverse restores ascending
       // order for the prepend.
-      const { messages: rawMessages } = await api.getMessages(recipientAddress, oldest.created_at + 1, PAGE_SIZE)
+      const { messages: rawMessages } = await api.getMessages(recipientAddress, cursor + 1, PAGE_SIZE)
       if (gen !== loadGenRef.current) return 0
+      if (rawMessages.length > 0) {
+        oldestCursorRef.current = (rawMessages[rawMessages.length - 1] as { created_at: number }).created_at
+      }
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
       if (gen !== loadGenRef.current) return 0
       const existingIds = new Set(messages.map(message => message.id))
@@ -101,7 +110,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
           return [...fresh, ...prev.filter(message => !freshIds.has(message.id))]
         })
       }
-      setHasMore(rawMessages.length === PAGE_SIZE)
+      // A full page that adds nothing means the cursor cannot progress
+      // (pathological same-timestamp tie) — stop offering further pages.
+      setHasMore(rawMessages.length === PAGE_SIZE && fresh.length > 0)
       return fresh.length
     } catch (err) {
       console.error('Failed to load older messages:', err)
@@ -116,6 +127,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // previous conversation.
   useEffect(() => {
     loadGenRef.current++
+    oldestCursorRef.current = null
     setMessages([])
     setRecipientPubkey(null)
     setHasMore(false)

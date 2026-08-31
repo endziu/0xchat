@@ -33,27 +33,30 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // topmost visible message element rather than container arithmetic, so the
   // anchor stays put even when the load button itself unmounts on the final
   // page.
-  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; oldestId: string } | null>(null)
+  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; oldestId: string; prevLength: number } | null>(null)
   const lastNewestIdRef = useRef<string | null>(null)
 
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
     if (messages.length === 0) {
+      pendingPreserveRef.current = null
       lastNewestIdRef.current = null
       return
     }
     const newestId = messages[messages.length - 1].id
     const pending = pendingPreserveRef.current
-    // Only a prepend (new oldest) applies the anchor. An SSE append while
-    // the older page is in flight must not consume the pending state — it
-    // auto-scrolls below and the anchor waits for the real prepend.
-    if (pending && messages[0].id !== pending.oldestId) {
+    // Only a real prepend applies the anchor: the oldest id changed AND the
+    // list grew. An SSE append (same oldest) or an expiry removing the oldest
+    // (list shrinks) must not consume the pending state — the anchor waits
+    // for the actual prepend and re-anchors against whatever shifted.
+    const prepended = pending !== null && messages[0].id !== pending.oldestId && messages.length > pending.prevLength
+    if (prepended) {
       pendingPreserveRef.current = null
-      if (pending.anchor && pending.anchor.isConnected) {
-        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-      } else {
+      if (pending.anchor === null) {
         el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.height)
+      } else if (pending.anchor.isConnected) {
+        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
       }
     } else if (!pending && newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
@@ -71,9 +74,10 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
         if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
       }
       const oldestId = messages[0]?.id ?? ''
+      const prevLength = messages.length
       pendingPreserveRef.current = anchor
-        ? { anchor, anchorTop: anchor.getBoundingClientRect().top, scrollTop: el.scrollTop, height: el.scrollHeight, oldestId }
-        : { anchor: null, anchorTop: 0, scrollTop: el.scrollTop, height: el.scrollHeight, oldestId }
+        ? { anchor, anchorTop: anchor.getBoundingClientRect().top, scrollTop: el.scrollTop, height: el.scrollHeight, oldestId, prevLength }
+        : { anchor: null, anchorTop: 0, scrollTop: el.scrollTop, height: el.scrollHeight, oldestId, prevLength }
     }
     const count = await onLoadOlder()
     if (count === 0) pendingPreserveRef.current = null
@@ -134,7 +138,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
           : messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
         }
-        {!loading && hasMore && messages.length > 0 && (
+        {!loading && hasMore && (
           <button onClick={handleLoadOlder} disabled={loadingOlder} aria-label="Load older messages" title="Load older messages" className="border-0 self-center mb-2 text-xs text-neutral-500">
             {loadingOlder ? 'Loading…' : 'Load older messages'}
           </button>
