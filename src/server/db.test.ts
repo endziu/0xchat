@@ -130,7 +130,7 @@ describe('messages', () => {
       'ct_s', 'eph_s', 'iv_s',
       300,
     );
-    const msgs = getConversationMessages(alice, bob);
+    const { rows: msgs } = getConversationMessages(alice, bob);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]!.id).toBe('m1');
     expect(msgs[0]!.sender).toBe(alice);
@@ -143,7 +143,7 @@ describe('messages', () => {
       'ct_s', 'eph_s', 'iv_s',
       300,
     );
-    const msgs = getConversationMessages(alice, bob);
+    const { rows: msgs } = getConversationMessages(alice, bob);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]!.sender).toBe(bob);
   });
@@ -157,7 +157,7 @@ describe('messages', () => {
     );
     // TTL=0 means expires_at = created_at, already expired
     // Need a small delay for Date.now() > expires_at
-    const msgs = getConversationMessages(alice, bob);
+    const { rows: msgs } = getConversationMessages(alice, bob);
     // expires_at = now + 0*1000 = now, so now > expires_at is false (equal)
     // actually expires_at >= now so it might still show
     // The query uses expires_at > now, so if equal it won't show
@@ -172,8 +172,36 @@ describe('messages', () => {
       3600,
     );
     // All messages created_at > 0, so before=1 should return none
-    const msgs = getConversationMessages(alice, bob, 50, 1);
+    const { rows: msgs } = getConversationMessages(alice, bob, 50, 1);
     expect(msgs).toHaveLength(0);
+  });
+
+  test('same-millisecond messages paginate via rowid tie-breaker', () => {
+    const stamp = Date.now();
+    const insert = (id: string) => getDb()
+      .query(
+        `INSERT INTO messages (version, id, sender, recipient, ct_recipient, ephemeral_pub_recipient, iv_recipient, ct_sender, ephemeral_pub_sender, iv_sender, ttl_seconds, signature, created_at, expires_at)
+         VALUES (1, ?, ?, ?, 'ct_r', 'eph_r', 'iv_r', 'ct_s', 'eph_s', 'iv_s', 3600, 'sig', ?, ?)`,
+      )
+      .run(id, alice, bob, stamp, stamp + 3600_000);
+    insert('t1');
+    insert('t2');
+    insert('t3');
+
+    const page1 = getConversationMessages(alice, bob, 2);
+    expect(page1.rows).toHaveLength(2);
+    expect(page1.rows.map(r => r.id)).toEqual(['t3', 't2']); // rowid DESC within the tie
+    expect(page1.next_before).toBe(stamp);
+    expect(page1.next_before_rowid).toBe(page1.rows[1]!.seq);
+
+    const page2 = getConversationMessages(alice, bob, 2, page1.next_before!, page1.next_before_rowid!);
+    expect(page2.rows.map(r => r.id)).toEqual(['t1']);
+    expect(page2.next_before).toBe(stamp);
+
+    const page3 = getConversationMessages(alice, bob, 2, page2.next_before!, page2.next_before_rowid!);
+    expect(page3.rows).toHaveLength(0);
+    expect(page3.next_before).toBeNull();
+    expect(page3.next_before_rowid).toBeNull();
   });
 
   test('limit works', () => {
@@ -185,7 +213,7 @@ describe('messages', () => {
         3600,
       );
     }
-    const msgs = getConversationMessages(alice, bob, 2);
+    const { rows: msgs } = getConversationMessages(alice, bob, 2);
     expect(msgs).toHaveLength(2);
   });
 
@@ -203,7 +231,7 @@ describe('messages', () => {
       3600,
     );
     deleteExpiredMessages();
-    const msgs = getConversationMessages(alice, bob);
+    const { rows: msgs } = getConversationMessages(alice, bob);
     // exp1 had TTL=0 so it's expired and deleted
     // exp2 has TTL=3600 so it should remain
     expect(msgs.some(m => m.id === 'exp2')).toBe(true);

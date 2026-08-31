@@ -110,11 +110,21 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
     return json({ error: 'Invalid before parameter: must be a positive integer' }, 400);
   }
   const before = beforeNum && beforeNum > 0 ? beforeNum : undefined;
+  const beforeRowidParam = url.searchParams.get('before_rowid');
+  const beforeRowidNum = beforeRowidParam ? Number(beforeRowidParam) : null;
+  if (beforeRowidParam != null && (!Number.isSafeInteger(beforeRowidNum) || (beforeRowidNum ?? 0) <= 0)) {
+    return json({ error: 'Invalid before_rowid parameter: must be a positive integer' }, 400);
+  }
+  const beforeRowid = beforeRowidNum && beforeRowidNum > 0 ? beforeRowidNum : undefined;
   const limitParam = url.searchParams.get('limit');
   const limit = limitParam ? Math.min(Math.max(Number(limitParam), 1), 100) : 50;
 
+  const page = getConversationMessages(address, counterparty, limit, before, beforeRowid);
   return json({
-    messages: getConversationMessages(address, counterparty, limit, before).map(deliveredRow),
+    messages: page.rows.map(deliveredRow),
+    // Server-issued cursor for the next older page; null when exhausted.
+    next_before: page.next_before,
+    next_before_rowid: page.next_before_rowid,
   });
 }
 
