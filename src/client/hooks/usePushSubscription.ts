@@ -1,15 +1,8 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
 import { reuploadExistingSubscription } from '../lib/push-reupload'
-import { requestPushPermission } from '../lib/push-permission'
+import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
-
-function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64)
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
-}
 
 // Push notifications carry no payload (server design: relay only ever sees a
 // bare wakeup, never who messaged whom or what). Unlike SSE, subscribing
@@ -21,6 +14,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 // Only the newest generation may perform its server write and update state; a
 // superseded operation skips its write when its turn arrives, so a stale
 // re-upload can never re-create an endpoint under a previous identity.
+// Per-op flows live in push-ops; this hook owns queue, generations, and state.
 export function usePushSubscription(token: string | null) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
@@ -69,74 +63,37 @@ export function usePushSubscription(token: string | null) {
     if (!supported || !token) return false
     setError(null)
     const isStale = claimGeneration(generationRef)
+    const activeToken: string = token
 
-    return queueRef.current.enqueue(async () => {
-      try {
-        const perm = await requestPushPermission({
-          requestPermission: () => Notification.requestPermission(),
-          isStale,
-        })
-        if (perm.superseded) return false
-        setPermission(perm.permission)
-        if (!perm.granted) {
-          setError('Notification permission was not granted.')
-          return false
-        }
-
-        const reg = await navigator.serviceWorker.ready
-        if (isStale()) return false
-        const { publicKey } = await api.getVapidPublicKey()
-        if (isStale()) return false
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
-        })
-        // A superseded call must not leave a browser subscription that was
-        // never uploaded — the next identity's re-upload would push it under
-        // the new token. Clean it up instead.
-        if (isStale()) {
-          await sub.unsubscribe().catch(() => {})
-          return false
-        }
-
-        await api.subscribePush(sub.toJSON() as PushSubscriptionJSON, token)
-        if (isStale()) return false
-
-        setSubscribed(true)
-        return true
-      } catch (err) {
-        if (!isStale()) setError('Could not enable notifications. Please try again.')
-        console.error('Push subscribe failed:', err)
-        return false
-      }
-    })
+    return queueRef.current.enqueue(() =>
+      runSubscribeOp({
+        isStale,
+        ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+        requestPermission: () => Notification.requestPermission(),
+        getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
+        upload: (sub) => api.subscribePush(sub, activeToken),
+        setPermission,
+        setSubscribed,
+        setError,
+      }),
+    )
   }
 
   const unsubscribe = async (): Promise<void> => {
     if (!supported || !token) return
     setError(null)
     const isStale = claimGeneration(generationRef)
+    const activeToken: string = token
 
-    return queueRef.current.enqueue(async () => {
-      try {
-        const reg = await navigator.serviceWorker.ready
-        if (isStale()) return
-        const sub = await reg.pushManager.getSubscription()
-        if (sub) {
-          if (isStale()) return
-          await api.unsubscribePush(sub.endpoint, token).catch(() => {})
-          // Always drop the browser subscription once we've committed to this
-          // op; a stale op finishing its local cleanup is harmless, and skipping
-          // it would leave a browser sub the server no longer knows about.
-          await sub.unsubscribe()
-        }
-        if (isStale()) return
-        setSubscribed(false)
-      } catch (err) {
-        if (!isStale()) setError('Could not disable notifications. Please try again.')
-        console.error('Push unsubscribe failed:', err)
-      }
-    })
+    return queueRef.current.enqueue(() =>
+      runUnsubscribeOp({
+        isStale,
+        ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+        deleteEndpoint: (endpoint) => api.unsubscribePush(endpoint, activeToken),
+        setSubscribed,
+        setError,
+      }),
+    )
   }
 
   return { supported, subscribed, permission, error, subscribe, unsubscribe }
