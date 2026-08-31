@@ -57,7 +57,10 @@ export function clearTokenIfMatches(token: string): boolean {
     }
     return false
   } catch {
+    // Corrupt storage cannot match any token, so this is never the current
+    // session. Drop it but do NOT report a match — a stale token 401 must not
+    // wipe a newer session or fire auth:expired on unparseable data.
     localStorage.removeItem(SESSION_KEY)
-    return true
+    return false
   }
 }

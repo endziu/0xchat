@@ -9,10 +9,9 @@
 // association under the previous identity).
 
 interface ReuploadResult {
-  // True when this call is still the current operation and callers should
-  // update their local state. False when superseded: leave state alone.
-  handled: boolean
-  // Whether a browser subscription exists (only meaningful when handled).
+  // True when this call was superseded; callers must leave state alone.
+  superseded: boolean
+  // Whether a browser subscription exists (only meaningful when not superseded).
   subscribed: boolean
 }
 
@@ -22,13 +21,14 @@ export async function reuploadExistingSubscription(args: {
   isStale: () => boolean
 }): Promise<ReuploadResult> {
   const existing = await args.getSubscription()
-  const currentAfterRead = !args.isStale()
+  const supersededAfterRead = args.isStale()
 
-  if (existing && currentAfterRead) {
+  if (existing && !supersededAfterRead) {
     await args.upload(existing.toJSON() as PushSubscriptionJSON)
   }
 
-  const handled = currentAfterRead && !args.isStale()
-  if (!handled) return { handled: false, subscribed: false }
-  return { handled: true, subscribed: !!existing }
+  if (supersededAfterRead || args.isStale()) {
+    return { superseded: true, subscribed: false }
+  }
+  return { superseded: false, subscribed: !!existing }
 }

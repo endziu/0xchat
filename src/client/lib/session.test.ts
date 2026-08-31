@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { clearToken, getToken, saveToken } from './session'
+import { clearToken, clearTokenIfMatches, getToken, saveToken } from './session'
 
 const values = new Map<string, string>()
 
@@ -40,5 +40,24 @@ describe('identity-bound session storage', () => {
 
     expect(values.size).toBe(0)
     expect(getToken('0xAa')).toBeNull()
+  })
+})
+
+describe('clearTokenIfMatches', () => {
+  test('clears and reports a match for the stored token', () => {
+    saveToken('0xAa', 'token-a')
+    expect(clearTokenIfMatches('token-a')).toBe(true)
+    expect(values.has('eth_chat_session_v1')).toBe(false)
+  })
+
+  test('keeps a newer session when the token does not match', () => {
+    saveToken('0xAa', 'token-b')
+    expect(clearTokenIfMatches('token-a')).toBe(false)
+    expect(getToken('0xAa')).toBe('token-b')
+  })
+
+  test('a stale token against corrupt storage does not report a match', () => {
+    values.set('eth_chat_session_v1', '{not-json')
+    expect(clearTokenIfMatches('token-a')).toBe(false)
   })
 })

@@ -20,3 +20,10 @@ export function createSerialQueue(): SerialQueue {
     },
   }
 }
+
+// Claim the next generation and return an `isStale` predicate. An operation
+// is stale once any newer operation (or a token change) has claimed.
+export function claimGeneration(ref: { current: number }): () => boolean {
+  const generation = ++ref.current
+  return () => generation !== ref.current
+}

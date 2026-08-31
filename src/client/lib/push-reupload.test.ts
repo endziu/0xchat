@@ -16,7 +16,7 @@ describe('reuploadExistingSubscription', () => {
     })
 
     expect(uploads).toEqual([{ endpoint: 'ep-a', expirationTime: null, keys: {} }])
-    expect(result).toEqual({ handled: true, subscribed: true })
+    expect(result).toEqual({ superseded: false, subscribed: true })
   })
 
   test('does not upload when superseded before the write', async () => {
@@ -30,7 +30,7 @@ describe('reuploadExistingSubscription', () => {
     })
 
     expect(uploads).toBe(0)
-    expect(result).toEqual({ handled: false, subscribed: false })
+    expect(result).toEqual({ superseded: true, subscribed: false })
   })
 
   test('does not upload when superseded during the write', async () => {
@@ -43,7 +43,7 @@ describe('reuploadExistingSubscription', () => {
 
     // The write may have started, but the operation is superseded so callers
     // must not trust it to update local state.
-    expect(result).toEqual({ handled: false, subscribed: false })
+    expect(result).toEqual({ superseded: true, subscribed: false })
   })
 
   test('no existing subscription is a no-op upload but still current', async () => {
@@ -55,6 +55,6 @@ describe('reuploadExistingSubscription', () => {
     })
 
     expect(uploads).toBe(0)
-    expect(result).toEqual({ handled: true, subscribed: false })
+    expect(result).toEqual({ superseded: false, subscribed: false })
   })
 })

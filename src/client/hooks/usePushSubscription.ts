@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
 import { reuploadExistingSubscription } from '../lib/push-reupload'
 import { requestPushPermission } from '../lib/push-permission'
-import { createSerialQueue } from '../lib/push-queue'
+import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -36,8 +36,7 @@ export function usePushSubscription(token: string | null) {
     setSupported(isSupported)
     if (!isSupported || !token) return
     const activeToken: string = token
-    const generation = ++generationRef.current
-    const isStale = () => generation !== generationRef.current
+    const isStale = claimGeneration(generationRef)
 
     queueRef.current.enqueue(async () => {
       try {
@@ -48,7 +47,7 @@ export function usePushSubscription(token: string | null) {
           upload: (sub) => api.subscribePush(sub, activeToken),
           isStale,
         })
-        if (result.handled) {
+        if (!result.superseded) {
           setSubscribed(result.subscribed)
           setError(null)
         }
@@ -69,8 +68,7 @@ export function usePushSubscription(token: string | null) {
   const subscribe = async (): Promise<boolean> => {
     if (!supported || !token) return false
     setError(null)
-    const generation = ++generationRef.current
-    const isStale = () => generation !== generationRef.current
+    const isStale = claimGeneration(generationRef)
 
     return queueRef.current.enqueue(async () => {
       try {
@@ -86,12 +84,20 @@ export function usePushSubscription(token: string | null) {
         }
 
         const reg = await navigator.serviceWorker.ready
+        if (isStale()) return false
         const { publicKey } = await api.getVapidPublicKey()
+        if (isStale()) return false
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         })
-        if (isStale()) return false
+        // A superseded call must not leave a browser subscription that was
+        // never uploaded — the next identity's re-upload would push it under
+        // the new token. Clean it up instead.
+        if (isStale()) {
+          await sub.unsubscribe().catch(() => {})
+          return false
+        }
 
         await api.subscribePush(sub.toJSON() as PushSubscriptionJSON, token)
         if (isStale()) return false
@@ -109,8 +115,7 @@ export function usePushSubscription(token: string | null) {
   const unsubscribe = async (): Promise<void> => {
     if (!supported || !token) return
     setError(null)
-    const generation = ++generationRef.current
-    const isStale = () => generation !== generationRef.current
+    const isStale = claimGeneration(generationRef)
 
     return queueRef.current.enqueue(async () => {
       try {
@@ -120,7 +125,9 @@ export function usePushSubscription(token: string | null) {
         if (sub) {
           if (isStale()) return
           await api.unsubscribePush(sub.endpoint, token).catch(() => {})
-          if (isStale()) return
+          // Always drop the browser subscription once we've committed to this
+          // op; a stale op finishing its local cleanup is harmless, and skipping
+          // it would leave a browser sub the server no longer knows about.
           await sub.unsubscribe()
         }
         if (isStale()) return
