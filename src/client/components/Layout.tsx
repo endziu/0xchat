@@ -100,19 +100,43 @@ export function Layout({
             <button onClick={() => setShowSettings(!showSettings)} title="Settings" aria-label="Settings" aria-expanded={showSettings} className="max-sm:border-0">
               <Settings size={14} />
             </button>
-            <button
-              onClick={() => {
-                if (logoutConfirm) { onLogout() } else {
+            <div className="relative">
+              <button
+                onClick={() => {
+                  if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
                   setLogoutConfirm(true)
-                  logoutTimeoutRef.current = setTimeout(() => setLogoutConfirm(false), 3000)
-                }
-              }}
-              title={logoutConfirm ? 'Click again to confirm' : 'Logout'}
-              aria-label="Logout"
-              className={`max-sm:border-0 ${logoutConfirm ? 'text-red-400' : ''}`}
-            >
-              <LogOut size={14} />
-            </button>
+                  logoutTimeoutRef.current = setTimeout(() => setLogoutConfirm(false), 8000)
+                }}
+                title="Burn identity"
+                aria-label="Burn identity"
+                aria-expanded={logoutConfirm}
+                className={`max-sm:border-0 ${logoutConfirm ? 'text-red-400' : ''}`}
+              >
+                <LogOut size={14} />
+              </button>
+              {logoutConfirm && (
+                <div role="alertdialog" aria-live="assertive" className="absolute right-0 top-full mt-1 z-10 w-56 bg-black border border-red-900 p-2 text-left">
+                  <p className="text-sm text-red-400">
+                    This permanently deletes your identity and all messages. This cannot be undone.
+                  </p>
+                  <div className="flex gap-1 mt-2">
+                    <button
+                      onClick={() => {
+                        if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
+                        setLogoutConfirm(false)
+                        setShowSettings(true)
+                      }}
+                      className="text-sm"
+                    >
+                      Export key first
+                    </button>
+                    <button onClick={onLogout} className="text-sm text-red-400 border-red-900">
+                      Burn identity
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </header>
