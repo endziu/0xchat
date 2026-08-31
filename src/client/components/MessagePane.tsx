@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'preact/hooks'
+import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { useToast } from './Toast'
@@ -7,6 +7,9 @@ interface MessagePaneProps {
   recipientAddress: string
   messages: (Message & { plaintext: string })[]
   loading?: boolean
+  hasMore?: boolean
+  loadingOlder?: boolean
+  onLoadOlder?: () => Promise<number>
   onSendMessage: (plaintext: string, ttl: number) => Promise<any>
   onBack: () => void
 }
@@ -14,18 +17,63 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, loading, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, loading, hasMore, loadingOlder, onLoadOlder, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   const [ttl, setTtl] = useState(1800)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // State captured before a "load older" fetch, so the view can be
+  // re-anchored once the older messages are prepended. We anchor on the
+  // topmost visible message element rather than container arithmetic, so the
+  // anchor stays put even when the load button itself unmounts on the final
+  // page.
+  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number } | null>(null)
+  const lastNewestIdRef = useRef<string | null>(null)
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (messages.length === 0) {
+      lastNewestIdRef.current = null
+      return
+    }
+    const newestId = messages[messages.length - 1].id
+    const pending = pendingPreserveRef.current
+    if (pending) {
+      pendingPreserveRef.current = null
+      if (pending.anchor && pending.anchor.isConnected) {
+        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
+      } else {
+        el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.height)
+      }
+    } else if (newestId !== lastNewestIdRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    }
+    lastNewestIdRef.current = newestId
+  }, [messages])
+
+  const handleLoadOlder = async () => {
+    if (!onLoadOlder) return
+    const el = scrollRef.current
+    if (el) {
+      let anchor: Element | null = null
+      const viewportTop = el.getBoundingClientRect().top
+      for (const article of Array.from(el.querySelectorAll('article'))) {
+        if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
+      }
+      pendingPreserveRef.current = anchor
+        ? { anchor, anchorTop: anchor.getBoundingClientRect().top, scrollTop: el.scrollTop, height: el.scrollHeight }
+        : { anchor: null, anchorTop: 0, scrollTop: el.scrollTop, height: el.scrollHeight }
+    }
+    const count = await onLoadOlder()
+    if (count === 0) pendingPreserveRef.current = null
+  }
 
   useEffect(() => {
     const ta = textareaRef.current
@@ -77,11 +125,16 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
         {loading
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
           : messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
         }
+        {!loading && hasMore && messages.length > 0 && (
+          <button onClick={handleLoadOlder} disabled={loadingOlder} aria-label="Load older messages" title="Load older messages" className="border-0 self-center mb-2 text-xs text-neutral-500">
+            {loadingOlder ? 'Loading…' : 'Load older messages'}
+          </button>
+        )}
         {messages.map((msg, i) => {
           const isMine = msg.sender.toLowerCase() !== recipientAddress.toLowerCase()
           const isImage = msg.plaintext.startsWith('data:image/')

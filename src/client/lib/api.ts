@@ -89,8 +89,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }),
 
-  getMessages: (address: string): Promise<{ messages: unknown[] }> =>
-    request(`/api/messages/${address}`),
+  getMessages: (address: string, before?: number, limit?: number): Promise<{ messages: unknown[] }> => {
+    const params = new URLSearchParams()
+    if (before != null) params.set('before', String(before))
+    if (limit != null) params.set('limit', String(limit))
+    const query = params.toString()
+    return request(`/api/messages/${address}${query ? `?${query}` : ''}`)
+  },
 
   getConversations: (): Promise<{ conversations: Conversation[] }> =>
     request('/api/conversations'),

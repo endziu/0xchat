@@ -9,11 +9,16 @@ import {
   verifyDeliveredMessage,
 } from '../../shared/message-envelope'
 
+const PAGE_SIZE = 50
+
 export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null) {
   const [messages, setMessages] = useState<(Message & { plaintext: string })[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
   const timerRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const loadGenRef = useRef(0)
 
   const decryptMessage = useCallback(async (input: unknown): Promise<(Message & { plaintext: string }) | null> => {
     if (!identity || !recipientAddress) return null
@@ -46,28 +51,70 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     if (!recipientAddress || !identity || !token) {
       setMessages([])
       setRecipientPubkey(null)
+      setHasMore(false)
       return
     }
 
+    const gen = loadGenRef.current
     setLoading(true)
     try {
       const { pubkey } = await api.getPubkey(recipientAddress)
+      if (gen !== loadGenRef.current) return
       setRecipientPubkey(pubkey)
 
-      const { messages: rawMessages } = await api.getMessages(recipientAddress)
+      const { messages: rawMessages } = await api.getMessages(recipientAddress, undefined, PAGE_SIZE)
+      if (gen !== loadGenRef.current) return
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
       setMessages(decrypted.filter((message): message is Message & { plaintext: string } => message !== null).reverse())
+      setHasMore(rawMessages.length === PAGE_SIZE)
     } catch (err) {
       console.error('Failed to load messages:', err)
     } finally {
-      setLoading(false)
+      if (gen === loadGenRef.current) setLoading(false)
     }
   }, [recipientAddress, identity, token, decryptMessage])
 
-  // Clear messages immediately when recipient changes, then load new ones
+  const loadOlder = useCallback(async (): Promise<number> => {
+    if (!recipientAddress || !identity || !token || loadingOlder || !hasMore) return 0
+    const oldest = messages[0]
+    if (!oldest) return 0
+
+    const gen = loadGenRef.current
+    setLoadingOlder(true)
+    try {
+      const { messages: rawMessages } = await api.getMessages(recipientAddress, oldest.created_at, PAGE_SIZE)
+      if (gen !== loadGenRef.current) return 0
+      const decrypted = await Promise.all(rawMessages.map(decryptMessage))
+      if (gen !== loadGenRef.current) return 0
+      const existingIds = new Set(messages.map(message => message.id))
+      const fresh = decrypted
+        .filter((message): message is Message & { plaintext: string } => message !== null)
+        .filter(message => !existingIds.has(message.id))
+      if (fresh.length > 0) {
+        setMessages(prev => {
+          const freshIds = new Set(fresh.map(message => message.id))
+          return [...fresh, ...prev.filter(message => !freshIds.has(message.id))]
+        })
+      }
+      setHasMore(rawMessages.length === PAGE_SIZE)
+      return fresh.length
+    } catch (err) {
+      console.error('Failed to load older messages:', err)
+      return 0
+    } finally {
+      if (gen === loadGenRef.current) setLoadingOlder(false)
+    }
+  }, [recipientAddress, identity, token, loadingOlder, hasMore, messages, decryptMessage])
+
+  // Clear messages immediately when recipient changes, then load new ones.
+  // The generation bump also invalidates in-flight fetches from the
+  // previous conversation.
   useEffect(() => {
+    loadGenRef.current++
     setMessages([])
     setRecipientPubkey(null)
+    setHasMore(false)
+    setLoadingOlder(false)
   }, [recipientAddress])
 
   useEffect(() => {
@@ -148,5 +195,5 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     })
   }, [decryptMessage])
 
-  return { messages, setMessages, loading, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
+  return { messages, setMessages, loading, hasMore, loadingOlder, loadOlder, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
 }
