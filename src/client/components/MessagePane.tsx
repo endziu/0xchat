@@ -9,7 +9,8 @@ interface MessagePaneProps {
   loading?: boolean
   hasMore?: boolean
   loadingOlder?: boolean
-  onLoadOlder?: () => Promise<number>
+  fetchOlder?: () => Promise<(Message & { plaintext: string })[]>
+  prependMessages?: (fresh: (Message & { plaintext: string })[]) => void
   onSendMessage: (plaintext: string, ttl: number) => Promise<any>
   onBack: () => void
 }
@@ -17,7 +18,7 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, loading, hasMore, loadingOlder, onLoadOlder, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, loading, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   const [ttl, setTtl] = useState(1800)
@@ -33,7 +34,7 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // topmost visible message element rather than container arithmetic, so the
   // anchor stays put even when the load button itself unmounts on the final
   // page.
-  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; oldestId: string; prevLength: number } | null>(null)
+  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number; scrollTop: number; height: number; prependExpected: boolean } | null>(null)
   const lastNewestIdRef = useRef<string | null>(null)
 
   useLayoutEffect(() => {
@@ -46,17 +47,16 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     }
     const newestId = messages[messages.length - 1].id
     const pending = pendingPreserveRef.current
-    // Only a real prepend applies the anchor: the oldest id changed AND the
-    // list grew. An SSE append (same oldest) or an expiry removing the oldest
-    // (list shrinks) must not consume the pending state — the anchor waits
-    // for the actual prepend and re-anchors against whatever shifted.
-    const prepended = pending !== null && messages[0].id !== pending.oldestId && messages.length > pending.prevLength
-    if (prepended) {
+    // Only an explicitly signalled prepend applies the anchor — SSE appends
+    // and expiry removals must not consume the pending state.
+    if (pending?.prependExpected) {
       pendingPreserveRef.current = null
-      if (pending.anchor === null) {
-        el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.height)
-      } else if (pending.anchor.isConnected) {
+      if (pending.anchor !== null && pending.anchor.isConnected) {
         el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
+      } else {
+        // No anchor (nothing visible at capture) or it expired mid-fetch:
+        // fall back to the height delta, best effort.
+        el.scrollTop = pending.scrollTop + (el.scrollHeight - pending.height)
       }
     } else if (!pending && newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
@@ -65,22 +65,31 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   }, [messages])
 
   const handleLoadOlder = async () => {
-    if (!onLoadOlder) return
+    if (!fetchOlder || !prependMessages) return
     const el = scrollRef.current
+    let anchor: Element | null = null
     if (el) {
-      let anchor: Element | null = null
       const viewportTop = el.getBoundingClientRect().top
       for (const article of Array.from(el.querySelectorAll('article'))) {
         if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
       }
-      const oldestId = messages[0]?.id ?? ''
-      const prevLength = messages.length
-      pendingPreserveRef.current = anchor
-        ? { anchor, anchorTop: anchor.getBoundingClientRect().top, scrollTop: el.scrollTop, height: el.scrollHeight, oldestId, prevLength }
-        : { anchor: null, anchorTop: 0, scrollTop: el.scrollTop, height: el.scrollHeight, oldestId, prevLength }
+      pendingPreserveRef.current = {
+        anchor,
+        anchorTop: anchor?.getBoundingClientRect().top ?? 0,
+        scrollTop: el.scrollTop,
+        height: el.scrollHeight,
+        prependExpected: false,
+      }
     }
-    const count = await onLoadOlder()
-    if (count === 0) pendingPreserveRef.current = null
+    const fresh = await fetchOlder()
+    if (fresh.length === 0 || !pendingPreserveRef.current) {
+      pendingPreserveRef.current = null
+      return
+    }
+    // Flag the prepend before the state commit: Preact defers the render,
+    // so the layout effect sees the flag on the prepend commit itself.
+    pendingPreserveRef.current = { ...pendingPreserveRef.current, prependExpected: true }
+    prependMessages(fresh)
   }
 
   useEffect(() => {
