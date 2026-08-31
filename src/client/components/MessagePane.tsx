@@ -54,13 +54,14 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
       return
     }
     const newestId = messages[messages.length - 1].id
-    // A commit always applies a scroll policy. The pending anchor only
-    // supplies the exact reference for the fetch that made the commit; when
-    // it was cleared (e.g. the visible list expired mid-fetch) or the
-    // anchor itself is gone, no surviving reference point exists, so the
-    // policy degrades to staying with the newest content — the same policy
-    // as the append path. SSE appends and expiry removals never consume the
-    // pending state.
+    // A commit applies a scroll policy when it owns the pending state:
+    // exact anchor correction while the anchor is alive, otherwise stay
+    // with the newest content (no surviving reference point — the same
+    // policy as the append path). When the pending state was cleared
+    // (visible list expired mid-fetch) the same stay-newest policy applies.
+    // When the pending state belongs to a NEWER fetch, its own commit will
+    // apply the policy, so this stale commit leaves the viewport alone.
+    // SSE appends and expiry removals never consume the pending state.
     if (prependCommittedRef.current) {
       const seq = prependCommittedRef.current.seq
       prependCommittedRef.current = null
@@ -69,11 +70,12 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
         pendingPreserveRef.current = null
         if (pending.anchor !== null && pending.anchor.isConnected) {
           el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-          lastNewestIdRef.current = newestId
-          return
+        } else {
+          el.scrollTop = el.scrollHeight
         }
+      } else if (pending === null) {
+        el.scrollTop = el.scrollHeight
       }
-      el.scrollTop = el.scrollHeight
       lastNewestIdRef.current = newestId
       return
     }
