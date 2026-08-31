@@ -20,7 +20,7 @@ interface ChatViewProps {
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
   const { conversations, refresh: refreshConversations, labels, setLabel, deleteConversation } = useConversations(token)
-  const { messages, sendMessage, addMessage, loading: messagesLoading } = useMessages(recipientAddress, identity, token)
+  const { messages, sendMessage, addMessage, loading: messagesLoading, hasMore, loadingOlder, fetchOlder, prependMessages } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
@@ -121,9 +121,14 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
         {disconnectNotice && <p className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</p>}
         {recipientAddress ? (
           <MessagePane
+            key={recipientAddress}
             recipientAddress={recipientAddress}
             messages={messages}
             loading={messagesLoading}
+            hasMore={hasMore}
+            loadingOlder={loadingOlder}
+            fetchOlder={fetchOlder}
+            prependMessages={prependMessages}
             onSendMessage={sendMessage}
             onBack={() => navigate('/chat')}
           />

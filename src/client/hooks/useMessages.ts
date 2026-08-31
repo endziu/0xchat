@@ -9,11 +9,20 @@ import {
   verifyDeliveredMessage,
 } from '../../shared/message-envelope'
 
+const PAGE_SIZE = 50
+
 export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null) {
   const [messages, setMessages] = useState<(Message & { plaintext: string })[]>([])
   const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
   const timerRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const loadGenRef = useRef(0)
+  // Server-issued cursor for the next older page. (created_at, rowid) is a
+  // total order — timestamps alone are ambiguous (Date.now() millisecond
+  // ties) — and it stays valid after the page's messages expire.
+  const cursorRef = useRef<{ before: number; rowid: number | null } | null>(null)
 
   const decryptMessage = useCallback(async (input: unknown): Promise<(Message & { plaintext: string }) | null> => {
     if (!identity || !recipientAddress) return null
@@ -46,28 +55,80 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     if (!recipientAddress || !identity || !token) {
       setMessages([])
       setRecipientPubkey(null)
+      setHasMore(false)
       return
     }
 
+    const gen = loadGenRef.current
     setLoading(true)
     try {
       const { pubkey } = await api.getPubkey(recipientAddress)
+      if (gen !== loadGenRef.current) return
       setRecipientPubkey(pubkey)
 
-      const { messages: rawMessages } = await api.getMessages(recipientAddress, token)
+      const page = await api.getMessages(recipientAddress, token, undefined, undefined, PAGE_SIZE)
+      if (gen !== loadGenRef.current) return
+      const rawMessages = page.messages
+      cursorRef.current = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
       const decrypted = await Promise.all(rawMessages.map(decryptMessage))
+      if (gen !== loadGenRef.current) return
       setMessages(decrypted.filter((message): message is Message & { plaintext: string } => message !== null).reverse())
+      setHasMore(rawMessages.length === PAGE_SIZE)
     } catch (err) {
       console.error('Failed to load messages:', err)
     } finally {
-      setLoading(false)
+      if (gen === loadGenRef.current) setLoading(false)
     }
   }, [recipientAddress, identity, token, decryptMessage])
 
-  // Clear messages immediately when recipient changes, then load new ones
+  // Fetches the next older page and returns it in ascending order, without
+  // touching the message list. The pane prepends via prependMessages so it
+  // can signal the prepend before the render commits.
+  const fetchOlder = useCallback(async (): Promise<(Message & { plaintext: string })[]> => {
+    if (!recipientAddress || !identity || !token || loadingOlder || !hasMore) return []
+    const cursor = cursorRef.current
+    if (!cursor) return []
+
+    const gen = loadGenRef.current
+    setLoadingOlder(true)
+    try {
+      const page = await api.getMessages(recipientAddress, token, cursor.before, cursor.rowid ?? undefined, PAGE_SIZE)
+      if (gen !== loadGenRef.current) return []
+      cursorRef.current = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
+      setHasMore(page.messages.length === PAGE_SIZE)
+      const decrypted = await Promise.all(page.messages.map(decryptMessage))
+      if (gen !== loadGenRef.current) return []
+      const existingIds = new Set(messages.map(message => message.id))
+      return decrypted
+        .filter((message): message is Message & { plaintext: string } => message !== null)
+        .filter(message => !existingIds.has(message.id))
+        .reverse() // pages arrive newest-first
+    } catch (err) {
+      console.error('Failed to load older messages:', err)
+      return []
+    } finally {
+      if (gen === loadGenRef.current) setLoadingOlder(false)
+    }
+  }, [recipientAddress, identity, token, loadingOlder, hasMore, messages, decryptMessage])
+
+  const prependMessages = useCallback((fresh: (Message & { plaintext: string })[]) => {
+    if (fresh.length === 0) return
+    setMessages(prev => {
+      const freshIds = new Set(fresh.map(message => message.id))
+      return [...fresh, ...prev.filter(message => !freshIds.has(message.id))]
+    })
+  }, [])
+
+  // Clear messages immediately when recipient changes, then load new ones.
+  // The generation bump also invalidates in-flight fetches from the
+  // previous conversation.
   useEffect(() => {
+    loadGenRef.current++
+    cursorRef.current = null
     setMessages([])
     setRecipientPubkey(null)
+    setHasMore(false)
+    setLoadingOlder(false)
   }, [recipientAddress])
 
   useEffect(() => {
@@ -148,5 +209,5 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     })
   }, [decryptMessage])
 
-  return { messages, setMessages, loading, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
+  return { messages, setMessages, loading, hasMore, loadingOlder, fetchOlder, prependMessages, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
 }

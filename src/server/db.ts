@@ -157,27 +157,54 @@ export interface MessageRow {
   expires_at: number;
 }
 
+export interface ConversationPage {
+  rows: Array<MessageRow & { seq: number }>;
+  next_before: number | null;
+  next_before_rowid: number | null;
+}
+
+// Cursor is (created_at, rowid). created_at alone is ambiguous: the server
+// stamps Date.now() per message, so a strict created_at cutoff would skip
+// (or endlessly re-return) messages sharing a millisecond. rowid makes the
+// cursor total and strictly advancing.
 export function getConversationMessages(
   addr1: string,
   addr2: string,
   limit = 50,
   before?: number,
-): MessageRow[] {
+  beforeRowid?: number,
+): ConversationPage {
   const now = Date.now();
-  const cutoff = before ?? Number.MAX_SAFE_INTEGER;
-  return db
+  let cutoffSql = '1=1';
+  const cutoffParams: number[] = [];
+  if (before != null) {
+    if (beforeRowid != null) {
+      cutoffSql = '(created_at < ? OR (created_at = ? AND rowid < ?))';
+      cutoffParams.push(before, before, beforeRowid);
+    } else {
+      cutoffSql = 'created_at < ?';
+      cutoffParams.push(before);
+    }
+  }
+  const rows = db
     .query(
-      `SELECT * FROM messages
+      `SELECT *, rowid AS seq FROM messages
        WHERE expires_at > ?
-         AND created_at < ?
+         AND ${cutoffSql}
          AND (
            (sender = ? AND recipient = ?)
            OR (sender = ? AND recipient = ?)
          )
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, rowid DESC
        LIMIT ?`,
     )
-    .all(now, cutoff, addr1, addr2, addr2, addr1, limit) as MessageRow[];
+    .all(now, ...cutoffParams, addr1, addr2, addr2, addr1, limit) as Array<MessageRow & { seq: number }>;
+  const oldest = rows[rows.length - 1];
+  return {
+    rows,
+    next_before: oldest ? oldest.created_at : null,
+    next_before_rowid: oldest ? oldest.seq : null,
+  };
 }
 
 export interface ConversationSummary {

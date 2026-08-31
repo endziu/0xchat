@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'preact/hooks'
+import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { useToast } from './Toast'
@@ -7,6 +7,10 @@ interface MessagePaneProps {
   recipientAddress: string
   messages: (Message & { plaintext: string })[]
   loading?: boolean
+  hasMore?: boolean
+  loadingOlder?: boolean
+  fetchOlder?: () => Promise<(Message & { plaintext: string })[]>
+  prependMessages?: (fresh: (Message & { plaintext: string })[]) => void
   onSendMessage: (plaintext: string, ttl: number) => Promise<any>
   onBack: () => void
 }
@@ -14,18 +18,89 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, loading, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, loading, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   const [ttl, setTtl] = useState(1800)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // State captured before a "load older" fetch, so the view can be
+  // re-anchored once the older messages are prepended. We anchor on the
+  // topmost visible message element rather than container arithmetic, so the
+  // anchor stays put even when the load button itself unmounts on the final
+  // page. Only one fetch is ever in flight (busyRef), so there is exactly
+  // one pending capture and one commit to reason about.
+  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number } | null>(null)
+  // Set on the commit of a real prepend; consumed by the layout effect.
+  const prependCommittedRef = useRef(false)
+  const busyRef = useRef(false)
+  const lastNewestIdRef = useRef<string | null>(null)
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (messages.length === 0) {
+      pendingPreserveRef.current = null
+      prependCommittedRef.current = false
+      lastNewestIdRef.current = null
+      return
+    }
+    const newestId = messages[messages.length - 1].id
+    // A real prepend committed: re-anchor on the captured topmost visible
+    // article. When the anchor is gone (nothing visible at capture, or it
+    // expired mid-fetch) no reference point survives, so stay with the
+    // newest content — the same policy as the append path. SSE appends and
+    // expiry removals never consume the pending state.
+    if (prependCommittedRef.current) {
+      prependCommittedRef.current = false
+      const pending = pendingPreserveRef.current
+      pendingPreserveRef.current = null
+      if (pending !== null && pending.anchor !== null && pending.anchor.isConnected) {
+        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+    } else if (newestId !== lastNewestIdRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    }
+    lastNewestIdRef.current = newestId
+  }, [messages])
+
+  const handleLoadOlder = async () => {
+    if (!fetchOlder || !prependMessages || busyRef.current) return
+    busyRef.current = true
+    try {
+      const el = scrollRef.current
+      let anchor: Element | null = null
+      if (el) {
+        const viewportTop = el.getBoundingClientRect().top
+        for (const article of Array.from(el.querySelectorAll('article'))) {
+          if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
+        }
+      }
+      pendingPreserveRef.current = {
+        anchor,
+        anchorTop: anchor?.getBoundingClientRect().top ?? 0,
+      }
+      const fresh = await fetchOlder()
+      // The anchor is scroll-UX only — never a gate: the cursor has already
+      // advanced, so the page is always prepended. Preact defers the render,
+      // so the layout effect sees the flag on the prepend commit.
+      if (fresh.length > 0) {
+        prependCommittedRef.current = true
+        prependMessages(fresh)
+      } else {
+        pendingPreserveRef.current = null
+      }
+    } finally {
+      busyRef.current = false
+    }
+  }
 
   useEffect(() => {
     const ta = textareaRef.current
@@ -77,11 +152,16 @@ export function MessagePane({ recipientAddress, messages, loading, onSendMessage
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
         {loading
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
           : messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
         }
+        {!loading && hasMore && (
+          <button onClick={handleLoadOlder} disabled={loadingOlder} aria-label="Load older messages" title="Load older messages" className="border-0 self-center mb-2 text-xs text-neutral-500">
+            {loadingOlder ? 'Loading…' : 'Load older messages'}
+          </button>
+        )}
         {messages.map((msg, i) => {
           const isMine = msg.sender.toLowerCase() !== recipientAddress.toLowerCase()
           const isImage = msg.plaintext.startsWith('data:image/')

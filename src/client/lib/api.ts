@@ -5,6 +5,13 @@ import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-env
 
 export type Message = DeliveredMessage
 
+export interface MessagePage {
+  messages: unknown[]
+  // Server-issued cursor for the next older page; null when exhausted.
+  next_before: number | null
+  next_before_rowid: number | null
+}
+
 export interface Conversation {
   address: string
   last_message_at: number
@@ -103,8 +110,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  getMessages: (address: string, token: string): Promise<{ messages: unknown[] }> =>
-    request(`/api/messages/${address}`, {}, token),
+  getMessages: (address: string, token: string, before?: number, beforeRowid?: number, limit?: number): Promise<MessagePage> => {
+    const params = new URLSearchParams()
+    if (before != null) params.set('before', String(before))
+    if (beforeRowid != null) params.set('before_rowid', String(beforeRowid))
+    if (limit != null) params.set('limit', String(limit))
+    const query = params.toString()
+    return request(`/api/messages/${address}${query ? `?${query}` : ''}`, {}, token)
+  },
 
   getConversations: (token: string): Promise<{ conversations: Conversation[] }> =>
     request('/api/conversations', {}, token),
