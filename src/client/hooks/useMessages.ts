@@ -14,6 +14,7 @@ const PAGE_SIZE = 50
 export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null) {
   const [messages, setMessages] = useState<(Message & { plaintext: string })[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
@@ -56,11 +57,13 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       setMessages([])
       setRecipientPubkey(null)
       setHasMore(false)
+      setError(null)
       return
     }
 
     const gen = loadGenRef.current
     setLoading(true)
+    setError(null)
     try {
       const { pubkey } = await api.getPubkey(recipientAddress)
       if (gen !== loadGenRef.current) return
@@ -74,8 +77,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       if (gen !== loadGenRef.current) return
       setMessages(decrypted.filter((message): message is Message & { plaintext: string } => message !== null).reverse())
       setHasMore(rawMessages.length === PAGE_SIZE)
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load messages:', err)
+      if (gen === loadGenRef.current) setError(err.message || 'Failed to load messages')
     } finally {
       if (gen === loadGenRef.current) setLoading(false)
     }
@@ -129,6 +133,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     setRecipientPubkey(null)
     setHasMore(false)
     setLoadingOlder(false)
+    setError(null)
   }, [recipientAddress])
 
   useEffect(() => {
@@ -209,5 +214,5 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     })
   }, [decryptMessage])
 
-  return { messages, setMessages, loading, hasMore, loadingOlder, fetchOlder, prependMessages, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
+  return { messages, setMessages, loading, error, hasMore, loadingOlder, fetchOlder, prependMessages, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
 }

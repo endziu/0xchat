@@ -10,6 +10,8 @@ interface ConversationListProps {
   labels?: Record<string, string>
   onRename?: (address: string, name: string) => void
   onDelete?: (address: string) => void
+  error?: string | null
+  onRetry?: () => void
 }
 
 const formatTimestamp = (timestamp: number): string => {
@@ -25,7 +27,7 @@ const formatTimestamp = (timestamp: number): string => {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename, onDelete }: ConversationListProps) {
+export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename, onDelete, error, onRetry }: ConversationListProps) {
   const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({})
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -87,6 +89,16 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
     onRename?.(address, editValue)
     setEditingAddress(null)
     setEditValue('')
+  }
+
+  if (conversations.length === 0 && error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-2 p-4 text-center">
+        <span className="text-red-400">Failed to load conversations</span>
+        <span className="text-sm text-neutral-600">{error}</span>
+        {onRetry && <button onClick={onRetry}>Retry</button>}
+      </div>
+    )
   }
 
   if (conversations.length === 0) {

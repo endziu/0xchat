@@ -19,8 +19,8 @@ interface ChatViewProps {
 }
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
-  const { conversations, refresh: refreshConversations, labels, setLabel, deleteConversation } = useConversations(token)
-  const { messages, sendMessage, addMessage, loading: messagesLoading, hasMore, loadingOlder, fetchOlder, prependMessages } = useMessages(recipientAddress, identity, token)
+  const { conversations, refresh: refreshConversations, error: conversationsError, labels, setLabel, deleteConversation } = useConversations(token)
+  const { messages, sendMessage, addMessage, loading: messagesLoading, error: messagesError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, prependMessages } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
@@ -113,6 +113,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             labels={labels}
             onRename={setLabel}
             onDelete={handleDeleteConversation}
+            error={conversationsError}
+            onRetry={refreshConversations}
           />
         </div>
       </nav>
@@ -125,6 +127,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             recipientAddress={recipientAddress}
             messages={messages}
             loading={messagesLoading}
+            error={messagesError}
+            onRetry={refreshMessages}
             hasMore={hasMore}
             loadingOlder={loadingOlder}
             fetchOlder={fetchOlder}

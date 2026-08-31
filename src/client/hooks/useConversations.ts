@@ -23,6 +23,7 @@ export function useConversations(token: string | null) {
       .sort((a, b) => b.last_message_at - a.last_message_at)
   )
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [labels, setLabels] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(localStorage.getItem('conversation_labels') ?? '{}')
@@ -36,14 +37,17 @@ export function useConversations(token: string | null) {
   const doRefresh = useCallback(async () => {
     if (!token) {
       setConversations([])
+      setError(null)
       return
     }
     setLoading(true)
+    setError(null)
     try {
       const data = await api.getConversations(token)
       setConversations(withKnownContacts(data.conversations))
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load conversations:', err)
+      setError(err.message || 'Failed to load conversations')
     } finally {
       setLoading(false)
     }
@@ -97,5 +101,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, refresh, labels, setLabel, deleteConversation }
+  return { conversations, loading, error, refresh, labels, setLabel, deleteConversation }
 }
