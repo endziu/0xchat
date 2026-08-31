@@ -44,6 +44,9 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   // Highest commit seq that already applied a scroll policy. A later commit
   // with an older seq (a late, superseded fetch) must not undo it.
   const scrolledSeqRef = useRef(0)
+  // Set when a commit deferred its policy because a newer fetch owns the
+  // pending state; cleared once any policy actually applied.
+  const deferredScrollRef = useRef(false)
   const fetchSeqRef = useRef(0)
   const lastNewestIdRef = useRef<string | null>(null)
 
@@ -77,9 +80,15 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
           el.scrollTop = el.scrollHeight
         }
         scrolledSeqRef.current = Math.max(scrolledSeqRef.current, seq)
+        deferredScrollRef.current = false
       } else if (pending === null && seq > scrolledSeqRef.current) {
         el.scrollTop = el.scrollHeight
         scrolledSeqRef.current = seq
+        deferredScrollRef.current = false
+      } else if (pending !== null) {
+        // Pending state belongs to a newer fetch: its commit (or its
+        // empty-result handler) will apply the policy.
+        deferredScrollRef.current = true
       }
       lastNewestIdRef.current = newestId
       return
@@ -113,9 +122,26 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
     const fresh = await fetchOlder()
     // Only manage the pending state of this fetch — a superseded fetch must
     // not clear or flag the pending state of a newer one.
-    const mine = () => pendingPreserveRef.current?.fetchSeq === fetchSeq
+    const pending = pendingPreserveRef.current
     if (fresh.length === 0) {
-      if (mine()) pendingPreserveRef.current = null
+      if (pending !== null && pending.fetchSeq === fetchSeq) {
+        pendingPreserveRef.current = null
+        if (deferredScrollRef.current) {
+          // A previous commit deferred its policy to this fetch; an empty
+          // result never runs the layout effect, so apply it here with the
+          // same policy (exact anchor while alive, else stay-newest).
+          deferredScrollRef.current = false
+          const scroller = scrollRef.current
+          if (scroller) {
+            if (pending.anchor !== null && pending.anchor.isConnected) {
+              scroller.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
+            } else {
+              scroller.scrollTop = scroller.scrollHeight
+            }
+            scrolledSeqRef.current = Math.max(scrolledSeqRef.current, fetchSeq)
+          }
+        }
+      }
       return
     }
     // The anchor is scroll-UX only — never a gate: the cursor has already
