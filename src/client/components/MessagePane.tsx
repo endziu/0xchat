@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
+import { compressImageFile, ImageTooLargeError } from '../lib/image'
 import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
 
@@ -29,10 +30,13 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [compressingImage, setCompressingImage] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Generation counter for image picks; see handleImageFile.
+  const imagePickRef = useRef(0)
   // State captured before a "load older" fetch, so the view can be
   // re-anchored once the older messages are prepended. We anchor on the
   // topmost visible message element rather than container arithmetic, so the
@@ -117,11 +121,22 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
     }
   }, [inputText])
 
-  const handleImageFile = (file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => { if (e.target?.result) setImagePreview(e.target.result as string) }
-    reader.onerror = () => toast('Failed to read image', 'error')
-    reader.readAsDataURL(file)
+  const handleImageFile = async (file: File) => {
+    // Pasting can start several compressions at once (a multi-image paste, or
+    // a quick second paste), and they finish out of order. Only the newest
+    // pick may touch the preview; older ones land silently.
+    const pick = ++imagePickRef.current
+    setCompressingImage(true)
+    try {
+      const dataUrl = await compressImageFile(file)
+      if (imagePickRef.current === pick) setImagePreview(dataUrl)
+    } catch (err: any) {
+      if (imagePickRef.current === pick) {
+        toast(err instanceof ImageTooLargeError ? err.message : (err.message || 'Failed to read image'), 'error')
+      }
+    } finally {
+      if (imagePickRef.current === pick) setCompressingImage(false)
+    }
   }
 
   const handlePaste = (e: ClipboardEvent) => {
@@ -208,6 +223,9 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
       </div>
 
       <form className="p-2 shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
+        {compressingImage && (
+          <div className="mb-2 border border-neutral-800 p-2 text-xs text-neutral-500">Compressing image…</div>
+        )}
         {imagePreview && (
           <div className="mb-2 border border-neutral-800 p-2">
             <figure className="inline-flex relative m-0">
@@ -217,10 +235,10 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
           </div>
         )}
         <div className="flex items-center border border-neutral-800 rounded-lg bg-neutral-950">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
             <Plus size={18} />
           </button>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleImageFile(f) }} hidden />
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleImageFile(f) }} hidden />
           <select value={ttl} onChange={(e: any) => setTtl(Number(e.target.value))} aria-label="Message expiry" className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer">
             <option value={5}>5s</option>
             <option value={10}>10s</option>
