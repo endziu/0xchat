@@ -3,6 +3,7 @@ import { api, Message } from '../lib/api'
 import { decrypt } from '../lib/crypto'
 import { createSignedMessageEnvelope } from '../lib/message-envelope'
 import { Keypair } from '../lib/burner'
+import { errorMessage } from '../lib/errors'
 import {
   canonicalMessageAad,
   isEnvelopeParticipant,
@@ -14,6 +15,8 @@ const PAGE_SIZE = 50
 export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null) {
   const [messages, setMessages] = useState<(Message & { plaintext: string })[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [olderError, setOlderError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [recipientPubkey, setRecipientPubkey] = useState<string | null>(null)
@@ -56,11 +59,15 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       setMessages([])
       setRecipientPubkey(null)
       setHasMore(false)
+      setError(null)
+      setOlderError(null)
       return
     }
 
     const gen = loadGenRef.current
     setLoading(true)
+    setError(null)
+    setOlderError(null)
     try {
       const { pubkey } = await api.getPubkey(recipientAddress)
       if (gen !== loadGenRef.current) return
@@ -76,6 +83,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       setHasMore(rawMessages.length === PAGE_SIZE)
     } catch (err) {
       console.error('Failed to load messages:', err)
+      if (gen === loadGenRef.current) setError(errorMessage(err, 'Failed to load messages'))
     } finally {
       if (gen === loadGenRef.current) setLoading(false)
     }
@@ -91,6 +99,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
     const gen = loadGenRef.current
     setLoadingOlder(true)
+    setOlderError(null)
     try {
       const page = await api.getMessages(recipientAddress, token, cursor.before, cursor.rowid ?? undefined, PAGE_SIZE)
       if (gen !== loadGenRef.current) return []
@@ -105,6 +114,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
         .reverse() // pages arrive newest-first
     } catch (err) {
       console.error('Failed to load older messages:', err)
+      // The cursor only advances on success, so the load-older button is
+      // still the retry — it just needs to say that the last try failed.
+      if (gen === loadGenRef.current) setOlderError(errorMessage(err, 'Failed to load older messages'))
       return []
     } finally {
       if (gen === loadGenRef.current) setLoadingOlder(false)
@@ -129,6 +141,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     setRecipientPubkey(null)
     setHasMore(false)
     setLoadingOlder(false)
+    setError(null)
+    setOlderError(null)
   }, [recipientAddress])
 
   useEffect(() => {
@@ -195,8 +209,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
     try {
       return await api.sendMessage(envelope, token)
-    } catch (err: any) {
-      throw new Error(err.message || 'Server rejected the message')
+    } catch (err) {
+      throw new Error(errorMessage(err, 'Server rejected the message'))
     }
   }
 
@@ -209,5 +223,5 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     })
   }, [decryptMessage])
 
-  return { messages, setMessages, loading, hasMore, loadingOlder, fetchOlder, prependMessages, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
+  return { messages, setMessages, loading, error, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, sendMessage, recipientPubkey, addMessage, refresh: loadMessages }
 }

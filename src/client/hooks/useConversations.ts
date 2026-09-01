@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks'
 import { api, Conversation } from '../lib/api'
 import { mergeContacts, loadContacts, deleteContact, isDeleted } from '../lib/contacts'
+import { errorMessage } from '../lib/errors'
 
 export interface MergedConversation extends Conversation {
   stale?: boolean
@@ -23,6 +24,7 @@ export function useConversations(token: string | null) {
       .sort((a, b) => b.last_message_at - a.last_message_at)
   )
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [labels, setLabels] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(localStorage.getItem('conversation_labels') ?? '{}')
@@ -32,20 +34,28 @@ export function useConversations(token: string | null) {
   })
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const pendingRefreshRef = useRef(false)
+  // Refreshes can overlap (token change, SSE, retry click). Only the newest one
+  // is allowed to write state, so a slow failure can't clobber a newer success.
+  const loadGenRef = useRef(0)
 
   const doRefresh = useCallback(async () => {
+    const gen = ++loadGenRef.current
     if (!token) {
       setConversations([])
+      setError(null)
       return
     }
     setLoading(true)
+    setError(null)
     try {
       const data = await api.getConversations(token)
+      if (gen !== loadGenRef.current) return
       setConversations(withKnownContacts(data.conversations))
     } catch (err) {
       console.error('Failed to load conversations:', err)
+      if (gen === loadGenRef.current) setError(errorMessage(err, 'Failed to load conversations'))
     } finally {
-      setLoading(false)
+      if (gen === loadGenRef.current) setLoading(false)
     }
   }, [token])
 
@@ -69,6 +79,8 @@ export function useConversations(token: string | null) {
     setConversations(prev => prev.filter(c => c.address.toLowerCase() !== address.toLowerCase()))
   }, [])
 
+  // Debounced: SSE can fire a burst of these. A retry click wants `reload`
+  // instead, so it isn't deferred behind the 300 ms timer.
   const refresh = useCallback(() => {
     // Clear pending flag since we're scheduling a new one
     pendingRefreshRef.current = true
@@ -97,5 +109,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, refresh, labels, setLabel, deleteConversation }
+  return { conversations, loading, error, refresh, reload: doRefresh, labels, setLabel, deleteConversation }
 }
