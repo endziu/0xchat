@@ -2,13 +2,15 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { useToast } from './Toast'
+import { ErrorState } from './ErrorState'
 
 interface MessagePaneProps {
   recipientAddress: string
   messages: (Message & { plaintext: string })[]
   loading?: boolean
-  error?: string | null
-  onRetry?: () => void
+  error: string | null
+  onRetry: () => void
+  olderError: string | null
   hasMore?: boolean
   loadingOlder?: boolean
   fetchOlder?: () => Promise<(Message & { plaintext: string })[]>
@@ -20,7 +22,7 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, loading, error, onRetry, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   const [ttl, setTtl] = useState(1800)
@@ -154,25 +156,23 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
         </button>
       </div>
 
+      {/* Outside the scroll area on purpose: the pane auto-scrolls to the
+          newest message, so a notice placed above the list would be scrolled
+          out of sight exactly when a refresh fails over existing messages. */}
+      {error && <ErrorState title="Failed to load messages" detail={error} onRetry={onRetry} />}
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
         {loading
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
-          : messages.length === 0 && (
-            error
-              ? (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-                  <span className="text-red-400">Failed to load messages</span>
-                  <span className="text-sm text-neutral-600">{error}</span>
-                  {onRetry && <button onClick={onRetry}>Retry</button>}
-                </div>
-              )
-              : <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
-          )
+          : !error && messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
         }
         {!loading && hasMore && (
-          <button onClick={handleLoadOlder} disabled={loadingOlder} aria-label="Load older messages" title="Load older messages" className="border-0 self-center mb-2 text-xs text-neutral-500">
-            {loadingOlder ? 'Loading…' : 'Load older messages'}
-          </button>
+          <div className="self-center mb-2 flex flex-col items-center gap-1">
+            {olderError && <span className="text-xs text-red-400">{olderError}</span>}
+            <button onClick={handleLoadOlder} disabled={loadingOlder} aria-label="Load older messages" title="Load older messages" className="border-0 text-xs text-neutral-500">
+              {loadingOlder ? 'Loading…' : olderError ? 'Retry' : 'Load older messages'}
+            </button>
+          </div>
         )}
         {messages.map((msg, i) => {
           const isMine = msg.sender.toLowerCase() !== recipientAddress.toLowerCase()

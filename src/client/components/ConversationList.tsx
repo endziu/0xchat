@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'preact/hooks'
 import { MergedConversation } from '../hooks/useConversations'
 import { getLastSeenKey } from '../lib/contacts'
 import { Pencil, Trash2, Check } from 'lucide-preact'
+import { ErrorState } from './ErrorState'
 
 interface ConversationListProps {
   conversations: MergedConversation[]
@@ -10,8 +11,8 @@ interface ConversationListProps {
   labels?: Record<string, string>
   onRename?: (address: string, name: string) => void
   onDelete?: (address: string) => void
-  error?: string | null
-  onRetry?: () => void
+  error: string | null
+  onRetry: () => void
 }
 
 const formatTimestamp = (timestamp: number): string => {
@@ -91,76 +92,74 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
     setEditValue('')
   }
 
-  if (conversations.length === 0 && error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 p-4 text-center">
-        <span className="text-red-400">Failed to load conversations</span>
-        <span className="text-sm text-neutral-600">{error}</span>
-        {onRetry && <button onClick={onRetry}>Retry</button>}
-      </div>
-    )
-  }
+  // The notice sits above the list rather than replacing it: a failed refresh
+  // while cached contacts are on screen must not pass the stale list off as
+  // live. An empty-but-successful load still gets the plain empty state.
+  const errorNotice = error && <ErrorState title="Failed to load conversations" detail={error} onRetry={onRetry} />
 
   if (conversations.length === 0) {
-    return <div className="flex items-center justify-center h-full text-neutral-700 p-4">No conversations yet</div>
+    return errorNotice || <div className="flex items-center justify-center h-full text-neutral-700 p-4">No conversations yet</div>
   }
 
   return (
-    <ul className="list-none m-0 p-0">
-      {conversations.map((conv) => {
-        const addr = conv.address.toLowerCase()
-        const isActive = activeAddress?.toLowerCase() === addr
-        const isUnread = unreadMap[addr]
-        const isEditing = editingAddress === addr
-        const isConfirming = deleteConfirm === addr
-        const label = labels[addr]
+    <>
+      {errorNotice}
+      <ul className="list-none m-0 p-0">
+        {conversations.map((conv) => {
+          const addr = conv.address.toLowerCase()
+          const isActive = activeAddress?.toLowerCase() === addr
+          const isUnread = unreadMap[addr]
+          const isEditing = editingAddress === addr
+          const isConfirming = deleteConfirm === addr
+          const label = labels[addr]
 
-        return (
-          <li
-            key={conv.address}
-            className={`group flex items-center gap-1 pl-3 pr-1 py-1 border-b border-neutral-900 cursor-pointer select-none ${isActive ? 'bg-neutral-900' : ''} ${conv.stale ? 'opacity-50' : ''}`}
-            title={conv.stale ? 'No active messages' : undefined}
-            onClick={() => !isEditing && handleSelect(conv.address)}
-          >
-            {isEditing ? (
-              <input
-                className="flex-1"
-                type="text"
-                value={editValue}
-                onInput={(e: any) => setEditValue(e.target.value)}
-                onKeyDown={(e: KeyboardEvent) => {
-                  if (e.key === 'Enter') handleSaveEdit(addr)
-                  else if (e.key === 'Escape') { setEditingAddress(null); setEditValue('') }
-                }}
-                onBlur={() => handleSaveEdit(addr)}
-                onClick={(e) => e.stopPropagation()}
-                autoFocus
-              />
-            ) : (
-              <>
-                <span className="flex-1 min-w-0 truncate">
-                  {label || <span className="text-sm text-neutral-600">{conv.address.slice(0, 6)}...{conv.address.slice(-4)}</span>}
-                </span>
-                {isUnread && <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
-                <time className="text-sm text-neutral-600 shrink-0">{formatTimestamp(conv.last_message_at)}</time>
-                {/* Hidden-until-hover is a pointer-device affordance only; on
-                    touch these stay visible or they'd be unreachable. */}
-                <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" aria-label="Rename" className="border-0 shrink-0 can-hover:opacity-0 can-hover:group-hover:opacity-100 focus:opacity-100">
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={(e) => handleDelete(e, conv.address)}
-                  title={isConfirming ? 'Tap again to confirm' : 'Delete'}
-                  aria-label={isConfirming ? 'Confirm delete' : 'Delete'}
-                  className={`border-0 shrink-0 focus:opacity-100 ${isConfirming ? 'text-red-400' : 'can-hover:opacity-0 can-hover:group-hover:opacity-100'}`}
-                >
-                  {isConfirming ? <Check size={14} /> : <Trash2 size={14} />}
-                </button>
-              </>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+          return (
+            <li
+              key={conv.address}
+              className={`group flex items-center gap-1 pl-3 pr-1 py-1 border-b border-neutral-900 cursor-pointer select-none ${isActive ? 'bg-neutral-900' : ''} ${conv.stale ? 'opacity-50' : ''}`}
+              title={conv.stale ? 'No active messages' : undefined}
+              onClick={() => !isEditing && handleSelect(conv.address)}
+            >
+              {isEditing ? (
+                <input
+                  className="flex-1"
+                  type="text"
+                  value={editValue}
+                  onInput={(e: any) => setEditValue(e.target.value)}
+                  onKeyDown={(e: KeyboardEvent) => {
+                    if (e.key === 'Enter') handleSaveEdit(addr)
+                    else if (e.key === 'Escape') { setEditingAddress(null); setEditValue('') }
+                  }}
+                  onBlur={() => handleSaveEdit(addr)}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                />
+              ) : (
+                <>
+                  <span className="flex-1 min-w-0 truncate">
+                    {label || <span className="text-sm text-neutral-600">{conv.address.slice(0, 6)}...{conv.address.slice(-4)}</span>}
+                  </span>
+                  {isUnread && <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
+                  <time className="text-sm text-neutral-600 shrink-0">{formatTimestamp(conv.last_message_at)}</time>
+                  {/* Hidden-until-hover is a pointer-device affordance only; on
+                      touch these stay visible or they'd be unreachable. */}
+                  <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" aria-label="Rename" className="border-0 shrink-0 can-hover:opacity-0 can-hover:group-hover:opacity-100 focus:opacity-100">
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDelete(e, conv.address)}
+                    title={isConfirming ? 'Tap again to confirm' : 'Delete'}
+                    aria-label={isConfirming ? 'Confirm delete' : 'Delete'}
+                    className={`border-0 shrink-0 focus:opacity-100 ${isConfirming ? 'text-red-400' : 'can-hover:opacity-0 can-hover:group-hover:opacity-100'}`}
+                  >
+                    {isConfirming ? <Check size={14} /> : <Trash2 size={14} />}
+                  </button>
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </>
   )
 }
