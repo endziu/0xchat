@@ -26,8 +26,8 @@ function AppContent() {
     },
   })
 
-  const handleLogout = async () => {
-    await push.unsubscribe()
+  const handleLogout = () => {
+    void push.unsubscribe()
     idLogout()
   }
 

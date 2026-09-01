@@ -61,6 +61,11 @@ export function Layout({
     prevConnected.current = sseConnected
   }, [sseConnected, toast])
 
+  const dismissLogoutConfirm = () => {
+    if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
+    setLogoutConfirm(false)
+  }
+
   const handleCopy = () => {
     if (!identity) return
     navigator.clipboard.writeText(identity.address)
@@ -103,35 +108,40 @@ export function Layout({
             <div className="relative">
               <button
                 onClick={() => {
-                  if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
+                  if (logoutConfirm) {
+                    dismissLogoutConfirm()
+                    return
+                  }
                   setLogoutConfirm(true)
                   logoutTimeoutRef.current = setTimeout(() => setLogoutConfirm(false), 8000)
                 }}
-                title="Burn identity"
-                aria-label="Burn identity"
+                title={logoutConfirm ? 'Cancel' : 'Burn identity'}
+                aria-label={logoutConfirm ? 'Cancel' : 'Burn identity'}
                 aria-expanded={logoutConfirm}
                 className={`max-sm:border-0 ${logoutConfirm ? 'text-red-400' : ''}`}
               >
                 <LogOut size={14} />
               </button>
               {logoutConfirm && (
-                <div role="alertdialog" aria-live="assertive" className="absolute right-0 top-full mt-1 z-10 w-56 bg-black border border-red-900 p-2 text-left">
+                <div role="alertdialog" aria-live="assertive" className="absolute right-0 top-full mt-1 z-10 w-72 bg-black border border-red-900 p-2 text-left">
                   <p className="text-sm text-red-400">
-                    This permanently deletes your identity and all messages. This cannot be undone.
+                    This permanently deletes your identity, account, and all messages. This cannot be undone.
                   </p>
                   <div className="flex gap-1 mt-2">
                     <button
                       onClick={() => {
-                        if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
-                        setLogoutConfirm(false)
+                        dismissLogoutConfirm()
                         setShowSettings(true)
                       }}
-                      className="text-sm"
+                      className="text-sm whitespace-nowrap"
                     >
-                      Export key first
+                      Export
                     </button>
-                    <button onClick={onLogout} className="text-sm text-red-400 border-red-900">
-                      Burn identity
+                    <button onClick={onLogout} className="text-sm text-red-400 whitespace-nowrap">
+                      Burn
+                    </button>
+                    <button onClick={dismissLogoutConfirm} className="text-sm whitespace-nowrap">
+                      Cancel
                     </button>
                   </div>
                 </div>
