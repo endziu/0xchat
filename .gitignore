@@ -1,13 +1,19 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 *.tsbuildinfo
-.env
+
+# Runtime data
 chat.db*
+.env
+
+# Local tooling
 .claude/
-src/server/secp256k1.bundle.js
-src/server/wallet.bundle.js
-.server.pid
-plan.md
-rebuild-plan.md
-notes.md
-spec.md
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
