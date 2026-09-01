@@ -22,6 +22,21 @@
     -webkit-tap-highlight-color: transparent;
   }
   #app { height: 100%; overflow: hidden; }
+
+  /* Increase the rem-based UI scale on desktop without scaling viewport units.
+     Scaling the app root itself makes 100dvh content 150% too tall. */
+  @media (min-width: 60rem) {
+    html {
+      font-size: 150%;
+    }
+
+    /* Lucide receives fixed pixel sizes from component props, so scale those
+       separately; unlike the app shell, icons have no viewport-sized layout. */
+    .lucide {
+      zoom: 1.5;
+    }
+  }
+
   button {
     all: unset;
     @apply cursor-pointer inline-flex items-center gap-1 px-2 py-1 border border-neutral-800;
@@ -66,4 +81,12 @@
 @utility safe-x {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+
+@utility header-action {
+  @media (width < 40rem) {
+    border-width: 0;
+    min-width: 32px;
+    padding-inline: 4px;
+  }
 }
