@@ -31,6 +31,8 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Generation counter for image picks; see handleImageFile.
+  const imagePickRef = useRef(0)
   // State captured before a "load older" fetch, so the view can be
   // re-anchored once the older messages are prepended. We anchor on the
   // topmost visible message element rather than container arithmetic, so the
@@ -116,14 +118,20 @@ export function MessagePane({ recipientAddress, messages, loading, hasMore, load
   }, [inputText])
 
   const handleImageFile = async (file: File) => {
+    // Pasting can start several compressions at once (a multi-image paste, or
+    // a quick second paste), and they finish out of order. Only the newest
+    // pick may touch the preview; older ones land silently.
+    const pick = ++imagePickRef.current
     setCompressingImage(true)
     try {
       const dataUrl = await compressImageFile(file)
-      setImagePreview(dataUrl)
+      if (imagePickRef.current === pick) setImagePreview(dataUrl)
     } catch (err: any) {
-      toast(err instanceof ImageTooLargeError ? err.message : (err.message || 'Failed to read image'), 'error')
+      if (imagePickRef.current === pick) {
+        toast(err instanceof ImageTooLargeError ? err.message : (err.message || 'Failed to read image'), 'error')
+      }
     } finally {
-      setCompressingImage(false)
+      if (imagePickRef.current === pick) setCompressingImage(false)
     }
   }
 
