@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { RateLimiter, type RateLimiterOptions } from './rate-limit.ts';
-
-// No-op scheduler: behavior tests never start a real timer.
-const noOpSchedule: NonNullable<RateLimiterOptions['schedule']> = () => () => {};
+import { noOpSchedule } from './rate-limit.test-utils.ts';
 
 function makeLimiter(options: Omit<RateLimiterOptions, 'schedule'>): RateLimiter {
   return new RateLimiter({ ...options, schedule: noOpSchedule });

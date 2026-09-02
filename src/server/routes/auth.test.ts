@@ -1,11 +1,10 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { handleAuthChallenge, handleAuthSession } from './auth.ts';
 import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
+import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import type { Context } from '../http.ts';
 
 const address = `0x${'2'.repeat(40)}`;
-
-const noOpSchedule = () => () => {};
 
 beforeAll(() => {
   // Route tests must not start real cleanup timers on the production singletons.

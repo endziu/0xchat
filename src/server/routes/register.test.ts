@@ -4,9 +4,8 @@ import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { handleRegister, handleRegisterChallenge } from './register.ts';
 import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
+import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import type { Context } from '../http.ts';
-
-const noOpSchedule = () => () => {};
 
 beforeAll(() => {
   // Route tests must not start real cleanup timers on the production singletons.
