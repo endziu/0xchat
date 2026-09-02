@@ -14,7 +14,7 @@
 
 ### Identity and registration
 
-A first visit generates a secp256k1 keypair and saves it under `eth_chat_burner_v1`. Registration uses a rate-limited, single-use challenge that binds the `0xChat key registration v1` context, request origin, normalized address, normalized compressed public key, and nonce. The server verifies the signature and confirms that the key derives the claimed address. Clients independently validate fetched encryption keys before use.
+A first visit generates a secp256k1 keypair and saves it under `0xchat_burner_v1`. Existing `eth_chat_burner_v1` data is migrated on first read. Registration uses a rate-limited, single-use challenge that binds the `0xChat key registration v1` context, request origin, normalized address, normalized compressed public key, and nonce. The server verifies the signature and confirms that the key derives the claimed address. Clients independently validate fetched encryption keys before use.
 
 ### Authentication
 
@@ -22,9 +22,9 @@ The client requests a unique authentication challenge, signs it, and exchanges i
 
 ### Message protocol
 
-Protocol v1 is the only accepted format. The sender creates a random 128-bit message ID and canonical metadata containing the version, ID, sender, recipient, and TTL. That metadata is AES-GCM additional authenticated data for both encrypted copies. The sender then EIP-191-signs a canonical envelope containing metadata, ciphertexts, ephemeral public keys, and IVs.
+Protocol v2 is the only accepted format. The sender creates a random 128-bit message ID and canonical metadata containing the version, ID, sender, recipient, and TTL. That metadata is AES-GCM additional authenticated data for both encrypted copies. The sender then EIP-191-signs a canonical envelope containing metadata, ciphertexts, ephemeral public keys, and IVs.
 
-The server verifies session ownership, protocol version, payload shape, TTL, recipient, signature, and unique ID before storing or notifying. Fetch and SSE clients repeat envelope and participant validation before decryption. Missing or unsupported versions receive `400`; there is no legacy fallback or silent downgrade. On the initial protocol-v1 schema cutover, unexpired legacy rows are deleted because they cannot be authenticated safely.
+The server verifies session ownership, protocol version, payload shape, TTL, recipient, signature, and unique ID before storing or notifying. Fetch and SSE clients repeat envelope and participant validation before decryption. Missing or unsupported versions receive `400`; there is no legacy fallback or silent downgrade. Database initialization deletes messages from unsupported protocol versions because cipher and canonicalization changes cannot be upgraded without plaintext.
 
 ### Delivery, contacts, and expiry
 
@@ -53,7 +53,7 @@ The service worker precaches `/chat` and icons, uses network-first navigation, a
 - **Address:** standard Ethereum address derived from the uncompressed public key
 - **Encryption:** ephemeral ECDH → HKDF-SHA-256 → AES-GCM-256
 - **Authenticated metadata:** canonical envelope fields supplied as AES-GCM AAD
-- **Envelope authentication:** EIP-191 signature over complete protocol-v1 content
+- **Envelope authentication:** EIP-191 signature over complete protocol-v2 content
 - **Encoding:** API and database hex strings use a `0x` prefix
 - **Libraries:** `@noble/secp256k1` v3 and `viem`
 

@@ -33,11 +33,11 @@ function vectorRandom(length: number): Uint8Array<ArrayBuffer> {
 describe('authenticated message encryption vector', () => {
   test('encrypts, signs, verifies, and decrypts a stable canonical vector', async () => {
     expect(aad).toBe(
-      `0xChat message AAD v1\nVersion: 1\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300`,
+      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300`,
     )
     const encrypted = await encrypt('hello envelope', recipientPublicKey, aad, vectorRandom)
     expect(encrypted).toEqual({
-      ciphertext: '0xa79df7c892565c6d35e048e2dd83560ab463cdc01983953eb2bc775236d5',
+      ciphertext: '0xa79df7c892565c6d35e048e2dd83351b2c026ba9406e8500fd87ab3955d3',
       ephemeral_pubkey: bytesToHex(secp.getPublicKey(new Uint8Array(32).fill(0x33), true)),
       iv: `0x${'66'.repeat(12)}`,
     })
@@ -54,7 +54,7 @@ describe('authenticated message encryption vector', () => {
       ...unsigned,
       signature: await sender.signMessage({ message: canonicalMessageEnvelope(unsigned) }),
     }
-    expect(envelope.signature).toBe('0x5b6cf4e26468b72ea276e577f9d2d18137281941ca3d4fdb653311b0419218c6333010afb28e0e8804604818865bff62524586c089c29edb423ce69b3d20fef41b')
+    expect(envelope.signature).toBe('0x123c4ff60948cf8f850fef7a9a3ca30aeaafb00b0c7e5ac91d966b8e43016d4c7b1ea13c4cecbe8774a3cf04ba5c37bf6c2b1c09f25356c631d74f89d50342701b')
     const verified = await verifyMessageEnvelope(envelope)
     expect(verified).not.toBeNull()
     expect(await decrypt(
@@ -69,7 +69,7 @@ describe('authenticated message encryption vector', () => {
   test('rejects any authenticated metadata mutation', async () => {
     const encrypted = await encrypt('hello envelope', recipientPublicKey, aad, vectorRandom)
     for (const mutation of [
-      aad.replace('Version: 1', 'Version: 2'),
+      aad.replace('Version: 2', 'Version: 1'),
       aad.replace(`0x${'44'.repeat(16)}`, `0x${'45'.repeat(16)}`),
       aad.replace(`Sender: ${sender.address.toLowerCase()}`, `Sender: 0x${'12'.repeat(20)}`),
       aad.replace(`Recipient: ${recipient.address.toLowerCase()}`, `Recipient: 0x${'23'.repeat(20)}`),

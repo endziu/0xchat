@@ -12,6 +12,7 @@ interface StoredSession {
 export function saveToken(address: string, token: string): void {
   const normalized = address.toLowerCase()
   localStorage.removeItem(LEGACY_TOKEN_KEY)
+  localStorage.removeItem(OLD_SESSION_KEY)
   localStorage.setItem(SESSION_KEY, JSON.stringify({ address: normalized, token }))
 }
 
@@ -42,6 +43,7 @@ export function getToken(address: string): string | null {
 
 export function clearToken(): void {
   localStorage.removeItem(SESSION_KEY)
+  localStorage.removeItem(OLD_SESSION_KEY)
   localStorage.removeItem(LEGACY_TOKEN_KEY)
 }
 

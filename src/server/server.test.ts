@@ -401,7 +401,7 @@ describe('authenticated routes', () => {
     const legacy = await fetch(baseUrl + '/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
-      body: JSON.stringify({ ...original, version: 0 }),
+      body: JSON.stringify({ ...original, version: 1 }),
     });
     expect(legacy.status).toBe(400);
 

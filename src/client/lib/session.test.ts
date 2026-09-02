@@ -39,11 +39,12 @@ describe('identity-bound session storage', () => {
   test('clears both current and legacy storage', () => {
     saveToken('0xAa', 'token-a')
     values.set('eth_chat_token', 'legacy-token')
-    values.set(OLD_SESSION_KEY, 'should-not-matter')
+    values.set(OLD_SESSION_KEY, JSON.stringify({ address: '0xaa', token: 'old-token' }))
 
     clearToken()
 
     expect(values.has(NEW_SESSION_KEY)).toBe(false)
+    expect(values.has(OLD_SESSION_KEY)).toBe(false)
     expect(getToken('0xAa')).toBeNull()
   })
 })

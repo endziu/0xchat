@@ -22,6 +22,7 @@ function loadDeleted(): Record<string, number> {
 }
 
 function saveDeleted(deleted: Record<string, number>) {
+  localStorage.removeItem(OLD_DELETED_KEY)
   localStorage.setItem(DELETED_KEY, JSON.stringify(deleted))
 }
 
@@ -56,6 +57,7 @@ export function loadContacts(): Record<string, KnownContact> {
 }
 
 export function saveContacts(contacts: Record<string, KnownContact>) {
+  localStorage.removeItem(OLD_STORAGE_KEY)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(contacts))
 }
 

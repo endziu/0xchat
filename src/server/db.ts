@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import type { MessageEnvelope } from '../shared/message-envelope.ts';
+import { MESSAGE_ENVELOPE_VERSION, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 let db: Database;
 
@@ -69,6 +69,8 @@ export function initDb(path = 'chat.db'): void {
     CREATE INDEX IF NOT EXISTS idx_msg_expires
       ON messages(expires_at);
   `);
+  // Cipher and canonicalization changes cannot be upgraded without plaintext.
+  db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
 }
 
 export function registerPubkey(address: string, pubkey: string): void {

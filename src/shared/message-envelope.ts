@@ -1,7 +1,7 @@
 import * as secp from '@noble/secp256k1'
 import { hexToBytes, recoverMessageAddress } from 'viem'
 
-export const MESSAGE_ENVELOPE_VERSION = 1 as const
+export const MESSAGE_ENVELOPE_VERSION = 2 as const
 export const MESSAGE_ID_BYTES = 16
 // "0x" prefix + hex digits, 2 hex digits per ciphertext byte
 export const MAX_CIPHERTEXT_HEX_LEN = 2_000_002
@@ -44,7 +44,7 @@ const DELIVERED_KEYS = [...ENVELOPE_KEYS, 'created_at', 'expires_at'].sort()
 
 export function canonicalMessageAad(metadata: MessageMetadata): string {
   return [
-    '0xChat message AAD v1',
+    '0xChat message AAD v2',
     `Version: ${metadata.version}`,
     `Message ID: ${metadata.id}`,
     `Sender: ${metadata.sender}`,
@@ -55,7 +55,7 @@ export function canonicalMessageAad(metadata: MessageMetadata): string {
 
 export function canonicalMessageEnvelope(envelope: Omit<MessageEnvelope, 'signature'>): string {
   return [
-    '0xChat signed message envelope v1',
+    '0xChat signed message envelope v2',
     `Version: ${envelope.version}`,
     `Message ID: ${envelope.id}`,
     `Sender: ${envelope.sender}`,

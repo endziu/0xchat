@@ -65,6 +65,7 @@ export function useInstallPrompt() {
   }, [deferred])
 
   const dismiss = useCallback(() => {
+    localStorage.removeItem(OLD_DISMISSED_KEY)
     localStorage.setItem(DISMISSED_KEY, String(Date.now()))
     setMode(null)
   }, [])
