@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { RateLimiter } from './rate-limit.ts';
+import { RateLimiter, type RateLimiterOptions } from './rate-limit.ts';
+
+// No-op scheduler: behavior tests never start a real timer.
+const noOpSchedule: NonNullable<RateLimiterOptions['schedule']> = () => () => {};
+
+function makeLimiter(options: Omit<RateLimiterOptions, 'schedule'>): RateLimiter {
+  return new RateLimiter({ ...options, schedule: noOpSchedule });
+}
 
 function fakeScheduler() {
   const calls: Array<{ fn: () => void; ms: number }> = [];
@@ -15,7 +22,7 @@ function fakeScheduler() {
 
 describe('RateLimiter', () => {
   test('allows requests up to max, rejects beyond', () => {
-    const limiter = new RateLimiter({ max: 10 });
+    const limiter = makeLimiter({ max: 10 });
     for (let i = 0; i < 10; i++) {
       expect(limiter.hit('key-a')).toBe(false);
     }
@@ -25,7 +32,7 @@ describe('RateLimiter', () => {
   });
 
   test('keys are independent per user', () => {
-    const limiter = new RateLimiter({ max: 5 });
+    const limiter = makeLimiter({ max: 5 });
     for (let i = 0; i < 5; i++) {
       expect(limiter.hit('user-1')).toBe(false);
     }
@@ -37,7 +44,7 @@ describe('RateLimiter', () => {
 
   test('window expiry refills the full budget', () => {
     let clock = 1_000_000;
-    const limiter = new RateLimiter({ max: 3, windowMs: 60_000, now: () => clock });
+    const limiter = makeLimiter({ max: 3, windowMs: 60_000, now: () => clock });
     for (let i = 0; i < 3; i++) {
       expect(limiter.hit('k')).toBe(false);
     }
@@ -51,7 +58,7 @@ describe('RateLimiter', () => {
 
   test('sliding window: partial expiry frees only expired slots', () => {
     let clock = 0;
-    const limiter = new RateLimiter({ max: 3, windowMs: 1_000, now: () => clock });
+    const limiter = makeLimiter({ max: 3, windowMs: 1_000, now: () => clock });
     limiter.hit('k'); // t=0
     clock = 500;
     limiter.hit('k'); // t=500
@@ -106,7 +113,7 @@ describe('RateLimiter', () => {
   });
 
   test('burst: first max allowed, rest rejected', () => {
-    const limiter = new RateLimiter({ max: 10 });
+    const limiter = makeLimiter({ max: 10 });
     const results = Array.from({ length: 15 }, () => limiter.hit('burst'));
     for (let i = 0; i < 10; i++) {
       expect(results[i]).toBe(false);

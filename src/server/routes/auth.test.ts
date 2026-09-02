@@ -4,23 +4,17 @@ import type { Context } from '../http.ts';
 
 const address = `0x${'2'.repeat(40)}`;
 
-function challengeContext(ip: string): Context {
-  const req = new Request('https://chat.example/api/auth/challenge', {
+function postContext(ip: string, path: string, body: unknown): Context {
+  const req = new Request(`https://chat.example${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address }),
+    body: JSON.stringify(body),
   });
-  return { req, url: new URL(req.url), path: '/api/auth/challenge', method: 'POST', ip };
+  return { req, url: new URL(req.url), path, method: 'POST', ip };
 }
 
-function sessionContext(ip: string): Context {
-  const req = new Request('https://chat.example/api/auth/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  return { req, url: new URL(req.url), path: '/api/auth/session', method: 'POST', ip };
-}
+const challengeContext = (ip: string): Context => postContext(ip, '/api/auth/challenge', { address });
+const sessionContext = (ip: string): Context => postContext(ip, '/api/auth/session', {});
 
 describe('auth rate limiting', () => {
   test('challenge: 10 per ip allowed, then 429', async () => {

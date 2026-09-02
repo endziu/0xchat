@@ -51,10 +51,7 @@ export class RateLimiter {
       this.windows.set(key, timestamps);
     }
 
-    // Drop expired entries
-    while (timestamps.length > 0 && timestamps[0]! < cutoff) {
-      timestamps.shift();
-    }
+    prune(timestamps, cutoff);
 
     if (timestamps.length >= this.max) return true;
 
@@ -77,11 +74,16 @@ export class RateLimiter {
   private cleanup(): void {
     const cutoff = this.now() - this.windowMs;
     for (const [key, timestamps] of this.windows) {
-      while (timestamps.length > 0 && timestamps[0]! < cutoff) {
-        timestamps.shift();
-      }
+      prune(timestamps, cutoff);
       if (timestamps.length === 0) this.windows.delete(key);
     }
+  }
+}
+
+/** Drops window entries older than the cutoff, in place. */
+function prune(timestamps: number[], cutoff: number): void {
+  while (timestamps.length > 0 && timestamps[0]! < cutoff) {
+    timestamps.shift();
   }
 }
 
