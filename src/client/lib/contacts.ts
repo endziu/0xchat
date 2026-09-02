@@ -1,5 +1,9 @@
-const STORAGE_KEY = 'eth_chat_known_contacts_v1'
-const DELETED_KEY = 'eth_chat_deleted_contacts_v1'
+import { migrateKey } from './storage-migration'
+
+const STORAGE_KEY = '0xchat_known_contacts_v1'
+const OLD_STORAGE_KEY = 'eth_chat_known_contacts_v1'
+const DELETED_KEY = '0xchat_deleted_contacts_v1'
+const OLD_DELETED_KEY = 'eth_chat_deleted_contacts_v1'
 
 export interface KnownContact {
   address: string
@@ -9,6 +13,7 @@ export interface KnownContact {
 export const getLastSeenKey = (address: string) => `last_seen_${address.toLowerCase()}`
 
 function loadDeleted(): Record<string, number> {
+  migrateKey(OLD_DELETED_KEY, DELETED_KEY)
   try {
     return JSON.parse(localStorage.getItem(DELETED_KEY) ?? '{}')
   } catch {
@@ -42,6 +47,7 @@ export function isDeleted(address: string, lastMessageAt: number): boolean {
 }
 
 export function loadContacts(): Record<string, KnownContact> {
+  migrateKey(OLD_STORAGE_KEY, STORAGE_KEY)
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
   } catch {

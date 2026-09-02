@@ -25,7 +25,7 @@ async function deriveAesKey(
       name: 'HKDF',
       hash: 'SHA-256',
       salt: ephemeralPublicKey,
-      info: new TextEncoder().encode('ETH-Gate AES-GCM v1'),
+      info: new TextEncoder().encode('0xChat AES-GCM v2'),
     },
     baseKey,
     { name: 'AES-GCM', length: 256 },

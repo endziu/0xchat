@@ -68,7 +68,7 @@ describe('api per-request auth', () => {
   test('a stale-token 401 does not delete a newer session or sign it out', async () => {
     // A newer identity (B) has committed its session.
     globalThis.localStorage.setItem(
-      'eth_chat_session_v1',
+      '0xchat_session_v1',
       JSON.stringify({ address: '0xbb', token: 'token-b' }),
     )
     let expired = 0
@@ -84,14 +84,14 @@ describe('api per-request auth', () => {
     await expect(api.getMessages('0xbb', 'token-a')).rejects.toThrow()
 
     // B's session survives and B is not signed out.
-    expect(JSON.parse(globalThis.localStorage.getItem('eth_chat_session_v1')!).token).toBe('token-b')
+    expect(JSON.parse(globalThis.localStorage.getItem('0xchat_session_v1')!).token).toBe('token-b')
     expect(expired).toBe(0)
     globalThis.removeEventListener('auth:expired', onExp)
   })
 
   test('a current-token 401 clears the session and signs out', async () => {
     globalThis.localStorage.setItem(
-      'eth_chat_session_v1',
+      '0xchat_session_v1',
       JSON.stringify({ address: '0xbb', token: 'token-b' }),
     )
     let expired = 0
@@ -106,7 +106,7 @@ describe('api per-request auth', () => {
     // The active identity's own token is rejected.
     await expect(api.getMessages('0xbb', 'token-b')).rejects.toThrow()
 
-    expect(globalThis.localStorage.getItem('eth_chat_session_v1')).toBeNull()
+    expect(globalThis.localStorage.getItem('0xchat_session_v1')).toBeNull()
     expect(expired).toBe(1)
     globalThis.removeEventListener('auth:expired', onExp)
   })

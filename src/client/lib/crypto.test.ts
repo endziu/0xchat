@@ -37,7 +37,7 @@ describe('authenticated message encryption vector', () => {
     )
     const encrypted = await encrypt('hello envelope', recipientPublicKey, aad, vectorRandom)
     expect(encrypted).toEqual({
-      ciphertext: '0xc58b952fd9937caddeb787f59385ca67b2720b61d51ad7bd3a8b5db8fff3',
+      ciphertext: '0xa79df7c892565c6d35e048e2dd83560ab463cdc01983953eb2bc775236d5',
       ephemeral_pubkey: bytesToHex(secp.getPublicKey(new Uint8Array(32).fill(0x33), true)),
       iv: `0x${'66'.repeat(12)}`,
     })
@@ -54,7 +54,7 @@ describe('authenticated message encryption vector', () => {
       ...unsigned,
       signature: await sender.signMessage({ message: canonicalMessageEnvelope(unsigned) }),
     }
-    expect(envelope.signature).toBe('0xd7856d9d2a63dea6a7a581fe4b597f822c872e4ce55d7e0fe0bf3af95067d26236890bafc632d85f059d4cae5da6a6164631531f277d8c9ce127b57c7fded7fc1b')
+    expect(envelope.signature).toBe('0x5b6cf4e26468b72ea276e577f9d2d18137281941ca3d4fdb653311b0419218c6333010afb28e0e8804604818865bff62524586c089c29edb423ce69b3d20fef41b')
     const verified = await verifyMessageEnvelope(envelope)
     expect(verified).not.toBeNull()
     expect(await decrypt(

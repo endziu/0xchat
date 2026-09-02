@@ -2,6 +2,7 @@ import * as secp from '@noble/secp256k1'
 import { keccak256, hexToBytes, bytesToHex, getAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { ensure0x } from './hex'
+import { migrateKey } from './storage-migration'
 
 export interface Keypair {
   privateKey: string
@@ -36,13 +37,15 @@ export async function signEIP191(message: string, privateKey: string): Promise<s
   return await account.signMessage({ message })
 }
 
-const STORAGE_KEY = 'eth_chat_burner_v1'
+const STORAGE_KEY = '0xchat_burner_v1'
+const OLD_STORAGE_KEY = 'eth_chat_burner_v1'
 
 export function saveKeypair(keypair: Keypair) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keypair))
 }
 
 export function loadKeypair(): Keypair | null {
+  migrateKey(OLD_STORAGE_KEY, STORAGE_KEY)
   const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) return null
   try {

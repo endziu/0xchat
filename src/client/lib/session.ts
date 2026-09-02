@@ -1,4 +1,7 @@
-const SESSION_KEY = 'eth_chat_session_v1'
+import { migrateKey } from './storage-migration'
+
+const SESSION_KEY = '0xchat_session_v1'
+const OLD_SESSION_KEY = 'eth_chat_session_v1'
 const LEGACY_TOKEN_KEY = 'eth_chat_token'
 
 interface StoredSession {
@@ -14,6 +17,7 @@ export function saveToken(address: string, token: string): void {
 
 export function getToken(address: string): string | null {
   localStorage.removeItem(LEGACY_TOKEN_KEY)
+  migrateKey(OLD_SESSION_KEY, SESSION_KEY)
   const normalized = address.toLowerCase()
 
   const raw = localStorage.getItem(SESSION_KEY)
@@ -46,6 +50,7 @@ export function clearToken(): void {
 // from a previous identity cannot wipe out a newer committed session.
 export function clearTokenIfMatches(token: string): boolean {
   localStorage.removeItem(LEGACY_TOKEN_KEY)
+  migrateKey(OLD_SESSION_KEY, SESSION_KEY)
   const raw = localStorage.getItem(SESSION_KEY)
   if (!raw) return false
 
