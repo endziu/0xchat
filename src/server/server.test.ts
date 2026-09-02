@@ -471,3 +471,81 @@ describe('input validation', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('trusted-proxy X-Forwarded-For rate limiting', () => {
+  const trustedPort = 9901 + Math.floor(Math.random() * 50);
+  const untrustedPort = 9951 + Math.floor(Math.random() * 50);
+  let trustedProc: import('bun').Subprocess;
+  let untrustedProc: import('bun').Subprocess;
+
+  async function waitReady(port: number) {
+    for (let i = 0; i < 30; i++) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${port}/`)).status === 200) return;
+      } catch {
+        // server not up yet
+      }
+      await Bun.sleep(100);
+    }
+    throw new Error(`server on port ${port} did not become ready`);
+  }
+
+  beforeAll(async () => {
+    trustedProc = Bun.spawn(['bun', 'run', 'server.ts'], {
+      env: {
+        ...process.env,
+        PORT: String(trustedPort),
+        TRUSTED_PROXY_IPS: '127.0.0.1, ::1',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    untrustedProc = Bun.spawn(['bun', 'run', 'server.ts'], {
+      env: {
+        ...process.env,
+        PORT: String(untrustedPort),
+        TRUSTED_PROXY_IPS: '',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    await waitReady(trustedPort);
+    await waitReady(untrustedPort);
+  });
+
+  afterAll(() => {
+    trustedProc?.kill();
+    untrustedProc?.kill();
+  });
+
+  // Invalid-address payload: 400 when allowed through, 429 when rate limited.
+  async function authChallenge(port: number, forwardedFor: string | null): Promise<number> {
+    const res = await fetch(`http://127.0.0.1:${port}/api/auth/challenge`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(forwardedFor ? { 'X-Forwarded-For': forwardedFor } : {}),
+      },
+      body: JSON.stringify({}),
+    });
+    return res.status;
+  }
+
+  test('with TRUSTED_PROXY_IPS set, each X-Forwarded-For client gets its own bucket', async () => {
+    for (let i = 0; i < 10; i++) {
+      expect(await authChallenge(trustedPort, '203.0.113.7')).toBe(400);
+    }
+    expect(await authChallenge(trustedPort, '203.0.113.7')).toBe(429);
+    // A different XFF client is unaffected by the first client's 429.
+    expect(await authChallenge(trustedPort, '203.0.113.8')).toBe(400);
+  });
+
+  test('without TRUSTED_PROXY_IPS, spoofed X-Forwarded-For shares the proxy bucket', async () => {
+    for (let i = 0; i < 10; i++) {
+      expect(await authChallenge(untrustedPort, '203.0.113.7')).toBe(400);
+    }
+    expect(await authChallenge(untrustedPort, '203.0.113.7')).toBe(429);
+    // Spoofed XFF must not open a fresh bucket: still limited on the peer IP.
+    expect(await authChallenge(untrustedPort, '203.0.113.8')).toBe(429);
+  });
+});

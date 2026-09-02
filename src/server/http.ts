@@ -1,5 +1,6 @@
 import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
+import { TRUSTED_PROXY_IPS, resolveClientIp } from './trusted-proxy.ts';
 
 export interface Context {
   req: Request;
@@ -23,7 +24,8 @@ export function getClientIp(
   req: Request,
   server: { requestIP: (req: Request) => { address: string } | null },
 ): string {
-  return server.requestIP(req)?.address ?? 'unknown';
+  const peer = server.requestIP(req)?.address ?? 'unknown';
+  return resolveClientIp(peer, req.headers.get('x-forwarded-for'), TRUSTED_PROXY_IPS);
 }
 
 export function getSessionAddress(req: Request): string | null {
