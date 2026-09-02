@@ -1,9 +1,17 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { handleRegister, handleRegisterChallenge } from './register.ts';
+import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
+import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import type { Context } from '../http.ts';
+
+beforeAll(() => {
+  // Route tests must not start real cleanup timers on the production singletons.
+  registerChallengeLimiter.setSchedule(noOpSchedule);
+  registerLimiter.setSchedule(noOpSchedule);
+});
 
 const privateKey = `0x${'77'.repeat(32)}` as const;
 const address = privateKeyToAccount(privateKey).address.toLowerCase();

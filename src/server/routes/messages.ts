@@ -1,6 +1,6 @@
 import { createMessage, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { isRateLimited } from '../rate-limit.ts';
+import { messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, error, VALID_TTLS } from '../constants.ts';
@@ -43,7 +43,7 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  if (isRateLimited(`${ip}:${sessionAddress}:msg`)) {
+  if (messageLimiter.hit(`${ip}:${sessionAddress}`)) {
     warn('[rate-limit] msg', sessionAddress, ip);
     return json({ error: 'Too many requests' }, 429);
   }

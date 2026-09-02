@@ -420,6 +420,26 @@ describe('authenticated routes', () => {
   });
 });
 
+describe('rate limiting', () => {
+  test('sustained fast chat never 429s (30-message burst)', async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      const envelope = await authenticatedEnvelope(`burst ${i}`);
+      const res = await fetch(baseUrl + '/api/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${senderToken}`,
+        },
+        body: JSON.stringify(envelope),
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses.filter((s) => s === 429)).toEqual([]);
+    expect(statuses.every((s) => s === 201)).toBe(true);
+  });
+});
+
 describe('CSP headers', () => {
   test('HTML responses include CSP header', async () => {
     const res = await fetch(baseUrl + '/');
