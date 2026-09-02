@@ -1,6 +1,7 @@
+import { UNSUPPORTED_PUSH_SERVICE_CODE } from '../../shared/api-error.ts';
 import { upsertPushSubscription, deletePushSubscriptionForAddress } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { isValidPushSubscription } from '../validation.ts';
+import { validatePushSubscription } from '../validation.ts';
 import { pushSubscribeLimiter } from '../rate-limiters.ts';
 import { VAPID_PUBLIC_KEY, log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
@@ -29,11 +30,25 @@ export async function handleSubscribePush({ req, ip }: Context): Promise<Respons
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  if (!isValidPushSubscription(body)) {
+  const validation = validatePushSubscription(body);
+  if (!validation.ok) {
+    if (validation.reason === 'host') {
+      warn('[push] unsupported push service', validation.hostname);
+      return json({
+        error: 'Unsupported push service',
+        code: UNSUPPORTED_PUSH_SERVICE_CODE,
+      }, 400);
+    }
     return json({ error: 'Invalid push subscription' }, 400);
   }
 
-  upsertPushSubscription(address, body.endpoint, body.keys.p256dh, body.keys.auth);
+  const subscription = validation.value;
+  upsertPushSubscription(
+    address,
+    subscription.endpoint,
+    subscription.keys.p256dh,
+    subscription.keys.auth,
+  );
   log('[push] subscribed', address);
   return json({ success: true }, 201);
 }

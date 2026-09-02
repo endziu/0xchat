@@ -1,9 +1,17 @@
 import { clearTokenIfMatches } from './session'
 import { verifyEncryptionPublicKey } from './encryption-key'
+import { isApiErrorCode, type ApiErrorCode } from '../../shared/api-error'
 import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-envelope'
 
 export type Message = DeliveredMessage
+
+export class ApiError extends Error {
+  constructor(message: string, readonly code?: ApiErrorCode) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
 
 export interface MessagePage {
   messages: unknown[]
@@ -41,8 +49,13 @@ async function request<T>(path: string, options: RequestInit, token: string | nu
     }
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(err.error || res.statusText)
+    const parsedBody: unknown = await res.json().catch(() => null)
+    const body = typeof parsedBody === 'object' && parsedBody !== null
+      ? parsedBody as { error?: unknown; code?: unknown }
+      : {}
+    const message = typeof body.error === 'string' && body.error ? body.error : res.statusText
+    const code = isApiErrorCode(body.code) ? body.code : undefined
+    throw new ApiError(message, code)
   }
 
   if (res.status === 204) return {} as T

@@ -1,3 +1,5 @@
+import { UNSUPPORTED_PUSH_SERVICE_CODE } from '../../shared/api-error'
+import { ApiError } from './api'
 import { requestPushPermission } from './push-permission'
 
 // Orchestration for the two user-initiated push operations (subscribe,
@@ -75,7 +77,13 @@ export async function runSubscribeOp(deps: SubscribeOpDeps): Promise<boolean> {
     deps.setSubscribed(true)
     return true
   } catch (err) {
-    if (!deps.isStale()) deps.setError('Could not enable notifications. Please try again.')
+    if (!deps.isStale()) {
+      deps.setError(
+        err instanceof ApiError && err.code === UNSUPPORTED_PUSH_SERVICE_CODE
+          ? "This browser's push service is not supported. Try an official Chrome, Firefox, Safari, or Edge build."
+          : 'Could not enable notifications. Please try again.',
+      )
+    }
     console.error('Push subscribe failed:', err)
     return false
   }
