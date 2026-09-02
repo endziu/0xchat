@@ -17,11 +17,13 @@ import { isIP } from 'node:net';
  * and `2001:DB8::1` all canonicalize to `2001:db8::1`, and
  * `::ffff:1.2.3.4` / `::ffff:c000:201` to `1.2.3.4` — so one client can never
  * split across rate-limit buckets because an edge serialized it differently.
- * Non-IP input passes through trimmed and lowercased, so lookups miss without
- * crashing.
+ * Scoped IPv6 input is kept opaque: zone identifiers are host-local and must
+ * never be discarded into the same trust key as another interface. Non-IP
+ * input passes through trimmed and lowercased, so lookups miss without crashing.
  */
 export function canonicalIp(raw: string): string {
   const ip = raw.trim().toLowerCase();
+  if (ip.includes('%')) return ip;
   const kind = isIP(ip);
   if (kind !== 6) return ip;
   let s = ip;
@@ -93,7 +95,7 @@ export function resolveClientIp(
   const hops = (xff ?? '')
     .split(',')
     .map((hop) => hop.trim().toLowerCase())
-    .filter((hop) => hop !== '' && isIP(hop) !== 0);
+    .filter((hop) => hop !== '' && !hop.includes('%') && isIP(hop) !== 0);
   for (let i = hops.length - 1; i >= 0; i--) {
     const hop = canonicalIp(hops[i]!);
     if (!trusted.has(hop)) return hop;
@@ -113,6 +115,9 @@ export function parseTrustedProxyIps(raw: string | undefined): ReadonlySet<strin
   for (const entry of raw?.split(',') ?? []) {
     const ip = entry.trim();
     if (ip === '') continue;
+    if (ip.includes('%')) {
+      throw new Error(`Scoped IPv6 addresses are not supported in TRUSTED_PROXY_IPS: ${ip}`);
+    }
     if (isIP(ip) === 0) {
       throw new Error(`Invalid TRUSTED_PROXY_IPS entry: ${ip}`);
     }

@@ -24,6 +24,17 @@ describe('resolveClientIp', () => {
     expect(resolveClientIp('203.0.113.66', null, trusted)).toBe('203.0.113.66');
   });
 
+  test('does not match a scoped peer against an unscoped trust entry', () => {
+    const trusted = parseTrustedProxyIps('fe80::1');
+    expect(resolveClientIp('fe80::1%eth0', '203.0.113.7', trusted)).toBe('fe80::1%eth0');
+    expect(resolveClientIp('fe80::1%eth1', '203.0.113.7', trusted)).toBe('fe80::1%eth1');
+  });
+
+  test('drops scoped IPv6 hops from X-Forwarded-For', () => {
+    const trusted = parseTrustedProxyIps('198.51.100.1');
+    expect(resolveClientIp('198.51.100.1', 'fe80::1%eth0', trusted)).toBe('198.51.100.1');
+  });
+
   test('matches IPv4-mapped IPv6 peers against plain IPv4 trust entries', () => {
     const trusted = new Set(['198.51.100.1']);
     expect(resolveClientIp('::ffff:198.51.100.1', '203.0.113.7', trusted)).toBe('203.0.113.7');
@@ -115,5 +126,10 @@ describe('parseTrustedProxyIps', () => {
   test('rejects malformed entries at startup', () => {
     expect(() => parseTrustedProxyIps('198.51.100.1, 999.0.0.1')).toThrow(/999\.0\.0\.1/);
     expect(() => parseTrustedProxyIps('localhost')).toThrow(/localhost/);
+  });
+
+  test('rejects scoped IPv6 entries at startup', () => {
+    expect(() => parseTrustedProxyIps('fe80::1%eth0')).toThrow(/Scoped IPv6/);
+    expect(() => parseTrustedProxyIps('fe80::1%eth1')).toThrow(/Scoped IPv6/);
   });
 });
