@@ -491,25 +491,17 @@ describe('trusted-proxy X-Forwarded-For rate limiting', () => {
     throw new Error(`server on port ${port} did not become ready`);
   }
 
+  function spawnServer(port: number, extraEnv: Record<string, string>) {
+    return Bun.spawn(['bun', 'run', 'server.ts'], {
+      env: { ...process.env, PORT: String(port), ...extraEnv },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+  }
+
   beforeAll(async () => {
-    trustedProc = Bun.spawn(['bun', 'run', 'server.ts'], {
-      env: {
-        ...process.env,
-        PORT: String(trustedPort),
-        TRUSTED_PROXY_IPS: '127.0.0.1, ::1',
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    untrustedProc = Bun.spawn(['bun', 'run', 'server.ts'], {
-      env: {
-        ...process.env,
-        PORT: String(untrustedPort),
-        TRUSTED_PROXY_IPS: '',
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
+    trustedProc = spawnServer(trustedPort, { TRUSTED_PROXY_IPS: '127.0.0.1, ::1' });
+    untrustedProc = spawnServer(untrustedPort, { TRUSTED_PROXY_IPS: '' });
     await waitReady(trustedPort);
     await waitReady(untrustedPort);
   });

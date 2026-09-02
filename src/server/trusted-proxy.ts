@@ -10,24 +10,15 @@ import { isIP } from 'node:net';
  */
 
 /**
- * Light cleanup for an IP address used in returned values: trims and
- * lowercases only. It must never rewrite a valid address form — mapped
- * spellings like `::ffff:c633:6402` stay valid so XFF hops are not discarded
- * — trust-set comparisons use {@link canonicalIp} instead, where equivalent
- * spellings converge.
- */
-export function normalizeIp(raw: string): string {
-  return raw.trim().toLowerCase();
-}
-
-/**
- * Canonical equality form for an IP address: IPv4 as-is, IPv6 as eight
- * zero-padded hex groups, and IPv4-mapped IPv6 (dotted or hex tail) unwrapped
- * to dotted quad. Equivalent spellings compare equal: `2001:db8::1`,
- * `2001:0db8:0:0:0:0:0:1`, and `2001:DB8::1` all canonicalize the same, and
- * `::ffff:1.2.3.4` canonicalizes to `1.2.3.4`. Used only for trust-set
- * lookups, never for the IP returned to callers. Non-IP input passes through
- * trimmed and lowercased, so lookups miss without crashing.
+ * Canonical form of an IP address, used both as the trust-set key and as the
+ * client identity the resolver returns: IPv4 as-is, IPv4-mapped IPv6 (dotted
+ * or hex tail) unwrapped to dotted quad, and pure IPv6 in RFC 5952 compressed
+ * form. Equivalent spellings converge: `2001:db8::1`, `2001:0db8:0:0:0:0:0:1`,
+ * and `2001:DB8::1` all canonicalize to `2001:db8::1`, and
+ * `::ffff:1.2.3.4` / `::ffff:c000:201` to `1.2.3.4` — so one client can never
+ * split across rate-limit buckets because an edge serialized it differently.
+ * Non-IP input passes through trimmed and lowercased, so lookups miss without
+ * crashing.
  */
 export function canonicalIp(raw: string): string {
   const ip = raw.trim().toLowerCase();
@@ -54,11 +45,30 @@ export function canonicalIp(raw: string): string {
     ...left,
     ...Array<string>(8 - left.length - right.length).fill('0'),
     ...right,
-  ].map((g) => g.padStart(4, '0'));
-  if (groups.slice(0, 5).every((g) => g === '0000') && groups[5] === 'ffff') {
+  ].map((g) => Number.parseInt(g, 16).toString(16));
+  if (groups.slice(0, 5).every((g) => g === '0') && groups[5] === 'ffff') {
     const hi = Number.parseInt(groups[6]!, 16);
     const lo = Number.parseInt(groups[7]!, 16);
     return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  // RFC 5952: compress the longest run of zero groups (leftmost on ties);
+  // runs of a single group stay expanded.
+  let bestStart = -1;
+  let bestLen = 0;
+  let runStart = -1;
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i] === '0') {
+      if (runStart === -1) runStart = i;
+      if (i - runStart + 1 > bestLen) {
+        bestLen = i - runStart + 1;
+        bestStart = runStart;
+      }
+    } else {
+      runStart = -1;
+    }
+  }
+  if (bestLen >= 2) {
+    return `${groups.slice(0, bestStart).join(':')}::${groups.slice(bestStart + bestLen).join(':')}`;
   }
   return groups.join(':');
 }
@@ -82,13 +92,13 @@ export function resolveClientIp(
   if (!trusted.has(canonicalIp(peer))) return peer;
   const hops = (xff ?? '')
     .split(',')
-    .map((hop) => normalizeIp(hop))
+    .map((hop) => hop.trim().toLowerCase())
     .filter((hop) => hop !== '' && isIP(hop) !== 0);
   for (let i = hops.length - 1; i >= 0; i--) {
-    const hop = hops[i]!;
-    if (!trusted.has(canonicalIp(hop))) return hop;
+    const hop = canonicalIp(hops[i]!);
+    if (!trusted.has(hop)) return hop;
   }
-  return hops.length > 0 ? hops[0]! : peer;
+  return hops.length > 0 ? canonicalIp(hops[0]!) : canonicalIp(peer);
 }
 
 /**

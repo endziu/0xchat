@@ -54,9 +54,21 @@ describe('resolveClientIp', () => {
   test('hex-tail IPv4-mapped XFF hops are not discarded as invalid', () => {
     const trusted = parseTrustedProxyIps('198.51.100.1');
     // The trusted proxy saw the client as a compressed mapped address.
-    expect(resolveClientIp('198.51.100.1', '::ffff:c633:6402', trusted)).toBe('::ffff:c633:6402');
-    expect(resolveClientIp('198.51.100.1', '203.0.113.9, ::ffff:c633:6402', trusted)).toBe('::ffff:c633:6402');
-    expect(resolveClientIp('198.51.100.1', '::ffff:198.51.100.2', trusted)).toBe('::ffff:198.51.100.2');
+    expect(resolveClientIp('198.51.100.1', '::ffff:c633:6402', trusted)).toBe('198.51.100.2');
+    expect(resolveClientIp('198.51.100.1', '203.0.113.9, ::ffff:c633:6402', trusted)).toBe('198.51.100.2');
+    expect(resolveClientIp('198.51.100.1', '::ffff:198.51.100.2', trusted)).toBe('198.51.100.2');
+  });
+
+  test('equivalent spellings of the same client resolve to one key', () => {
+    const trusted = parseTrustedProxyIps('198.51.100.1');
+    expect(resolveClientIp('198.51.100.1', '::ffff:c633:6402', trusted)).toBe(
+      resolveClientIp('198.51.100.1', '198.51.100.2', trusted),
+    );
+    const v6 = parseTrustedProxyIps('2001:db8::1');
+    expect(resolveClientIp('2001:db8::1', '2001:0db8:0:0:0:0:0:2', v6)).toBe(
+      resolveClientIp('2001:db8::1', '2001:db8::2', v6),
+    );
+    expect(resolveClientIp('2001:db8::1', '2001:db8::2', v6)).toBe('2001:db8::2');
   });
 
   test('a trusted peer without X-Forwarded-For keeps the peer IP', () => {
