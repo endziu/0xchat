@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { api } from './api'
+import { ApiError, api } from './api'
 
 const originalFetch = globalThis.fetch
 const originalStorage = globalThis.localStorage
@@ -44,6 +44,41 @@ describe('api.getPubkey', () => {
     await expect(api.getPubkey(`0x${'44'.repeat(20)}`)).rejects.toThrow(
       'Encryption public key does not match address',
     )
+  })
+})
+
+describe('api errors', () => {
+  test('preserves a stable server error code', async () => {
+    globalThis.fetch = Object.assign(
+      async () => Response.json(
+        { error: 'Unsupported push service', code: 'unsupported_push_service' },
+        { status: 400 },
+      ),
+      { preconnect: originalFetch.preconnect },
+    )
+
+    const error = await api.subscribePush(
+      { endpoint: 'https://jmt17.google.com/fcm/send/token', keys: {} },
+      'token-a',
+    ).then(() => null, (caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).message).toBe('Unsupported push service')
+    expect((error as ApiError).code).toBe('unsupported_push_service')
+  })
+
+  test('turns a null JSON error body into a generic ApiError', async () => {
+    globalThis.fetch = Object.assign(
+      async () => Response.json(null, { status: 400, statusText: 'Bad Request' }),
+      { preconnect: originalFetch.preconnect },
+    )
+
+    const error = await api.getConversations('token-a')
+      .then(() => null, (caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).message).toBe('Bad Request')
+    expect((error as ApiError).code).toBeUndefined()
   })
 })
 

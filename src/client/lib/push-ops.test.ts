@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { ApiError } from './api'
 import { runSubscribeOp, runUnsubscribeOp, type SubscribeOpDeps, type UnsubscribeOpDeps } from './push-ops'
 
 interface State {
@@ -167,6 +168,32 @@ describe('runSubscribeOp', () => {
     expect(state.errors).toEqual(['Notification permission was not granted.'])
     expect(state.uploads).toEqual([])
     expect(state.unsubscribed).toBe(0)
+  })
+
+  test('unsupported push service gets an actionable message without suggesting retry', async () => {
+    const state = makeState()
+    const deps = subscribeDeps(state, { stale: () => false })
+    deps.upload = async () => {
+      throw new ApiError('Unsupported push service', 'unsupported_push_service')
+    }
+
+    const ok = await runSubscribeOp(deps)
+
+    expect(ok).toBe(false)
+    expect(state.errors).toEqual([
+      "This browser's push service is not supported. Try an official Chrome, Firefox, Safari, or Edge build.",
+    ])
+  })
+
+  test('transport and generic server failures keep the retry message', async () => {
+    const state = makeState()
+    const deps = subscribeDeps(state, { stale: () => false })
+    deps.upload = async () => { throw new Error('network unavailable') }
+
+    const ok = await runSubscribeOp(deps)
+
+    expect(ok).toBe(false)
+    expect(state.errors).toEqual(['Could not enable notifications. Please try again.'])
   })
 })
 
