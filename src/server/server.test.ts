@@ -473,8 +473,9 @@ describe('input validation', () => {
 });
 
 describe('trusted-proxy X-Forwarded-For rate limiting', () => {
-  const trustedPort = 9901 + Math.floor(Math.random() * 50);
-  const untrustedPort = 9951 + Math.floor(Math.random() * 50);
+  // Disjoint from the existing server test's 9876-9975 range and from each other.
+  const trustedPort = 10051 + Math.floor(Math.random() * 50);
+  const untrustedPort = 10101 + Math.floor(Math.random() * 50);
   let trustedProc: import('bun').Subprocess;
   let untrustedProc: import('bun').Subprocess;
 

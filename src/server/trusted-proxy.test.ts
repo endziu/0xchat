@@ -30,8 +30,25 @@ describe('resolveClientIp', () => {
   });
 
   test('compares IPv6 addresses case-insensitively', () => {
-    const trusted = new Set(['2001:db8::1']);
+    const trusted = parseTrustedProxyIps('2001:db8::1');
     expect(resolveClientIp('2001:DB8::1', '203.0.113.7', trusted)).toBe('203.0.113.7');
+  });
+
+  test('expanded and compressed IPv6 spellings of a trusted peer both match', () => {
+    const trusted = parseTrustedProxyIps('2001:db8::1');
+    expect(resolveClientIp('2001:db8::1', '203.0.113.7', trusted)).toBe('203.0.113.7');
+    expect(resolveClientIp('2001:0db8:0:0:0:0:0:1', '203.0.113.7', trusted)).toBe('203.0.113.7');
+  });
+
+  test('a config written in expanded spelling matches a compressed peer', () => {
+    const trusted = parseTrustedProxyIps('2001:0DB8:0:0:0:0:0:1');
+    expect(resolveClientIp('2001:db8::1', '203.0.113.7', trusted)).toBe('203.0.113.7');
+  });
+
+  test('IPv4-mapped IPv6 in dotted or hex-tail form matches a plain IPv4 config', () => {
+    const trusted = parseTrustedProxyIps('198.51.100.2');
+    expect(resolveClientIp('::ffff:198.51.100.2', '203.0.113.7', trusted)).toBe('203.0.113.7');
+    expect(resolveClientIp('0:0:0:0:0:ffff:c633:6402', '203.0.113.7', trusted)).toBe('203.0.113.7');
   });
 
   test('a trusted peer without X-Forwarded-For keeps the peer IP', () => {
@@ -61,12 +78,18 @@ describe('parseTrustedProxyIps', () => {
     expect(parseTrustedProxyIps(' , ,').size).toBe(0);
   });
 
-  test('parses a comma-separated list, trimming and normalizing entries', () => {
+  test('parses a comma-separated list, trimming and canonicalizing entries', () => {
     const ips = parseTrustedProxyIps(' 198.51.100.1, ::ffff:198.51.100.2 , 2001:DB8::1 ');
-    expect(ips.has('198.51.100.1')).toBe(true);
-    expect(ips.has('198.51.100.2')).toBe(true);
-    expect(ips.has('2001:db8::1')).toBe(true);
     expect(ips.size).toBe(3);
+    // Entry equivalence is observable through the trust gate, not the key format.
+    expect(resolveClientIp('198.51.100.1', '203.0.113.7', ips)).toBe('203.0.113.7');
+    expect(resolveClientIp('::ffff:198.51.100.2', '203.0.113.7', ips)).toBe('203.0.113.7');
+    expect(resolveClientIp('2001:0db8:0:0:0:0:0:1', '203.0.113.7', ips)).toBe('203.0.113.7');
+  });
+
+  test('canonicalization collapses equivalent spellings to one entry', () => {
+    expect(parseTrustedProxyIps('198.51.100.2, ::ffff:198.51.100.2').size).toBe(1);
+    expect(parseTrustedProxyIps('2001:db8::1, 2001:0db8:0:0:0:0:0:1').size).toBe(1);
   });
 
   test('rejects malformed entries at startup', () => {

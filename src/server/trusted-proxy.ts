@@ -10,14 +10,57 @@ import { isIP } from 'node:net';
  */
 
 /**
- * Normalizes an IP address for comparison: trims, lowercases IPv6 hex, and
- * unwraps the `::ffff:` prefix of IPv4-mapped IPv6 addresses. Trust-list
- * entries and XFF hops are normalized the same way, so `::ffff:1.2.3.4`
- * matches a configured `1.2.3.4`.
+ * Light cleanup for an IP address used in returned values: trims, lowercases
+ * IPv6 hex, and unwraps the `::ffff:` prefix of IPv4-mapped IPv6 addresses.
+ * Trust-set comparisons use {@link canonicalIp} instead, so equivalent IPv6
+ * spellings still match.
  */
 export function normalizeIp(raw: string): string {
   const ip = raw.trim().toLowerCase();
   return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+}
+
+/**
+ * Canonical equality form for an IP address: IPv4 as-is, IPv6 as eight
+ * zero-padded hex groups, and IPv4-mapped IPv6 (dotted or hex tail) unwrapped
+ * to dotted quad. Equivalent spellings compare equal: `2001:db8::1`,
+ * `2001:0db8:0:0:0:0:0:1`, and `2001:DB8::1` all canonicalize the same, and
+ * `::ffff:1.2.3.4` canonicalizes to `1.2.3.4`. Used only for trust-set
+ * lookups, never for the IP returned to callers. Non-IP input passes through
+ * trimmed and lowercased, so lookups miss without crashing.
+ */
+export function canonicalIp(raw: string): string {
+  const ip = raw.trim().toLowerCase();
+  const kind = isIP(ip);
+  if (kind !== 6) return ip;
+  let s = ip;
+  const dot = s.indexOf('.');
+  if (dot !== -1) {
+    const colon = s.lastIndexOf(':');
+    const [a, b, c, d] = s.slice(colon + 1).split('.').map(Number);
+    s = `${s.slice(0, colon + 1)}${((a! << 8) | b!).toString(16)}:${((c! << 8) | d!).toString(16)}`;
+  }
+  let left: string[];
+  let right: string[];
+  if (s.includes('::')) {
+    const [l, r] = s.split('::');
+    left = l ? l.split(':') : [];
+    right = r ? r.split(':') : [];
+  } else {
+    left = s.split(':');
+    right = [];
+  }
+  const groups = [
+    ...left,
+    ...Array<string>(8 - left.length - right.length).fill('0'),
+    ...right,
+  ].map((g) => g.padStart(4, '0'));
+  if (groups.slice(0, 5).every((g) => g === '0000') && groups[5] === 'ffff') {
+    const hi = Number.parseInt(groups[6]!, 16);
+    const lo = Number.parseInt(groups[7]!, 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return groups.join(':');
 }
 
 /**
@@ -36,15 +79,14 @@ export function resolveClientIp(
   xff: string | null,
   trusted: ReadonlySet<string>,
 ): string {
-  const normalizedPeer = normalizeIp(peer);
-  if (!trusted.has(normalizedPeer)) return peer;
+  if (!trusted.has(canonicalIp(peer))) return peer;
   const hops = (xff ?? '')
     .split(',')
     .map((hop) => normalizeIp(hop))
     .filter((hop) => hop !== '' && isIP(hop) !== 0);
   for (let i = hops.length - 1; i >= 0; i--) {
     const hop = hops[i]!;
-    if (!trusted.has(hop)) return hop;
+    if (!trusted.has(canonicalIp(hop))) return hop;
   }
   return hops.length > 0 ? hops[0]! : peer;
 }
@@ -64,7 +106,7 @@ export function parseTrustedProxyIps(raw: string | undefined): ReadonlySet<strin
     if (isIP(ip) === 0) {
       throw new Error(`Invalid TRUSTED_PROXY_IPS entry: ${ip}`);
     }
-    ips.add(normalizeIp(ip));
+    ips.add(canonicalIp(ip));
   }
   return ips;
 }
