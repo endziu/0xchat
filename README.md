@@ -77,6 +77,7 @@ Open the URL printed by Vite. Debug logging is enabled by the development script
 | `VAPID_PUBLIC_KEY` | empty | Web Push public key |
 | `VAPID_PRIVATE_KEY` | empty | Web Push private key |
 | `VAPID_SUBJECT` | mailto value | VAPID contact URI, normally `mailto:you@example.com` |
+| `TRUSTED_PROXY_IPS` | unset | Comma-separated, unscoped IPs of your reverse proxy/edge (IPv6 zone identifiers are rejected). When the direct peer is in this list, the client IP is taken from the rightmost untrusted `X-Forwarded-For` hop; otherwise `X-Forwarded-For` is ignored |
 
 Generate a VAPID pair with:
 
