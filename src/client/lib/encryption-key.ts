@@ -1,27 +1,13 @@
-import * as secp from '@noble/secp256k1'
-import { hexToBytes, keccak256 } from 'viem'
+import { verifyAddressBoundPublicKey } from '../../shared/address-bound-pubkey'
 
 export function verifyEncryptionPublicKey(address: string, value: string): string {
-  const normalizedAddress = address.trim().toLowerCase()
-  const trimmed = value.trim()
-  const hex = /^0x/i.test(trimmed) ? trimmed.slice(2).toLowerCase() : trimmed.toLowerCase()
-
-  if (!/^0[23][0-9a-f]{64}$/.test(hex)) {
+  const result = verifyAddressBoundPublicKey(address.trim(), value)
+  if (!result.ok) {
+    if (result.reason === 'address-mismatch') {
+      throw new Error('Encryption public key does not match address')
+    }
     throw new Error('Invalid encryption public key')
   }
 
-  let derivedAddress: string
-  try {
-    const point = secp.Point.fromBytes(hexToBytes(`0x${hex}`))
-    const uncompressed = point.toBytes(false)
-    derivedAddress = `0x${keccak256(uncompressed.slice(1)).slice(-40)}`.toLowerCase()
-  } catch {
-    throw new Error('Invalid encryption public key')
-  }
-
-  if (derivedAddress !== normalizedAddress) {
-    throw new Error('Encryption public key does not match address')
-  }
-
-  return `0x${hex}`
+  return `0x${result.publicKey}`
 }

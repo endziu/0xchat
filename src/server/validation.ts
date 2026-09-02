@@ -1,5 +1,4 @@
-import * as secp from '@noble/secp256k1';
-import { hexToBytes, keccak256 } from 'viem';
+import { verifyAddressBoundPublicKey } from '../shared/address-bound-pubkey.ts';
 
 export function isValidAddress(addr: string): boolean {
   return /^0x[0-9a-f]{40}$/.test(addr);
@@ -10,19 +9,8 @@ export function isValidSig(sig: string): boolean {
 }
 
 export function normalizeAddressBoundPubkey(address: string, value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  const pubkey = (/^0x/i.test(trimmed) ? trimmed.slice(2) : trimmed).toLowerCase();
-  if (!/^0[23][0-9a-f]{64}$/.test(pubkey)) return null;
-
-  try {
-    const point = secp.Point.fromBytes(hexToBytes(`0x${pubkey}`));
-    const uncompressed = point.toBytes(false);
-    const derivedAddress = `0x${keccak256(uncompressed.slice(1)).slice(-40)}`.toLowerCase();
-    return derivedAddress === address.toLowerCase() ? pubkey : null;
-  } catch {
-    return null;
-  }
+  const result = verifyAddressBoundPublicKey(address, value);
+  return result.ok ? result.publicKey : null;
 }
 
 function isBase64UrlOfLength(s: string, byteLen: number): boolean {
