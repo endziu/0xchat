@@ -1,7 +1,7 @@
 import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
 import { json } from '../http.ts';
-import { isRateLimited } from '../rate-limit.ts';
+import { RateLimiter } from '../rate-limit.ts';
 import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn } from '../constants.ts';
@@ -9,6 +9,9 @@ import { buildRegistrationChallenge } from '../../shared/registration-challenge.
 import type { Context } from '../http.ts';
 
 export const regStore = new ChallengeStore();
+
+const registerChallengeRateLimiter = new RateLimiter({ maxRequests: 10, windowMs: 60_000 });
+const registerRateLimiter = new RateLimiter({ maxRequests: 10, windowMs: 60_000 });
 
 function registrationSubject(address: string, pubkey: string): string {
   return `${address}:${pubkey}`;
@@ -26,7 +29,7 @@ function requestOrigin(req: Request): string | null {
 }
 
 export async function handleRegisterChallenge({ req, ip }: Context): Promise<Response> {
-  if (isRateLimited(`${ip}:register-challenge`)) {
+  if (registerChallengeRateLimiter.isRateLimited(ip)) {
     warn('[rate-limit] register-challenge', ip);
     return json({ error: 'Too many requests' }, 429);
   }
@@ -62,7 +65,7 @@ export async function handleRegisterChallenge({ req, ip }: Context): Promise<Res
 }
 
 export async function handleRegister({ req, ip }: Context): Promise<Response> {
-  if (isRateLimited(`${ip}:register`)) {
+  if (registerRateLimiter.isRateLimited(ip)) {
     warn('[rate-limit] register', ip);
     return json({ error: 'Too many requests' }, 429);
   }

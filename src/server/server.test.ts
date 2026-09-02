@@ -367,6 +367,18 @@ describe('authenticated routes', () => {
     expect(await verifyDeliveredMessage(JSON.parse(eventData!))).not.toBeNull();
   });
 
+  test('accepts a 30-message fast-chat burst without rate limiting', async () => {
+    for (let index = 0; index < 30; index++) {
+      const envelope = await authenticatedEnvelope(`fast message ${index}`);
+      const response = await fetch(baseUrl + '/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+        body: JSON.stringify(envelope),
+      });
+      expect(response.status).toBe(201);
+    }
+  });
+
   test('rejects forged sender/recipient/signature, legacy version, and replay', async () => {
     const original = await authenticatedEnvelope('mutation test');
     const otherIdentity = registrationIdentity('9');

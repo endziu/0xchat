@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { ChallengeStore } from '../challenge.ts';
 import { createSession } from '../db.ts';
 import { json } from '../http.ts';
-import { isRateLimited } from '../rate-limit.ts';
+import { RateLimiter } from '../rate-limit.ts';
 import { isValidAddress, isValidSig } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn, SESSION_TTL_MS } from '../constants.ts';
@@ -10,8 +10,11 @@ import type { Context } from '../http.ts';
 
 export const authStore = new ChallengeStore();
 
+const authChallengeRateLimiter = new RateLimiter({ maxRequests: 10, windowMs: 60_000 });
+const authSessionRateLimiter = new RateLimiter({ maxRequests: 10, windowMs: 60_000 });
+
 export async function handleAuthChallenge({ req, ip }: Context): Promise<Response> {
-  if (isRateLimited(`${ip}:auth`)) {
+  if (authChallengeRateLimiter.isRateLimited(ip)) {
     warn('[rate-limit] auth-challenge', ip);
     return json({ error: 'Too many requests' }, 429);
   }
@@ -39,7 +42,7 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
 }
 
 export async function handleAuthSession({ req, ip }: Context): Promise<Response> {
-  if (isRateLimited(`${ip}:session`)) {
+  if (authSessionRateLimiter.isRateLimited(ip)) {
     warn('[rate-limit] auth-session', ip);
     return json({ error: 'Too many requests' }, 429);
   }
