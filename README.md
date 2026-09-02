@@ -21,19 +21,6 @@ Open the app and it creates a fresh **burner identity** in your browser. Share i
 
 ---
 
-## User documentation
-
-See the **[0xChat user guide](docs/user-guide.md)** for:
-
-- getting started, sharing your address, and starting conversations;
-- sending expiring text and image messages;
-- managing contacts, notifications, and PWA installation;
-- backing up, restoring, or deleting your burner identity;
-- understanding encryption, metadata, expiry, and browser-local data; and
-- troubleshooting registration, identity, notification, camera, and contact issues.
-
----
-
 # Running the repository
 
 ## Requirements
