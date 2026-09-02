@@ -51,6 +51,14 @@ describe('resolveClientIp', () => {
     expect(resolveClientIp('0:0:0:0:0:ffff:c633:6402', '203.0.113.7', trusted)).toBe('203.0.113.7');
   });
 
+  test('hex-tail IPv4-mapped XFF hops are not discarded as invalid', () => {
+    const trusted = parseTrustedProxyIps('198.51.100.1');
+    // The trusted proxy saw the client as a compressed mapped address.
+    expect(resolveClientIp('198.51.100.1', '::ffff:c633:6402', trusted)).toBe('::ffff:c633:6402');
+    expect(resolveClientIp('198.51.100.1', '203.0.113.9, ::ffff:c633:6402', trusted)).toBe('::ffff:c633:6402');
+    expect(resolveClientIp('198.51.100.1', '::ffff:198.51.100.2', trusted)).toBe('::ffff:198.51.100.2');
+  });
+
   test('a trusted peer without X-Forwarded-For keeps the peer IP', () => {
     const trusted = new Set(['198.51.100.1']);
     expect(resolveClientIp('198.51.100.1', null, trusted)).toBe('198.51.100.1');

@@ -10,14 +10,14 @@ import { isIP } from 'node:net';
  */
 
 /**
- * Light cleanup for an IP address used in returned values: trims, lowercases
- * IPv6 hex, and unwraps the `::ffff:` prefix of IPv4-mapped IPv6 addresses.
- * Trust-set comparisons use {@link canonicalIp} instead, so equivalent IPv6
- * spellings still match.
+ * Light cleanup for an IP address used in returned values: trims and
+ * lowercases only. It must never rewrite a valid address form — mapped
+ * spellings like `::ffff:c633:6402` stay valid so XFF hops are not discarded
+ * — trust-set comparisons use {@link canonicalIp} instead, where equivalent
+ * spellings converge.
  */
 export function normalizeIp(raw: string): string {
-  const ip = raw.trim().toLowerCase();
-  return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  return raw.trim().toLowerCase();
 }
 
 /**
