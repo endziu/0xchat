@@ -112,6 +112,18 @@ describe('RateLimiter', () => {
     expect(s2.stopCount()).toBe(1);
   });
 
+  test('setSchedule swaps the scheduler and disarms the old timer', () => {
+    const s1 = fakeScheduler();
+    const s2 = fakeScheduler();
+    const limiter = new RateLimiter({ max: 1, now: () => 0, schedule: s1.schedule });
+    limiter.hit('a');
+    expect(s1.calls.length).toBe(1);
+    limiter.setSchedule(s2.schedule);
+    expect(s1.stopCount()).toBe(1);
+    limiter.hit('b');
+    expect(s2.calls.length).toBe(1);
+  });
+
   test('burst: first max allowed, rest rejected', () => {
     const limiter = makeLimiter({ max: 10 });
     const results = Array.from({ length: 15 }, () => limiter.hit('burst'));

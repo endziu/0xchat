@@ -24,7 +24,7 @@ export class RateLimiter {
   private readonly max: number;
   private readonly windowMs: number;
   private readonly now: () => number;
-  private readonly schedule: (cleanup: () => void, ms: number) => () => void;
+  private schedule: (cleanup: () => void, ms: number) => () => void;
   private readonly windows = new Map<string, number[]>();
   private disposeTimer: (() => void) | null = null;
 
@@ -63,6 +63,16 @@ export class RateLimiter {
   stop(): void {
     this.disposeTimer?.();
     this.disposeTimer = null;
+  }
+
+  /**
+   * Swaps the cleanup scheduler (test/ops seam for the per-route singletons).
+   * Disarms any running timer; the new scheduler arms lazily on the next hit.
+   */
+  setSchedule(schedule: (cleanup: () => void, ms: number) => () => void): void {
+    this.disposeTimer?.();
+    this.disposeTimer = null;
+    this.schedule = schedule;
   }
 
   private ensureCleanupStarted(): void {

@@ -1,8 +1,17 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { handleAuthChallenge, handleAuthSession } from './auth.ts';
+import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
 import type { Context } from '../http.ts';
 
 const address = `0x${'2'.repeat(40)}`;
+
+const noOpSchedule = () => () => {};
+
+beforeAll(() => {
+  // Route tests must not start real cleanup timers on the production singletons.
+  authChallengeLimiter.setSchedule(noOpSchedule);
+  authSessionLimiter.setSchedule(noOpSchedule);
+});
 
 function postContext(ip: string, path: string, body: unknown): Context {
   const req = new Request(`https://chat.example${path}`, {
