@@ -40,7 +40,7 @@ describe('URL fragment guard', () => {
     await runFragmentGuard(window)
 
     expect(replacement).toEqual({ state: window.history.state, url: '/chat/0xabc?source=test' })
-    expect(window.localStorage.getItem('eth_chat_burner_v1')).toBe(existingIdentity)
+    expect(window.localStorage.getItem('0xchat_burner_v1')).toBe(existingIdentity)
   })
 
   test('is permitted by the application content security policy', async () => {

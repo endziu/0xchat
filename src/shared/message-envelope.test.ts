@@ -40,16 +40,17 @@ async function signedEnvelope(): Promise<MessageEnvelope> {
 
 describe('message envelope protocol', () => {
   test('has stable canonical metadata and envelope encodings', async () => {
+    expect(MESSAGE_ENVELOPE_VERSION).toBe(2)
     const envelope = await signedEnvelope()
     const { signature: _, ...unsigned } = envelope
     expect(canonicalMessageAad(envelope)).toBe(
-      `0xChat message AAD v1\nVersion: 1\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300`,
+      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300`,
     )
     expect(canonicalMessageEnvelope(unsigned)).toBe(
-      `0xChat signed message envelope v1\nVersion: 1\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300\nRecipient ciphertext: 0x${'55'.repeat(32)}\nRecipient ephemeral public key: ${ephemeral}\nRecipient IV: 0x${'66'.repeat(12)}\nSender ciphertext: 0x${'77'.repeat(32)}\nSender ephemeral public key: ${ephemeral}\nSender IV: 0x${'88'.repeat(12)}`,
+      `0xChat signed message envelope v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300\nRecipient ciphertext: 0x${'55'.repeat(32)}\nRecipient ephemeral public key: ${ephemeral}\nRecipient IV: 0x${'66'.repeat(12)}\nSender ciphertext: 0x${'77'.repeat(32)}\nSender ephemeral public key: ${ephemeral}\nSender IV: 0x${'88'.repeat(12)}`,
     )
     expect(envelope.signature).toBe(
-      '0x841923c88510f1f8a958d1c3bb59a400f4a970a808934fd6e261bd056820e37a755c5d7fd47f206460b7cb238e4e6071c98bf000673980ff2ba3e3027368c29a1c',
+      '0x6cd306a871ad6df8447ce426fca91939a3fe4d58a969199ce0e33d699988a51d6298d00de84b3aeffe78985cd33cb59a9ba7c0b9fbb0445fde5ee7c09813ab4d1b',
     )
     expect(await verifyMessageEnvelope(envelope)).toEqual(envelope)
   })
@@ -57,7 +58,7 @@ describe('message envelope protocol', () => {
   test('rejects mutations to every signed field, signature, and wrong signer', async () => {
     const envelope = await signedEnvelope()
     const mutations: Partial<Record<keyof MessageEnvelope, unknown>>[] = [
-      { version: 2 },
+      { version: 1 },
       { id: `0x${'45'.repeat(16)}` },
       { sender: recipient.address.toLowerCase() },
       { recipient: sender.address.toLowerCase() },

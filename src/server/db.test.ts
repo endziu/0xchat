@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { unlinkSync } from 'node:fs';
 import { Database } from 'bun:sqlite';
+import { MESSAGE_ENVELOPE_VERSION } from '../shared/message-envelope.ts';
 import {
   createMessage as persistMessage,
   createSession,
@@ -34,7 +35,7 @@ function createMessage(
   ttl: number,
 ) {
   return persistMessage({
-    version: 1,
+    version: MESSAGE_ENVELOPE_VERSION,
     id,
     sender,
     recipient,
@@ -123,6 +124,19 @@ describe('messages', () => {
     expect((getDb().query('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count).toBe(0);
   });
 
+  test('hard-cutover deletes messages from an unsupported protocol version', () => {
+    const now = Date.now();
+    getDb().query(
+      `INSERT INTO messages (version, id, sender, recipient, ct_recipient, ephemeral_pub_recipient, iv_recipient, ct_sender, ephemeral_pub_sender, iv_sender, ttl_seconds, signature, created_at, expires_at)
+       VALUES (1, 'legacy-v1', ?, ?, 'ct_r', 'eph_r', 'iv_r', 'ct_s', 'eph_s', 'iv_s', 3600, 'sig', ?, ?)`,
+    ).run(alice, bob, now, now + 3600_000);
+    getDb().close();
+
+    initDb(TEST_DB);
+
+    expect((getDb().query('SELECT COUNT(*) AS count FROM messages').get() as { count: number }).count).toBe(0);
+  });
+
   test('create and fetch conversation messages', () => {
     createMessage(
       'm1', alice, bob,
@@ -181,9 +195,9 @@ describe('messages', () => {
     const insert = (id: string) => getDb()
       .query(
         `INSERT INTO messages (version, id, sender, recipient, ct_recipient, ephemeral_pub_recipient, iv_recipient, ct_sender, ephemeral_pub_sender, iv_sender, ttl_seconds, signature, created_at, expires_at)
-         VALUES (1, ?, ?, ?, 'ct_r', 'eph_r', 'iv_r', 'ct_s', 'eph_s', 'iv_s', 3600, 'sig', ?, ?)`,
+         VALUES (?, ?, ?, ?, 'ct_r', 'eph_r', 'iv_r', 'ct_s', 'eph_s', 'iv_s', 3600, 'sig', ?, ?)`,
       )
-      .run(id, alice, bob, stamp, stamp + 3600_000);
+      .run(MESSAGE_ENVELOPE_VERSION, id, alice, bob, stamp, stamp + 3600_000);
     insert('t1');
     insert('t2');
     insert('t3');
