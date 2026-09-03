@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { unlinkSync } from 'node:fs';
 import { Database } from 'bun:sqlite';
 import { MESSAGE_ENVELOPE_VERSION } from '../shared/message-envelope.ts';
@@ -84,6 +85,19 @@ describe('sessions', () => {
     const s = getSession('tok1');
     expect(s).not.toBeNull();
     expect(s!.address).toBe('0xabc');
+  });
+
+  test('stores sha256(token) at rest, never the raw token', () => {
+    const raw = 'ab'.repeat(32); // same shape as real 256-bit session tokens
+    createSession(raw, '0xabc', Date.now() + 60_000);
+
+    const stored = (getDb().query('SELECT token FROM sessions').all() as Array<{ token: string }>)
+      .map((row) => row.token);
+    expect(stored).not.toContain(raw);
+    expect(stored).toContain(createHash('sha256').update(raw).digest('hex'));
+
+    // the raw token still resolves through the public seam
+    expect(getSession(raw)?.address).toBe('0xabc');
   });
 
   test('returns null for unknown token', () => {

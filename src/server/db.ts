@@ -1,5 +1,13 @@
 import { Database } from 'bun:sqlite';
+import { createHash } from 'node:crypto';
 import { MESSAGE_ENVELOPE_VERSION, type MessageEnvelope } from '../shared/message-envelope.ts';
+
+// Session tokens are stored as sha256 hex digests so a copy of the database
+// never yields a valid bearer token. Callers keep using the raw token; the
+// digest is computed here, at the only place that writes or reads the column.
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 let db: Database;
 
@@ -14,7 +22,7 @@ export function initDb(path = 'chat.db'): void {
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
-      token      TEXT PRIMARY KEY,
+      token      TEXT PRIMARY KEY, -- sha256 hex digest of the bearer token, never the raw token
       address    TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
@@ -95,7 +103,7 @@ export function createSession(
 ): void {
   db.query(
     'INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(token, address, Date.now(), expiresAt);
+  ).run(hashToken(token), address, Date.now(), expiresAt);
 }
 
 export interface SessionRow {
@@ -104,14 +112,15 @@ export interface SessionRow {
 }
 
 export function getSession(token: string): SessionRow | null {
+  const hash = hashToken(token);
   const row = db
     .query(
       'SELECT address, expires_at FROM sessions WHERE token = ?',
     )
-    .get(token) as SessionRow | null;
+    .get(hash) as SessionRow | null;
   if (!row) return null;
   if (row.expires_at < Date.now()) {
-    db.query('DELETE FROM sessions WHERE token = ?').run(token);
+    db.query('DELETE FROM sessions WHERE token = ?').run(hash);
     return null;
   }
   return row;

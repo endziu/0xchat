@@ -6,6 +6,7 @@ import {
   test,
 } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import { createHash } from 'node:crypto';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -91,22 +92,25 @@ beforeAll(async () => {
     }
   }
 
-  // Seed test data directly via DB
+  // Seed test data directly via DB. Session rows mirror the at-rest format:
+  // the token column holds the sha256 hex digest of the raw bearer token.
   const db = new Database('chat.db');
+  const seedSession = (token: string, address: string) =>
+    db.query(
+      'INSERT OR REPLACE INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
+    ).run(
+      createHash('sha256').update(token).digest('hex'),
+      address,
+      Date.now(),
+      Date.now() + 3600_000,
+    );
   db.query(
     'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
   ).run('0x' + 'a'.repeat(40), 'cc'.repeat(33));
   db.query(
     'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
   ).run('0x' + 'b'.repeat(40), 'dd'.repeat(33));
-  db.query(
-    'INSERT OR REPLACE INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(
-    'test-token-integration',
-    '0x' + 'a'.repeat(40),
-    Date.now(),
-    Date.now() + 3600_000,
-  );
+  seedSession('test-token-integration', '0x' + 'a'.repeat(40));
   for (const identity of [messageSender, messageRecipient]) {
     db.query('INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)')
       .run(identity.address, identity.pubkey.slice(2));
@@ -115,8 +119,7 @@ beforeAll(async () => {
     [senderToken, messageSender.address],
     [recipientToken, messageRecipient.address],
   ]) {
-    db.query('INSERT OR REPLACE INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(token, address, Date.now(), Date.now() + 3600_000);
+    seedSession(token, address);
   }
   db.close();
 });
@@ -197,6 +200,41 @@ describe('auth routes', () => {
       }),
     });
     expect(res.status).toBe(401);
+  });
+
+  test('full login flow: returned token authenticates and stores only sha256', async () => {
+    const identity = registrationIdentity('9');
+    const challengeRes = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: identity.address }),
+    });
+    expect(challengeRes.status).toBe(200);
+    const { challenge, nonce } = (await challengeRes.json()) as { challenge: string; nonce: string };
+
+    const signature = await privateKeyToAccount(identity.privateKey).signMessage({ message: challenge });
+    const sessionRes = await fetch(baseUrl + '/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nonce, signature, address: identity.address }),
+    });
+    expect(sessionRes.status).toBe(200);
+    const { token } = (await sessionRes.json()) as { token: string };
+    expect(token).toBeTruthy();
+
+    // The raw token authenticates a protected route end to end.
+    const res = await fetch(baseUrl + '/api/conversations', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+
+    // At rest the database holds the sha256 digest, never the raw token.
+    const db = new Database('chat.db');
+    const stored = (db.query('SELECT token FROM sessions').all() as Array<{ token: string }>)
+      .map((row) => row.token);
+    db.close();
+    expect(stored).not.toContain(token);
+    expect(stored).toContain(createHash('sha256').update(token).digest('hex'));
   });
 });
 
