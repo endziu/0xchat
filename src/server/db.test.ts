@@ -104,6 +104,29 @@ describe('sessions', () => {
     expect(getSession('nope')).toBeNull();
   });
 
+  test('hard-cutover drops legacy sessions that stored raw tokens', () => {
+    getDb().close();
+    for (const suffix of ['', '-shm', '-wal']) {
+      try { unlinkSync(TEST_DB + suffix); } catch {}
+    }
+    const legacy = new Database(TEST_DB);
+    legacy.run('CREATE TABLE sessions (token TEXT PRIMARY KEY, address TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)');
+    legacy.query('INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run('raw-legacy-token', '0xabc', Date.now(), Date.now() + 60_000);
+    legacy.close();
+
+    initDb(TEST_DB);
+
+    const columns = (getDb().query('PRAGMA table_info(sessions)').all() as Array<{ name: string }>)
+      .map((column) => column.name);
+    expect(columns).toContain('version');
+    expect((getDb().query('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count).toBe(0);
+
+    // new-format sessions still work after the cutover
+    createSession('tok-after-cutover', '0xabc', Date.now() + 60_000);
+    expect(getSession('tok-after-cutover')).not.toBeNull();
+  });
+
   test('returns null for expired session', () => {
     createSession('tok2', '0xabc', Date.now() - 1000);
     expect(getSession('tok2')).toBeNull();

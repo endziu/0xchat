@@ -15,6 +15,12 @@ export function initDb(path = 'chat.db'): void {
   db = new Database(path);
   db.run('PRAGMA journal_mode = WAL');
   db.run('PRAGMA foreign_keys = ON');
+  const sessionColumns = db.query('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+  if (sessionColumns.length > 0
+    && !sessionColumns.some((column) => column.name === 'version')) {
+    // Legacy sessions stored the raw bearer token; the digest format cannot upgrade them.
+    db.run('DROP TABLE sessions');
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS pubkeys (
       address TEXT PRIMARY KEY,
@@ -25,7 +31,8 @@ export function initDb(path = 'chat.db'): void {
       token      TEXT PRIMARY KEY, -- sha256 hex digest of the bearer token, never the raw token
       address    TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL
+      expires_at INTEGER NOT NULL,
+      version    INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_expires
       ON sessions(expires_at);
