@@ -19,7 +19,7 @@ beforeAll(() => {
   sseTokenLimiter.setSchedule(noOpSchedule)
 })
 
-function context(
+function makeContext(
   path: string,
   ip: string,
   init?: RequestInit,
@@ -40,38 +40,34 @@ async function mintSseToken(
   auth = sessionToken,
 ): Promise<string> {
   const res = await handleGetSSEToken(
-    context('/api/events/token', ip, { method: 'POST' }, auth),
+    makeContext('/api/events/token', ip, { method: 'POST' }, auth),
   )
   expect(res.status).toBe(200)
   const body = (await res.json()) as { sse_token: string }
   return body.sse_token
 }
 
+/** Opens an SSE stream, consumes the initial ping, and returns the reader. */
 async function openSse(ip: string, sseToken: string) {
-  const res = await handleSSE(context(`/api/events?token=${sseToken}`, ip))
+  const res = await handleSSE(makeContext(`/api/events?token=${sseToken}`, ip))
   expect(res.status).toBe(200)
   const reader = res.body!.getReader()
-  await reader.read()
-  return reader
+  const first = new TextDecoder().decode((await reader.read()).value)
+  return { reader, first }
 }
 
 describe('SSE route', () => {
   test('client disconnect removes the client immediately', async () => {
     const ip = `sse-test-${Math.random()}`
     const sseToken = await mintSseToken(ip)
-    const res = await handleSSE(context(`/api/events?token=${sseToken}`, ip))
-    expect(res.status).toBe(200)
-
-    const reader = res.body!.getReader()
-    const decoder = new TextDecoder()
-    const first = await reader.read()
-    expect(decoder.decode(first.value)).toContain('event: ping')
+    const { reader, first } = await openSse(ip, sseToken)
+    expect(first).toContain('event: ping')
     expect(connectionCount(address)).toBe(1)
 
     // client is live: notifications reach it
     notify(address, 'message', { id: 'm1' })
     const second = await reader.read()
-    expect(decoder.decode(second.value)).toContain('event: message')
+    expect(new TextDecoder().decode(second.value)).toContain('event: message')
 
     await reader.cancel()
 
@@ -81,30 +77,30 @@ describe('SSE route', () => {
 
   test('bounds concurrent SSE connections per address', async () => {
     const ip = `sse-test-${Math.random()}`
-    const readers: ReadableStreamDefaultReader[] = []
+    const connections: Array<Awaited<ReturnType<typeof openSse>>> = []
     for (let i = 0; i < MAX_SSE_CONNECTIONS_PER_ADDRESS; i++) {
-      readers.push(await openSse(ip, await mintSseToken(ip)))
+      connections.push(await openSse(ip, await mintSseToken(ip)))
     }
     expect(connectionCount(address)).toBe(MAX_SSE_CONNECTIONS_PER_ADDRESS)
 
     const rejectedToken = await mintSseToken(ip)
     const rejected = await handleSSE(
-      context(`/api/events?token=${rejectedToken}`, ip),
+      makeContext(`/api/events?token=${rejectedToken}`, ip),
     )
     expect(rejected.status).toBe(429)
     expect(connectionCount(address)).toBe(MAX_SSE_CONNECTIONS_PER_ADDRESS)
 
     // cap is per address: another address is unaffected
-    const otherReader = await openSse(ip, await mintSseToken(ip, otherSessionToken))
+    const other = await openSse(ip, await mintSseToken(ip, otherSessionToken))
     expect(connectionCount(otherAddress)).toBe(1)
 
     // freeing a slot lets the rejected token reconnect (EventSource retry path)
-    await readers[0]!.cancel()
-    const retriedReader = await openSse(ip, rejectedToken)
+    await connections[0]!.reader.cancel()
+    const retried = await openSse(ip, rejectedToken)
 
-    await otherReader.cancel()
-    await retriedReader.cancel()
-    for (const r of readers.slice(1)) await r.cancel()
+    await other.reader.cancel()
+    await retried.reader.cancel()
+    for (const c of connections.slice(1)) await c.reader.cancel()
     expect(connectionCount(address)).toBe(0)
     expect(connectionCount(otherAddress)).toBe(0)
   })
@@ -115,7 +111,7 @@ describe('SSE route', () => {
       await mintSseToken(ip)
     }
     const res = await handleGetSSEToken(
-      context('/api/events/token', ip, { method: 'POST' }),
+      makeContext('/api/events/token', ip, { method: 'POST' }),
     )
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ error: 'Too many requests' })
