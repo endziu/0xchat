@@ -23,3 +23,6 @@ export const registerLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
 /** Push subscribe, per ip+address. */
 export const pushSubscribeLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+
+/** SSE token, per ip. A live client re-mints only on reconnect. */
+export const sseTokenLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
