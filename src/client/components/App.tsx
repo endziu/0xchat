@@ -9,7 +9,7 @@ import { ToastProvider } from './Toast'
 
 function AppContent() {
   const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, prepareIdentity, commitIdentity } = useIdentity()
-  const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout, createSession, commitSession } = useSession(identity)
+  const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout, revokeSession, createSession, commitSession } = useSession(identity)
   const push = usePushSubscription(token)
   const [path, setPath] = useState(window.location.pathname)
   const [sseConnected, setSseConnected] = useState(false)
@@ -17,6 +17,7 @@ function AppContent() {
   const importIdentity = useIdentityTransition({
     setTransitioning,
     unsubscribePush: push.unsubscribe,
+    revokeSession,
     clearSession: sessionLogout,
     prepareIdentity,
     createSession,

@@ -11,6 +11,7 @@ function harness(overrides: Partial<IdentityTransitionDeps> = {}) {
   const deps: IdentityTransitionDeps = {
     setTransitioning: (value) => { events.push(`transitioning:${value}`) },
     unsubscribePush: async () => { events.push('unsubscribe') },
+    revokeSession: async () => { events.push('revoke-session') },
     clearSession: () => { events.push('clear-session') },
     prepareIdentity: async (keypair) => { events.push(`prepare:${keypair.address}`) },
     createSession: async (keypair) => { events.push(`login:${keypair.address}`); return `token:${keypair.address}` },
@@ -29,6 +30,7 @@ describe('identity transition', () => {
     expect(events).toEqual([
       'transitioning:true',
       'unsubscribe',
+      'revoke-session',
       'clear-session',
       'prepare:0xb',
       'login:0xb',
@@ -70,18 +72,26 @@ describe('identity transition', () => {
   test('only the latest rapid import can become active', async () => {
     const resolvers = new Map<string, () => void>()
     const commits: string[] = []
+    const waitForPreparation = async (address: string): Promise<() => void> => {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const resolve = resolvers.get(address)
+        if (resolve) return resolve
+        await Promise.resolve()
+      }
+      throw new Error(`Preparation did not start for ${address}`)
+    }
     const { transition } = harness({
       prepareIdentity: (keypair) => new Promise<void>((resolve) => { resolvers.set(keypair.address, resolve) }),
       commit: (keypair) => { commits.push(keypair.address) },
     })
 
     const first = transition(identityB)
-    await Promise.resolve()
-    resolvers.get('0xb')?.()
+    const resolveB = await waitForPreparation('0xb')
+    resolveB()
     await Promise.resolve()
     const second = transition(identityC)
-    await Promise.resolve()
-    resolvers.get('0xc')?.()
+    const resolveC = await waitForPreparation('0xc')
+    resolveC()
     await Promise.all([first, second])
 
     expect(commits).toEqual(['0xc'])

@@ -28,6 +28,10 @@ export function useSession(identity: Keypair | null) {
     setError(null)
   }, [])
 
+  const revokeSession = useCallback(async (): Promise<void> => {
+    if (token) await api.deleteSession(token)
+  }, [token])
+
   const login = useCallback(async () => {
     if (!identity) return
     const epoch = sessionEpoch.current
@@ -55,5 +59,5 @@ export function useSession(identity: Keypair | null) {
     setLoading(false)
   }, [])
 
-  return { token, loading, error, login, logout, createSession, commitSession }
+  return { token, loading, error, login, logout, revokeSession, createSession, commitSession }
 }

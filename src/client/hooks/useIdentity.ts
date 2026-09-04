@@ -69,6 +69,14 @@ export function useIdentity() {
         deleteError = err instanceof Error ? err.message : 'Failed to notify server'
         console.error('Failed to delete address:', err)
       }
+
+      try {
+        await api.deleteSession(token)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to revoke session'
+        deleteError = deleteError ? `${deleteError}; ${message}` : message
+        console.error('Failed to revoke session:', err)
+      }
     }
 
     clearKeypair()
