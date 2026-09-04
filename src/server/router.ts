@@ -7,6 +7,7 @@ import { handleSendMessage, handleGetMessages, handleGetConversations } from './
 import { handleGetSSEToken, handleSSE, cleanupSseTokens } from './routes/events.ts';
 import { handleGetVapidPublicKey, handleSubscribePush, handleUnsubscribePush } from './routes/push.ts';
 import { handleDeleteAddress } from './routes/account.ts';
+import { handleDeleteSession } from './routes/session.ts';
 import { handleStatic } from './routes/static.ts';
 import type { Context } from './http.ts';
 
@@ -26,6 +27,7 @@ const routes: Route[] = [
   { method: 'GET',    test: re(/^\/api\/pubkey\/0x[0-9a-fA-F]{40}$/),   handler: handleGetPubkey },
   { method: 'POST',   test: eq('/api/auth/challenge'),                  handler: handleAuthChallenge },
   { method: 'POST',   test: eq('/api/auth/session'),                    handler: handleAuthSession },
+  { method: 'DELETE', test: eq('/api/session'),                         handler: handleDeleteSession },
   { method: 'POST',   test: eq('/api/messages'),                        handler: handleSendMessage },
   { method: 'GET',    test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}$/), handler: handleGetMessages },
   { method: 'GET',    test: eq('/api/conversations'),                   handler: handleGetConversations },

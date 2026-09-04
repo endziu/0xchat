@@ -3,6 +3,7 @@ import type { Keypair } from './burner'
 export interface IdentityTransitionDeps {
   setTransitioning: (value: boolean) => void
   unsubscribePush: () => Promise<void>
+  revokeSession: () => Promise<void>
   clearSession: () => void
   prepareIdentity: (keypair: Keypair) => Promise<void>
   createSession: (keypair: Keypair) => Promise<string>
@@ -21,6 +22,13 @@ export function createIdentityTransition(deps: IdentityTransitionDeps) {
         await deps.unsubscribePush()
       } catch {
         // Losing a browser/provider subscription must not retain old auth.
+      }
+      if (attempt !== latestAttempt) return
+
+      try {
+        await deps.revokeSession()
+      } catch {
+        // Local identity isolation must still proceed when revocation is unreachable.
       }
       if (attempt !== latestAttempt) return
 

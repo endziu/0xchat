@@ -138,6 +138,9 @@ export const api = {
   getSseToken: (token: string): Promise<{ sse_token: string }> =>
     request('/api/events/token', { method: 'POST' }, token),
 
+  deleteSession: (token: string) =>
+    request('/api/session', { method: 'DELETE' }, token),
+
   deleteAddress: (address: string, token: string) =>
     request(`/api/addresses/${address}`, { method: 'DELETE' }, token),
 

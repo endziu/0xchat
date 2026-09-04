@@ -29,8 +29,14 @@ export function getClientIp(
 }
 
 export function getSessionAddress(req: Request): string | null {
+  const token = getBearerToken(req);
+  if (!token) return null;
+  const session = getSession(token);
+  return session?.address ?? null;
+}
+
+export function getBearerToken(req: Request): string | null {
   const auth = req.headers.get('Authorization');
   if (!auth?.startsWith('Bearer ')) return null;
-  const session = getSession(auth.slice(7));
-  return session?.address ?? null;
+  return auth.slice(7) || null;
 }

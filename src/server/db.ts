@@ -133,6 +133,10 @@ export function getSession(token: string): SessionRow | null {
   return row;
 }
 
+export function deleteSession(token: string): void {
+  db.query('DELETE FROM sessions WHERE token = ?').run(token);
+}
+
 export function deleteExpiredSessions(): void {
   db.query('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
 }

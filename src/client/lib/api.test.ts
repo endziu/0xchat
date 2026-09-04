@@ -83,6 +83,25 @@ describe('api errors', () => {
 })
 
 describe('api per-request auth', () => {
+  test('deleteSession revokes exactly the bearer token passed by the caller', async () => {
+    let seenUrl: unknown
+    let seenInit: RequestInit | undefined
+    globalThis.fetch = Object.assign(
+      async (url: unknown, init?: RequestInit) => {
+        seenUrl = url
+        seenInit = init
+        return new Response(null, { status: 204 })
+      },
+      { preconnect: originalFetch.preconnect },
+    )
+
+    await api.deleteSession('token-a')
+
+    expect(seenUrl).toBe('/api/session')
+    expect(seenInit?.method).toBe('DELETE')
+    expect(new Headers(seenInit?.headers).get('Authorization')).toBe('Bearer token-a')
+  })
+
   test('sends exactly the token passed per request, with no shared state', async () => {
     const seen: (string | null)[] = []
     globalThis.fetch = Object.assign(
