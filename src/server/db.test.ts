@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { unlinkSync } from 'node:fs';
 import { Database } from 'bun:sqlite';
 import { MESSAGE_ENVELOPE_VERSION } from '../shared/message-envelope.ts';
@@ -86,8 +87,44 @@ describe('sessions', () => {
     expect(s!.address).toBe('0xabc');
   });
 
+  test('stores sha256(token) at rest, never the raw token', () => {
+    const raw = 'ab'.repeat(32); // same shape as real 256-bit session tokens
+    createSession(raw, '0xabc', Date.now() + 60_000);
+
+    const stored = (getDb().query('SELECT token FROM sessions').all() as Array<{ token: string }>)
+      .map((row) => row.token);
+    expect(stored).not.toContain(raw);
+    expect(stored).toContain(createHash('sha256').update(raw).digest('hex'));
+
+    // the raw token still resolves through the public seam
+    expect(getSession(raw)?.address).toBe('0xabc');
+  });
+
   test('returns null for unknown token', () => {
     expect(getSession('nope')).toBeNull();
+  });
+
+  test('hard-cutover drops legacy sessions that stored raw tokens', () => {
+    getDb().close();
+    for (const suffix of ['', '-shm', '-wal']) {
+      try { unlinkSync(TEST_DB + suffix); } catch {}
+    }
+    const legacy = new Database(TEST_DB);
+    legacy.run('CREATE TABLE sessions (token TEXT PRIMARY KEY, address TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)');
+    legacy.query('INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run('raw-legacy-token', '0xabc', Date.now(), Date.now() + 60_000);
+    legacy.close();
+
+    initDb(TEST_DB);
+
+    const columns = (getDb().query('PRAGMA table_info(sessions)').all() as Array<{ name: string }>)
+      .map((column) => column.name);
+    expect(columns).toContain('version');
+    expect((getDb().query('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count).toBe(0);
+
+    // new-format sessions still work after the cutover
+    createSession('tok-after-cutover', '0xabc', Date.now() + 60_000);
+    expect(getSession('tok-after-cutover')).not.toBeNull();
   });
 
   test('returns null for expired session', () => {
