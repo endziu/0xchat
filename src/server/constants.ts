@@ -38,6 +38,7 @@ export const SECURITY_HEADERS = {
 
 export const VALID_TTLS = new Set([5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]);
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const PUBKEY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const VAPID_PUBLIC_KEY = process.env['VAPID_PUBLIC_KEY'] ?? '';
 export const VAPID_PRIVATE_KEY = process.env['VAPID_PRIVATE_KEY'] ?? '';

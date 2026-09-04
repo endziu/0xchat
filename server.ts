@@ -1,5 +1,5 @@
-import { initDb, deleteExpiredMessages, deleteExpiredSessions } from './src/server/db.ts';
-import { PORT, error } from './src/server/constants.ts';
+import { initDb, deleteExpiredMessages, deleteExpiredSessions, deleteInactivePubkeys } from './src/server/db.ts';
+import { PORT, PUBKEY_RETENTION_MS, error } from './src/server/constants.ts';
 import { json } from './src/server/http.ts';
 import { createFetch, regStore, authStore, cleanupSseTokens } from './src/server/router.ts';
 
@@ -8,6 +8,7 @@ initDb();
 setInterval(() => {
   deleteExpiredMessages();
   deleteExpiredSessions();
+  deleteInactivePubkeys(Date.now() - PUBKEY_RETENTION_MS);
 }, 30_000).unref();
 
 setInterval(() => {

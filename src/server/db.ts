@@ -15,6 +15,12 @@ export function initDb(path = 'chat.db'): void {
   db = new Database(path);
   db.run('PRAGMA journal_mode = WAL');
   db.run('PRAGMA foreign_keys = ON');
+  const pubkeyColumns = db.query('PRAGMA table_info(pubkeys)').all() as Array<{ name: string }>;
+  if (pubkeyColumns.length > 0
+    && !pubkeyColumns.some((column) => column.name === 'last_active_at')) {
+    db.run('ALTER TABLE pubkeys ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0');
+    db.query('UPDATE pubkeys SET last_active_at = ? WHERE last_active_at = 0').run(Date.now());
+  }
   const sessionColumns = db.query('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
   if (sessionColumns.length > 0
     && !sessionColumns.some((column) => column.name === 'version')) {
@@ -23,9 +29,12 @@ export function initDb(path = 'chat.db'): void {
   }
   db.run(`
     CREATE TABLE IF NOT EXISTS pubkeys (
-      address TEXT PRIMARY KEY,
-      pubkey  TEXT NOT NULL
+      address        TEXT PRIMARY KEY,
+      pubkey         TEXT NOT NULL,
+      last_active_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_pubkeys_last_active
+      ON pubkeys(last_active_at);
 
     CREATE TABLE IF NOT EXISTS sessions (
       token      TEXT PRIMARY KEY, -- sha256 hex digest of the bearer token, never the raw token
@@ -88,11 +97,14 @@ export function initDb(path = 'chat.db'): void {
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
 }
 
-export function registerPubkey(address: string, pubkey: string): void {
+export function registerPubkey(address: string, pubkey: string, activeAt = Date.now()): void {
   const normalized = address.toLowerCase();
   db.query(
-    'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
-  ).run(normalized, pubkey);
+    `INSERT INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)
+     ON CONFLICT(address) DO UPDATE SET
+       pubkey = excluded.pubkey,
+       last_active_at = excluded.last_active_at`,
+  ).run(normalized, pubkey, activeAt);
 }
 
 export function getPubkey(address: string): string | null {
@@ -103,14 +115,21 @@ export function getPubkey(address: string): string | null {
   return row?.pubkey ?? null;
 }
 
+export function deleteInactivePubkeys(cutoff: number): number {
+  return db.query('DELETE FROM pubkeys WHERE last_active_at < ?').run(cutoff).changes;
+}
+
 export function createSession(
   token: string,
   address: string,
   expiresAt: number,
 ): void {
+  const normalized = address.toLowerCase();
+  const createdAt = Date.now();
   db.query(
     'INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(hashToken(token), address, Date.now(), expiresAt);
+  ).run(hashToken(token), normalized, createdAt, expiresAt);
+  db.query('UPDATE pubkeys SET last_active_at = ? WHERE address = ?').run(createdAt, normalized);
 }
 
 export interface SessionRow {
@@ -159,7 +178,13 @@ export function createMessage(
     envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
     envelope.ttl, envelope.signature, createdAt, expiresAt,
   );
-  return result.changes === 1 ? { createdAt, expiresAt } : null;
+  if (result.changes !== 1) return null;
+  db.query('UPDATE pubkeys SET last_active_at = ? WHERE address IN (?, ?)').run(
+    createdAt,
+    envelope.sender.toLowerCase(),
+    envelope.recipient.toLowerCase(),
+  );
+  return { createdAt, expiresAt };
 }
 
 export interface MessageRow {

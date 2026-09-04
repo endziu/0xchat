@@ -131,5 +131,6 @@ bun run test         # clear all, build, then run Bun tests
 ```
 
 Runtime data is stored in `chat.db` beside the project. The database, build output, dependencies, and `.env` are ignored by Git.
+Public-key registrations with no session or message activity are pruned after 30 days.
 
 ---
