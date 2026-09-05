@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { addClient, removeClient } from '../sse.ts';
+import { addClient, connectionCount, removeClient } from '../sse.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { SECURITY_HEADERS, log, warn, error } from '../constants.ts';
+import { sseTokenLimiter } from '../rate-limiters.ts';
+import { MAX_SSE_CONNECTIONS_PER_ADDRESS, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
 import type { Context } from '../http.ts';
 
 interface SseTokenEntry {
@@ -19,6 +20,11 @@ export function cleanupSseTokens(): void {
 }
 
 export async function handleGetSSEToken({ req, ip }: Context): Promise<Response> {
+  if (sseTokenLimiter.hit(ip)) {
+    warn('[rate-limit] sse-token', ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
+
   const address = getSessionAddress(req);
   if (!address) {
     warn('[unauth] sse token no session', ip);
@@ -32,7 +38,7 @@ export async function handleGetSSEToken({ req, ip }: Context): Promise<Response>
   return json({ sse_token: sseToken });
 }
 
-export async function handleSSE({ url }: Context): Promise<Response> {
+export async function handleSSE({ url, ip }: Context): Promise<Response> {
   const sseToken = url.searchParams.get('token');
   if (!sseToken) return json({ error: 'Missing token' }, 401);
 
@@ -43,35 +49,48 @@ export async function handleSSE({ url }: Context): Promise<Response> {
   }
 
   const address = tokenEntry.address;
+
+  // Checked before the token is consumed: a rejected client can retry the
+  // same token once a slot frees (EventSource reconnects with the same URL).
+  if (connectionCount(address) >= MAX_SSE_CONNECTIONS_PER_ADDRESS) {
+    warn('[sse]', address, 'connection cap reached', ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
+
   sseTokens.delete(sseToken); // single-use
 
+  const ping = new TextEncoder().encode(`event: ping\ndata: {}\n\n`);
+  let ctrl: ReadableStreamDefaultController;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  let cleanedUp = false;
+
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (interval !== undefined) clearInterval(interval);
+    removeClient(address, ctrl);
+    log('[sse]', address, 'disconnected');
+  };
+
   const stream = new ReadableStream({
-    start(ctrl) {
+    start(c) {
+      ctrl = c;
       addClient(address, ctrl);
       log('[sse]', address, 'connected');
 
-      ctrl.enqueue(new TextEncoder().encode(`event: ping\ndata: {}\n\n`));
+      ctrl.enqueue(ping);
 
-      const interval = setInterval(() => {
+      interval = setInterval(() => {
         try {
-          ctrl.enqueue(new TextEncoder().encode(`event: ping\ndata: {}\n\n`));
+          ctrl.enqueue(ping);
         } catch {
           error('[sse]', address, 'disconnected (heartbeat error)');
-          clearInterval(interval);
-          removeClient(address, ctrl);
+          cleanup();
         }
       }, 30_000);
-
-      const origClose = ctrl.close.bind(ctrl);
-      ctrl.close = () => {
-        log('[sse]', address, 'disconnected');
-        clearInterval(interval);
-        removeClient(address, ctrl);
-        origClose();
-      };
     },
     cancel() {
-      // cleanup handled via ctrl.close override above
+      cleanup();
     },
   });
 

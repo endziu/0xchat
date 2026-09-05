@@ -15,6 +15,13 @@ export function addClient(
   set.add(ctrl);
 }
 
+/** Number of live SSE streams currently registered for an address. */
+export function connectionCount(
+  address: string,
+): number {
+  return clients.get(address)?.size ?? 0;
+}
+
 export function removeClient(
   address: string,
   ctrl: ReadableStreamDefaultController,
