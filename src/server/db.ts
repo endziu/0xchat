@@ -153,7 +153,7 @@ export function getSession(token: string): SessionRow | null {
 }
 
 export function deleteSession(token: string): void {
-  db.query('DELETE FROM sessions WHERE token = ?').run(token);
+  db.query('DELETE FROM sessions WHERE token = ?').run(hashToken(token));
 }
 
 export function deleteExpiredSessions(): void {
