@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { api } from '../lib/api'
+import { SseConnection } from '../lib/sse-connection'
 
 export function useSSE(token: string | null, onMessage: (data: unknown) => void, onDisconnect?: (address: string) => void) {
   const [connected, setConnected] = useState(false)
@@ -11,61 +12,22 @@ export function useSSE(token: string | null, onMessage: (data: unknown) => void,
     }
     const activeToken: string = token
 
-    let es: EventSource | null = null
-    let mounted = true
-    let reconnectTimeout: NodeJS.Timeout | null = null
-
-    const setupSSE = async () => {
-      try {
-        // Get a short-lived SSE token
-        const { sse_token } = await api.getSseToken(activeToken)
-        if (!mounted) return
-
-        es = new EventSource(`/api/events?token=${sse_token}`)
-
-        es.addEventListener('open', () => {
-          if (mounted) setConnected(true)
-        })
-
-        es.addEventListener('message', (e: MessageEvent) => {
-          try {
-            const data = JSON.parse(e.data)
-            onMessage(data)
-          } catch (err) {
-            console.error('Failed to parse SSE message data:', err)
-          }
-        })
-
-        es.addEventListener('user:disconnected', (e: MessageEvent) => {
-          try {
-            const data = JSON.parse(e.data)
-            onDisconnect?.(data.address)
-          } catch (err) {
-            console.error('Failed to parse disconnect event:', err)
-          }
-        })
-
-        es.onerror = (err) => {
-          console.error('SSE error:', err)
-          if (mounted) setConnected(false)
-          // Let EventSource reconnect automatically
-        }
-      } catch (err) {
-        console.error('Failed to get SSE token:', err)
-        if (mounted) setConnected(false)
-      }
-    }
-
-    setupSSE()
+    // EventSource alone cannot recover: a non-2xx response (cap 429, stale
+    // token 401) ends it permanently, and its automatic retry of a dropped
+    // stream re-dials a single-use token that now 401s. SseConnection drives
+    // recovery with a fresh token and backoff on every failure.
+    const conn = new SseConnection({
+      getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
+      buildUrl: (sseToken) => `/api/events?token=${sseToken}`,
+      onOpen: () => setConnected(true),
+      onDisconnect: () => setConnected(false),
+      onMessage,
+      onUserDisconnected: onDisconnect,
+    })
+    conn.connect()
 
     return () => {
-      mounted = false
-      if (es) {
-        es.close()
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout)
-      }
+      conn.close()
       setConnected(false)
     }
   }, [token, onMessage, onDisconnect])
