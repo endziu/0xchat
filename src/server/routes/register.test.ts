@@ -22,16 +22,20 @@ const privateKey = `0x${'77'.repeat(32)}` as const;
 const address = privateKeyToAccount(privateKey).address.toLowerCase();
 const publicKey = bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true));
 
-function context(ip: string): Context {
-  const req = new Request('https://chat.example/api/register/challenge', {
+function context(
+  ip: string,
+  path = '/api/register/challenge',
+  body: Record<string, unknown> = { address, pubkey: publicKey },
+): Context {
+  const req = new Request(`https://chat.example${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address, pubkey: publicKey }),
+    body: JSON.stringify(body),
   });
   return {
     req,
     url: new URL(req.url),
-    path: '/api/register/challenge',
+    path,
     method: 'POST',
     ip,
   };
@@ -44,23 +48,14 @@ describe('registration key validation', () => {
     )];
 
     for (const pubkey of invalidKeys) {
-      const req = new Request('https://chat.example/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await handleRegister(context(
+        `registration-validation-${Math.random()}`, '/api/register', {
           address,
           pubkey,
           signature: `0x${'ab'.repeat(65)}`,
           nonce: 'unused',
-        }),
-      });
-      const response = await handleRegister({
-        req,
-        url: new URL(req.url),
-        path: '/api/register',
-        method: 'POST',
-        ip: `registration-validation-${Math.random()}`,
-      });
+        },
+      ));
       expect(response.status).toBe(400);
     }
   });
@@ -84,37 +79,21 @@ describe('registration write rate limit', () => {
       const identityPrivateKey = `0x${count.toString(16).padStart(2, '0').repeat(32)}` as const;
       const identityAddress = privateKeyToAccount(identityPrivateKey).address.toLowerCase();
       const identityPubkey = bytesToHex(secp.getPublicKey(hexToBytes(identityPrivateKey), true));
-      const challengeReq = new Request('https://chat.example/api/register/challenge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: identityAddress, pubkey: identityPubkey }),
-      });
-      const challengeResponse = await handleRegisterChallenge({
-        req: challengeReq,
-        url: new URL(challengeReq.url),
-        path: '/api/register/challenge',
-        method: 'POST',
-        ip: `challenge-${count}-${Math.random()}`,
-      });
+      const challengeResponse = await handleRegisterChallenge(context(
+        `challenge-${count}-${Math.random()}`, '/api/register/challenge',
+        { address: identityAddress, pubkey: identityPubkey },
+      ));
+      expect(challengeResponse.status).toBe(200);
       const { challenge, nonce } = await challengeResponse.json() as { challenge: string; nonce: string };
       const signature = await privateKeyToAccount(identityPrivateKey).signMessage({ message: challenge });
-      const registerReq = new Request('https://chat.example/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await handleRegister(context(
+        registrationIp, '/api/register', {
           address: identityAddress,
           pubkey: identityPubkey,
           signature,
           nonce,
-        }),
-      });
-      const response = await handleRegister({
-        req: registerReq,
-        url: new URL(registerReq.url),
-        path: '/api/register',
-        method: 'POST',
-        ip: registrationIp,
-      });
+        },
+      ));
 
       expect(response.status).toBe(count <= 10 ? 200 : 429);
     }

@@ -9,7 +9,8 @@ const MINUTE = 60_000;
 /** 120/min per ip+address — 2 messages/sec sustained, fast chat safe. */
 export const messageLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
 
-/** 240/min per ip across every address — rotating identities cannot multiply throughput. */
+/** 240/min per ip across every address — bounds identity cycling while allowing
+ * two identities behind a shared IP their full 120/min allowance each. */
 export const messageIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });
 
 /** Auth challenge, per ip. */

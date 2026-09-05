@@ -11,19 +11,28 @@ function hashToken(token: string): string {
 
 let db: Database;
 
+function tableColumns(table: 'pubkeys' | 'sessions' | 'messages'): Set<string> {
+  const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return new Set(columns.map((column) => column.name));
+}
+
+function markAddressesActive(addresses: string[], at: number): void {
+  const placeholders = addresses.map(() => '?').join(', ');
+  db.query(`UPDATE pubkeys SET last_active_at = ? WHERE address IN (${placeholders})`)
+    .run(at, ...addresses.map((address) => address.toLowerCase()));
+}
+
 export function initDb(path = 'chat.db'): void {
   db = new Database(path);
   db.run('PRAGMA journal_mode = WAL');
   db.run('PRAGMA foreign_keys = ON');
-  const pubkeyColumns = db.query('PRAGMA table_info(pubkeys)').all() as Array<{ name: string }>;
-  if (pubkeyColumns.length > 0
-    && !pubkeyColumns.some((column) => column.name === 'last_active_at')) {
+  const pubkeyColumns = tableColumns('pubkeys');
+  if (pubkeyColumns.size > 0 && !pubkeyColumns.has('last_active_at')) {
     db.run('ALTER TABLE pubkeys ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0');
     db.query('UPDATE pubkeys SET last_active_at = ? WHERE last_active_at = 0').run(Date.now());
   }
-  const sessionColumns = db.query('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
-  if (sessionColumns.length > 0
-    && !sessionColumns.some((column) => column.name === 'version')) {
+  const sessionColumns = tableColumns('sessions');
+  if (sessionColumns.size > 0 && !sessionColumns.has('version')) {
     // Legacy sessions stored the raw bearer token; the digest format cannot upgrade them.
     db.run('DROP TABLE sessions');
   }
@@ -57,15 +66,14 @@ export function initDb(path = 'chat.db'): void {
       ON push_subscriptions(address);
   `);
 
-  const messageColumns = db.query('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+  const messageColumns = tableColumns('messages');
   const requiredMessageColumns = [
     'version', 'id', 'sender', 'recipient', 'ct_recipient', 'ephemeral_pub_recipient',
     'iv_recipient', 'ct_sender', 'ephemeral_pub_sender', 'iv_sender', 'ttl_seconds',
     'signature', 'created_at', 'expires_at',
   ];
-  const existingMessageColumns = new Set(messageColumns.map((column) => column.name));
-  if (messageColumns.length > 0
-    && requiredMessageColumns.some((column) => !existingMessageColumns.has(column))) {
+  if (messageColumns.size > 0
+    && requiredMessageColumns.some((column) => !messageColumns.has(column))) {
     // Protocol v1 cutover: legacy messages have no authenticated envelope and cannot be upgraded safely.
     db.run('DROP TABLE messages');
   }
@@ -97,14 +105,12 @@ export function initDb(path = 'chat.db'): void {
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
 }
 
-export function registerPubkey(address: string, pubkey: string, activeAt = Date.now()): void {
+export function registerPubkey(address: string, pubkey: string): void {
   const normalized = address.toLowerCase();
   db.query(
     `INSERT INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)
-     ON CONFLICT(address) DO UPDATE SET
-       pubkey = excluded.pubkey,
-       last_active_at = excluded.last_active_at`,
-  ).run(normalized, pubkey, activeAt);
+     ON CONFLICT(address) DO UPDATE SET pubkey = excluded.pubkey`,
+  ).run(normalized, pubkey, Date.now());
 }
 
 export function getPubkey(address: string): string | null {
@@ -129,7 +135,7 @@ export function createSession(
   db.query(
     'INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
   ).run(hashToken(token), normalized, createdAt, expiresAt);
-  db.query('UPDATE pubkeys SET last_active_at = ? WHERE address = ?').run(createdAt, normalized);
+  markAddressesActive([normalized], createdAt);
 }
 
 export interface SessionRow {
@@ -179,11 +185,7 @@ export function createMessage(
     envelope.ttl, envelope.signature, createdAt, expiresAt,
   );
   if (result.changes !== 1) return null;
-  db.query('UPDATE pubkeys SET last_active_at = ? WHERE address IN (?, ?)').run(
-    createdAt,
-    envelope.sender.toLowerCase(),
-    envelope.recipient.toLowerCase(),
-  );
+  markAddressesActive([envelope.sender, envelope.recipient], createdAt);
   return { createdAt, expiresAt };
 }
 
