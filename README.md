@@ -132,4 +132,18 @@ bun run test         # clear all, build, then run Bun tests
 
 Runtime data is stored in `chat.db` beside the project. The database, build output, dependencies, and `.env` are ignored by Git.
 
+Message submissions are limited to 120 per minute per IP/address pair and 240 per
+minute across all addresses on one IP. The aggregate cap allows two identities
+sharing an IP their full individual allowance while placing a fixed ceiling on
+identity cycling. Registration writes are limited to 10 per minute per IP.
+
+Public-key registrations are pruned after 30 days without a new session or a sent
+or received message. Initial registration starts the retention window;
+re-registering an existing key alone does not extend it. Existing databases get
+a fresh 30-day window on migration. Cleanup runs every 30 seconds. A pruned
+recipient cannot receive messages (`Recipient not registered`) until they
+register again. New sessions store addresses in lowercase, consistently with
+public-key lookups and authenticated message addresses.
+Public-key registrations with no session or message activity are pruned after 30 days.
+
 ---

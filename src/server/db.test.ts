@@ -8,6 +8,7 @@ import {
   createSession,
   deleteExpiredMessages,
   deleteExpiredSessions,
+  deleteInactivePubkeys,
   deleteAddress,
   deleteAddressConversations,
   deleteAddressSessions,
@@ -22,6 +23,12 @@ import {
 } from './db.ts';
 
 const TEST_DB = `test-chat-${Date.now()}.db`;
+
+function registerAt(address: string, pubkey: string, at: number): void {
+  registerPubkey(address, pubkey);
+  getDb().query('UPDATE pubkeys SET last_active_at = ? WHERE address = ?')
+    .run(at, address.toLowerCase());
+}
 
 function createMessage(
   id: string,
@@ -76,9 +83,78 @@ describe('pubkeys', () => {
     registerPubkey('0xabc', 'key2');
     expect(getPubkey('0xabc')).toBe('key2');
   });
+
+  test('prunes a registration after its inactive retention window', () => {
+    registerAt('0xstale', 'stale-key', 1_000);
+    registerAt('0xrecent', 'recent-key', 2_000);
+
+    expect(deleteInactivePubkeys(1_500)).toBe(1);
+    expect(getPubkey('0xstale')).toBeNull();
+    expect(getPubkey('0xrecent')).toBe('recent-key');
+  });
+
+  test('keeps a registration active when it creates a session', () => {
+    registerAt('0xactive', 'active-key', 1_000);
+    createSession('active-token', '0xactive', Date.now() + 60_000);
+
+    expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
+    expect(getPubkey('0xactive')).toBe('active-key');
+  });
+
+  test('keeps both registrations active when they share a message', () => {
+    registerAt('0xsender', 'sender-key', 1_000);
+    registerAt('0xrecipient', 'recipient-key', 1_000);
+    createMessage(
+      'active-message', '0xsender', '0xrecipient',
+      'ct_r', 'eph_r', 'iv_r',
+      'ct_s', 'eph_s', 'iv_s',
+      3600,
+    );
+
+    expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
+    expect(getPubkey('0xsender')).toBe('sender-key');
+    expect(getPubkey('0xrecipient')).toBe('recipient-key');
+  });
+
+  test('migration gives existing registrations a fresh retention window', () => {
+    getDb().close();
+    for (const suffix of ['', '-shm', '-wal']) {
+      try { unlinkSync(TEST_DB + suffix); } catch {}
+    }
+    const legacy = new Database(TEST_DB);
+    legacy.run('CREATE TABLE pubkeys (address TEXT PRIMARY KEY, pubkey TEXT NOT NULL)');
+    legacy.query('INSERT INTO pubkeys (address, pubkey) VALUES (?, ?)').run('0xlegacy', 'legacy-key');
+    legacy.close();
+
+    initDb(TEST_DB);
+
+    expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
+    expect(getPubkey('0xlegacy')).toBe('legacy-key');
+  });
+
+  test('re-registration alone does not extend the inactive retention window', () => {
+    registerAt('0xstale', 'old-key', 1_000);
+    registerPubkey('0xstale', 'new-key');
+    expect(getPubkey('0xstale')).toBe('new-key');
+    expect(deleteInactivePubkeys(1_500)).toBe(1);
+    expect(getPubkey('0xstale')).toBeNull();
+  });
+
+  test('keeps registrations exactly at the retention cutoff', () => {
+    registerAt('0xboundary', 'key', 1_500);
+    expect(deleteInactivePubkeys(1_500)).toBe(0);
+    expect(getPubkey('0xboundary')).toBe('key');
+  });
 });
 
 describe('sessions', () => {
+  test('normalizes session addresses and refreshes the matching pubkey', () => {
+    registerAt('0xAbC', 'key', 1_000);
+    createSession('mixed-case-token', '0xAbC', Date.now() + 60_000);
+    expect(getSession('mixed-case-token')?.address).toBe('0xabc');
+    expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
+    expect(getPubkey('0xAbC')).toBe('key');
+  });
   test('create and get session', () => {
     const expires = Date.now() + 60_000;
     createSession('tok1', '0xabc', expires);

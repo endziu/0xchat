@@ -105,15 +105,15 @@ beforeAll(async () => {
       Date.now() + 3600_000,
     );
   db.query(
-    'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
-  ).run('0x' + 'a'.repeat(40), 'cc'.repeat(33));
+    'INSERT OR REPLACE INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)',
+  ).run('0x' + 'a'.repeat(40), 'cc'.repeat(33), Date.now());
   db.query(
-    'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
-  ).run('0x' + 'b'.repeat(40), 'dd'.repeat(33));
+    'INSERT OR REPLACE INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)',
+  ).run('0x' + 'b'.repeat(40), 'dd'.repeat(33), Date.now());
   seedSession('test-token-integration', '0x' + 'a'.repeat(40));
   for (const identity of [messageSender, messageRecipient]) {
-    db.query('INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)')
-      .run(identity.address, identity.pubkey.slice(2));
+    db.query('INSERT OR REPLACE INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)')
+      .run(identity.address, identity.pubkey.slice(2), Date.now());
   }
   for (const [token, address] of [
     [senderToken, messageSender.address],
