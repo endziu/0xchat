@@ -2,6 +2,7 @@ import { clearTokenIfMatches } from './session'
 import { verifyEncryptionPublicKey } from './encryption-key'
 import { isApiErrorCode, type ApiErrorCode } from '../../shared/api-error'
 import { buildRegistrationChallenge } from '../../shared/registration-challenge'
+import { buildSessionChallenge } from '../../shared/session-challenge'
 import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-envelope'
 
 export type Message = DeliveredMessage
@@ -97,12 +98,21 @@ export const api = {
     }
   },
 
-  getChallenge: (address: string): Promise<{ challenge: string; nonce: string }> =>
-    request('/api/auth/challenge', {
+  getChallenge: async (address: string): Promise<{ challenge: string; nonce: string }> => {
+    const normalizedAddress = address.toLowerCase()
+    const result = await request<{ challenge: string; nonce: string }>('/api/auth/challenge', {
       method: 'POST',
-      body: JSON.stringify({ address }),
+      body: JSON.stringify({ address: normalizedAddress }),
       headers: { 'Content-Type': 'application/json' },
-    }, null),
+    }, null)
+    const expected = buildSessionChallenge(
+      window.location.origin,
+      normalizedAddress,
+      result.nonce,
+    )
+    if (result.challenge !== expected) throw new Error('Invalid session challenge')
+    return result
+  },
 
   createSession: (address: string, signature: string, nonce: string): Promise<{ token: string }> =>
     request('/api/auth/session', {
