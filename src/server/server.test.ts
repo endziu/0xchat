@@ -188,6 +188,52 @@ describe('auth routes', () => {
     expect(data.nonce).toBeTruthy();
   });
 
+  test('POST /api/auth/challenge binds the request origin into the challenge', async () => {
+    const addr = '0x' + '4'.repeat(40);
+    const res = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: addr }),
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { challenge: string; nonce: string };
+    expect(data.challenge).toBe(
+      `0xChat session request\nOrigin: ${baseUrl}\nAddress: ${addr}\nNonce: ${data.nonce}`,
+    );
+  });
+
+  test('POST /api/auth/challenge honors an explicit Origin header', async () => {
+    const addr = '0x' + '5'.repeat(40);
+    const res = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://chat.example' },
+      body: JSON.stringify({ address: addr }),
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { challenge: string; nonce: string };
+    expect(data.challenge).toContain('Origin: https://chat.example');
+  });
+
+  test('session signature covering a different origin is rejected', async () => {
+    const identity = registrationIdentity('d');
+    const challengeRes = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: identity.address }),
+    });
+    const { challenge, nonce } = (await challengeRes.json()) as { challenge: string; nonce: string };
+    const altered = challenge.replace(`Origin: ${baseUrl}`, 'Origin: https://evil.example');
+    expect(altered).not.toBe(challenge);
+    const signature = await privateKeyToAccount(identity.privateKey).signMessage({ message: altered });
+
+    const res = await fetch(baseUrl + '/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nonce, signature, address: identity.address }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   test('POST /api/auth/session rejects invalid nonce', async () => {
     const addr = '0x' + '3'.repeat(40);
     const res = await fetch(baseUrl + '/api/auth/session', {
@@ -485,9 +531,45 @@ describe('CSP headers', () => {
     expect(csp).toBeTruthy();
     expect(csp).toContain("script-src 'self'");
   });
+
+  test('CSP allows no external font hosts', async () => {
+    const res = await fetch(baseUrl + '/');
+    const csp = res.headers.get('content-security-policy')!;
+    expect(csp).not.toContain('fonts.googleapis.com');
+    expect(csp).not.toContain('fonts.gstatic.com');
+  });
+
+  test('CSP restricts form-action to same-origin', async () => {
+    const res = await fetch(baseUrl + '/');
+    const csp = res.headers.get('content-security-policy')!;
+    expect(csp).toContain("form-action 'self'");
+  });
+
+  test('responses include a Permissions-Policy header that denies unused features', async () => {
+    const res = await fetch(baseUrl + '/');
+    const policy = res.headers.get('permissions-policy');
+    expect(policy).toBeTruthy();
+    expect(policy).toContain('geolocation=()');
+    expect(policy).toContain('microphone=()');
+    expect(policy).toContain('payment=()');
+    // The camera is used for QR scanning, so it must stay allowed.
+    expect(policy).toContain('camera=(self)');
+  });
 });
 
 describe('input validation', () => {
+  test('GET /api/messages rejects non-positive or non-integer limit with 400', async () => {
+    const addr = '0x' + 'a'.repeat(40);
+    for (const limit of ['abc', '0', '-5', '1.5']) {
+      const res = await fetch(`${baseUrl}/api/messages/${addr}?limit=${limit}`, {
+        headers: { Authorization: 'Bearer test-token-integration' },
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as { error: string };
+      expect(data.error).toContain('limit');
+    }
+  });
+
   test('POST /api/register rejects invalid JSON', async () => {
     const res = await fetch(baseUrl + '/api/register', {
       method: 'POST',
