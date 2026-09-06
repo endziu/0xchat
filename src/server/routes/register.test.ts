@@ -26,10 +26,13 @@ function context(
   ip: string,
   path = '/api/register/challenge',
   body: Record<string, unknown> = { address, pubkey: publicKey },
+  origin?: string,
 ): Context {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (origin) headers.set('Origin', origin);
   const req = new Request(`https://chat.example${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   return {
@@ -75,18 +78,9 @@ describe('redemption origin binding', () => {
   const appOrigin = 'https://chat.example';
   const evilOrigin = 'https://evil.example';
 
-  function originContext(ip: string, path: string, body: unknown, origin: string): Context {
-    const req = new Request(`https://chat.example${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: origin },
-      body: JSON.stringify(body),
-    });
-    return { req, url: new URL(req.url), path, method: 'POST', ip };
-  }
-
   async function issueFrom(ip: string, origin: string): Promise<{ challenge: string; nonce: string }> {
     const response = await handleRegisterChallenge(
-      originContext(ip, '/api/register/challenge', { address, pubkey: publicKey }, origin),
+      context(ip, '/api/register/challenge', { address, pubkey: publicKey }, origin),
     );
     expect(response.status).toBe(200);
     return (await response.json()) as { challenge: string; nonce: string };
@@ -97,7 +91,7 @@ describe('redemption origin binding', () => {
     const { challenge, nonce } = await issueFrom(ip, appOrigin);
     const signature = await privateKeyToAccount(privateKey).signMessage({ message: challenge });
     const response = await handleRegister(
-      originContext(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, evilOrigin),
+      context(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, evilOrigin),
     );
     expect(response.status).toBe(401);
   });
@@ -107,7 +101,7 @@ describe('redemption origin binding', () => {
     const { challenge, nonce } = await issueFrom(ip, appOrigin);
     const signature = await privateKeyToAccount(privateKey).signMessage({ message: challenge });
     const response = await handleRegister(
-      originContext(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, 'not an origin'),
+      context(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, 'not an origin'),
     );
     expect(response.status).toBe(400);
   });
@@ -117,7 +111,7 @@ describe('redemption origin binding', () => {
     const { challenge, nonce } = await issueFrom(ip, appOrigin);
     const signature = await privateKeyToAccount(privateKey).signMessage({ message: challenge });
     const response = await handleRegister(
-      originContext(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, appOrigin),
+      context(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, appOrigin),
     );
     expect(response.status).toBe(200);
   });

@@ -28,10 +28,12 @@ afterAll(() => {
   }
 });
 
-function postContext(ip: string, path: string, body: unknown): Context {
+function postContext(ip: string, path: string, body: unknown, origin?: string): Context {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (origin) headers.set('Origin', origin);
   const req = new Request(`https://chat.example${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   return { req, url: new URL(req.url), path, method: 'POST', ip };
@@ -62,18 +64,9 @@ describe('redemption origin binding', () => {
   const appOrigin = 'https://chat.example';
   const evilOrigin = 'https://evil.example';
 
-  function originContext(ip: string, path: string, body: unknown, origin: string): Context {
-    const req = new Request(`https://chat.example${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: origin },
-      body: JSON.stringify(body),
-    });
-    return { req, url: new URL(req.url), path, method: 'POST', ip };
-  }
-
   async function issueFrom(ip: string, origin: string): Promise<{ challenge: string; nonce: string }> {
     const response = await handleAuthChallenge(
-      originContext(ip, '/api/auth/challenge', { address: signerAddress }, origin),
+      postContext(ip, '/api/auth/challenge', { address: signerAddress }, origin),
     );
     expect(response.status).toBe(200);
     return (await response.json()) as { challenge: string; nonce: string };
@@ -84,7 +77,7 @@ describe('redemption origin binding', () => {
     const { challenge, nonce } = await issueFrom(ip, appOrigin);
     const signature = await signer.signMessage({ message: challenge });
     const response = await handleAuthSession(
-      originContext(ip, '/api/auth/session', { nonce, signature, address: signerAddress }, evilOrigin),
+      postContext(ip, '/api/auth/session', { nonce, signature, address: signerAddress }, evilOrigin),
     );
     expect(response.status).toBe(401);
   });
@@ -94,7 +87,7 @@ describe('redemption origin binding', () => {
     const { challenge, nonce } = await issueFrom(ip, appOrigin);
     const signature = await signer.signMessage({ message: challenge });
     const response = await handleAuthSession(
-      originContext(ip, '/api/auth/session', { nonce, signature, address: signerAddress }, 'not an origin'),
+      postContext(ip, '/api/auth/session', { nonce, signature, address: signerAddress }, 'not an origin'),
     );
     expect(response.status).toBe(400);
   });
@@ -104,7 +97,7 @@ describe('redemption origin binding', () => {
     const { challenge, nonce } = await issueFrom(ip, appOrigin);
     const signature = await signer.signMessage({ message: challenge });
     const response = await handleAuthSession(
-      originContext(ip, '/api/auth/session', { nonce, signature, address: signerAddress }, appOrigin),
+      postContext(ip, '/api/auth/session', { nonce, signature, address: signerAddress }, appOrigin),
     );
     expect(response.status).toBe(200);
     const data = (await response.json()) as { token: string };
