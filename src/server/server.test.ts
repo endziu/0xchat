@@ -14,6 +14,7 @@ import { decrypt } from '../client/lib/crypto.ts';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import {
   canonicalMessageAad,
+  MESSAGE_ENVELOPE_VERSION,
   verifyDeliveredMessage,
   type MessageEnvelope,
 } from '../shared/message-envelope.ts';
@@ -188,6 +189,52 @@ describe('auth routes', () => {
     expect(data.nonce).toBeTruthy();
   });
 
+  test('POST /api/auth/challenge binds the request origin into the challenge', async () => {
+    const addr = '0x' + '4'.repeat(40);
+    const res = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: addr }),
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { challenge: string; nonce: string };
+    expect(data.challenge).toBe(
+      `0xChat session request\nOrigin: ${baseUrl}\nAddress: ${addr}\nNonce: ${data.nonce}`,
+    );
+  });
+
+  test('POST /api/auth/challenge honors an explicit Origin header', async () => {
+    const addr = '0x' + '5'.repeat(40);
+    const res = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://chat.example' },
+      body: JSON.stringify({ address: addr }),
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { challenge: string; nonce: string };
+    expect(data.challenge).toContain('Origin: https://chat.example');
+  });
+
+  test('session signature covering a different origin is rejected', async () => {
+    const identity = registrationIdentity('d');
+    const challengeRes = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: identity.address }),
+    });
+    const { challenge, nonce } = (await challengeRes.json()) as { challenge: string; nonce: string };
+    const altered = challenge.replace(`Origin: ${baseUrl}`, 'Origin: https://evil.example');
+    expect(altered).not.toBe(challenge);
+    const signature = await privateKeyToAccount(identity.privateKey).signMessage({ message: altered });
+
+    const res = await fetch(baseUrl + '/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nonce, signature, address: identity.address }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   test('POST /api/auth/session rejects invalid nonce', async () => {
     const addr = '0x' + '3'.repeat(40);
     const res = await fetch(baseUrl + '/api/auth/session', {
@@ -235,6 +282,58 @@ describe('auth routes', () => {
     db.close();
     expect(stored).not.toContain(token);
     expect(stored).toContain(createHash('sha256').update(token).digest('hex'));
+  });
+
+  test('a redeemed session challenge cannot be replayed', async () => {
+    const identity = registrationIdentity('c');
+    const challengeRes = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: identity.address }),
+    });
+    const { challenge, nonce } = (await challengeRes.json()) as { challenge: string; nonce: string };
+    const signature = await privateKeyToAccount(identity.privateKey).signMessage({ message: challenge });
+    const body = JSON.stringify({ nonce, signature, address: identity.address });
+
+    const first = await fetch(baseUrl + '/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(first.status).toBe(200);
+
+    const replay = await fetch(baseUrl + '/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(replay.status).toBe(401);
+  });
+
+  test('a failed session signature verification consumes the challenge', async () => {
+    const identity = registrationIdentity('e');
+    const challengeRes = await fetch(baseUrl + '/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: identity.address }),
+    });
+    const { challenge, nonce } = (await challengeRes.json()) as { challenge: string; nonce: string };
+    const post = (signature: string) =>
+      fetch(baseUrl + '/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nonce, signature, address: identity.address }),
+      });
+
+    // A signature over altered text is rejected...
+    const badSignature = await privateKeyToAccount(identity.privateKey).signMessage({
+      message: `${challenge} (tampered)`,
+    });
+    expect((await post(badSignature)).status).toBe(401);
+
+    // ...and it consumed the challenge: even the correct signature now fails.
+    const goodSignature = await privateKeyToAccount(identity.privateKey).signMessage({ message: challenge });
+    expect((await post(goodSignature)).status).toBe(401);
   });
 });
 
@@ -485,9 +584,98 @@ describe('CSP headers', () => {
     expect(csp).toBeTruthy();
     expect(csp).toContain("script-src 'self'");
   });
+
+  test('CSP allows no external font hosts', async () => {
+    const res = await fetch(baseUrl + '/');
+    const csp = res.headers.get('content-security-policy')!;
+    expect(csp).not.toContain('fonts.googleapis.com');
+    expect(csp).not.toContain('fonts.gstatic.com');
+  });
+
+  test('CSP restricts form-action to same-origin', async () => {
+    const res = await fetch(baseUrl + '/');
+    const csp = res.headers.get('content-security-policy')!;
+    expect(csp).toContain("form-action 'self'");
+  });
+
+  test('responses include a Permissions-Policy header that denies unused features', async () => {
+    const res = await fetch(baseUrl + '/');
+    const policy = res.headers.get('permissions-policy');
+    expect(policy).toBeTruthy();
+    expect(policy).toContain('geolocation=()');
+    expect(policy).toContain('microphone=()');
+    expect(policy).toContain('payment=()');
+    // The camera is used for QR scanning, so it must stay allowed.
+    expect(policy).toContain('camera=(self)');
+  });
 });
 
 describe('input validation', () => {
+  test('GET /api/messages rejects non-positive or non-integer limit with 400', async () => {
+    const addr = '0x' + 'a'.repeat(40);
+    for (const limit of ['abc', '0', '-5', '1.5']) {
+      const res = await fetch(`${baseUrl}/api/messages/${addr}?limit=${limit}`, {
+        headers: { Authorization: 'Bearer test-token-integration' },
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as { error: string };
+      expect(data.error).toContain('limit');
+    }
+  });
+
+  test('GET /api/messages clamps an oversized limit to 100 and defaults to 50', async () => {
+    const sender = '0x' + 'e'.repeat(40);
+    const recipient = '0x' + 'f'.repeat(40);
+
+    // Seed 101 messages for a fresh conversation directly, bypassing the send
+    // rate limit. The content is never verified on read.
+    const db = new Database('chat.db');
+    db.query(
+      'INSERT OR REPLACE INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
+    ).run(
+      createHash('sha256').update('limit-test-token').digest('hex'),
+      sender,
+      Date.now(),
+      Date.now() + 3600_000,
+    );
+    const now = Date.now();
+    const insert = db.query(
+      `INSERT OR REPLACE INTO messages
+         (version, id, sender, recipient, ct_recipient, ephemeral_pub_recipient, iv_recipient,
+          ct_sender, ephemeral_pub_sender, iv_sender, ttl_seconds, signature, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (let i = 0; i < 101; i++) {
+      insert.run(
+        MESSAGE_ENVELOPE_VERSION,
+        `limit-msg-${i}`,
+        sender,
+        recipient,
+        'a'.repeat(64),
+        'b'.repeat(64),
+        'c'.repeat(24),
+        'a'.repeat(64),
+        'b'.repeat(64),
+        'c'.repeat(24),
+        300,
+        'd'.repeat(130),
+        now + i,
+        now + i + 300_000,
+      );
+    }
+    db.close();
+
+    const getPage = (query: string) =>
+      fetch(`${baseUrl}/api/messages/${recipient}${query}`, {
+        headers: { Authorization: 'Bearer limit-test-token' },
+      }).then((res) => res.json() as Promise<{ messages: unknown[] }>);
+
+    expect((await getPage('')).messages).toHaveLength(50);
+    expect((await getPage('?limit=100000')).messages).toHaveLength(100);
+    // The clamp is a min at 100, so even 101 is reduced to the ceiling.
+    expect((await getPage('?limit=101')).messages).toHaveLength(100);
+  });
+
   test('POST /api/register rejects invalid JSON', async () => {
     const res = await fetch(baseUrl + '/api/register', {
       method: 'POST',

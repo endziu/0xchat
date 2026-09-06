@@ -1,6 +1,7 @@
 import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
 import { json } from '../http.ts';
+import { requestOrigin } from '../origin.ts';
 import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
 import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';
@@ -12,17 +13,6 @@ export const regStore = new ChallengeStore();
 
 function registrationSubject(address: string, pubkey: string): string {
   return `${address}:${pubkey}`;
-}
-
-function requestOrigin(req: Request): string | null {
-  const value = req.headers.get('Origin') ?? new URL(req.url).origin;
-  try {
-    const url = new URL(value);
-    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.origin !== value) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
 }
 
 export async function handleRegisterChallenge({ req, ip }: Context): Promise<Response> {

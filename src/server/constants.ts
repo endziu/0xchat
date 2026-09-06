@@ -23,17 +23,21 @@ const FRAGMENT_GUARD_SCRIPT_HASH = "'sha256-Olc28AYxu82N88jdJ2+7hDwwbaJ+eX53CxH6
 export const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
+  // No external fonts are loaded, so font-src stays same-origin.
   'Content-Security-Policy': [
     "default-src 'self'",
     `script-src 'self' ${FRAGMENT_GUARD_SCRIPT_HASH}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "form-action 'self'",
     "connect-src 'self'",
     "img-src 'self' data: blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "object-src 'none'",
   ].join('; '),
+  // The camera is used for QR scanning; everything else stays denied.
+  'Permissions-Policy': 'camera=(self), geolocation=(), microphone=(), payment=()',
 } as const;
 
 export const VALID_TTLS = new Set([5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]);
