@@ -33,10 +33,14 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
   }
 
   const origin = requestOrigin(req);
-  if (!origin) return json({ error: 'Invalid origin' }, 400);
+  if (!origin) {
+    warn('[invalid] auth-challenge unusable origin');
+    return json({ error: 'Invalid origin' }, 400);
+  }
 
   const { challenge, nonce } = authStore.issue(
     address,
+    origin,
     (n) => buildSessionChallenge(origin, address, n),
   );
 
@@ -70,9 +74,15 @@ export async function handleAuthSession({ req, ip }: Context): Promise<Response>
     return json({ error: 'invalid signature format' }, 400);
   }
 
-  const challenge = authStore.consume(nonce, address);
+  const origin = requestOrigin(req);
+  if (!origin) {
+    warn('[invalid] auth-session unusable origin');
+    return json({ error: 'Invalid origin' }, 400);
+  }
+
+  const challenge = authStore.consume(nonce, address, origin);
   if (!challenge) {
-    warn('[invalid] auth-session challenge not found/expired', nonce);
+    warn('[invalid] auth-session challenge not found/expired or origin mismatch', nonce);
     return json({ error: 'Challenge expired or not found' }, 401);
   }
 

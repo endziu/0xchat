@@ -26,10 +26,13 @@ function context(
   ip: string,
   path = '/api/register/challenge',
   body: Record<string, unknown> = { address, pubkey: publicKey },
+  origin?: string,
 ): Context {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (origin) headers.set('Origin', origin);
   const req = new Request(`https://chat.example${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   return {
@@ -68,6 +71,49 @@ describe('registration challenge rate limit', () => {
       expect((await handleRegisterChallenge(context(ip))).status).toBe(200);
     }
     expect((await handleRegisterChallenge(context(ip))).status).toBe(429);
+  });
+});
+
+describe('redemption origin binding', () => {
+  const appOrigin = 'https://chat.example';
+  const evilOrigin = 'https://evil.example';
+
+  async function issueFrom(ip: string, origin: string): Promise<{ challenge: string; nonce: string }> {
+    const response = await handleRegisterChallenge(
+      context(ip, '/api/register/challenge', { address, pubkey: publicKey }, origin),
+    );
+    expect(response.status).toBe(200);
+    return (await response.json()) as { challenge: string; nonce: string };
+  }
+
+  test('rejects redemption from a different origin than issuance', async () => {
+    const ip = `register-origin-${Math.random()}`;
+    const { challenge, nonce } = await issueFrom(ip, appOrigin);
+    const signature = await privateKeyToAccount(privateKey).signMessage({ message: challenge });
+    const response = await handleRegister(
+      context(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, evilOrigin),
+    );
+    expect(response.status).toBe(401);
+  });
+
+  test('rejects redemption without a usable origin', async () => {
+    const ip = `register-origin-${Math.random()}`;
+    const { challenge, nonce } = await issueFrom(ip, appOrigin);
+    const signature = await privateKeyToAccount(privateKey).signMessage({ message: challenge });
+    const response = await handleRegister(
+      context(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, 'not an origin'),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  test('still redeems a challenge from its issuing origin', async () => {
+    const ip = `register-origin-${Math.random()}`;
+    const { challenge, nonce } = await issueFrom(ip, appOrigin);
+    const signature = await privateKeyToAccount(privateKey).signMessage({ message: challenge });
+    const response = await handleRegister(
+      context(ip, '/api/register', { address, pubkey: publicKey, signature, nonce }, appOrigin),
+    );
+    expect(response.status).toBe(200);
   });
 });
 

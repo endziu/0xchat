@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 interface ChallengeEntry {
   challenge: string;
   subject: string;
+  origin: string;
   expiresAt: number;
 }
 
@@ -29,7 +30,11 @@ export class ChallengeStore {
   }
 
   /** Issue one challenge per subject, evicting the oldest entry at the hard limit. */
-  issue(subject: string, buildChallenge: (nonce: string) => string): { challenge: string; nonce: string } {
+  issue(
+    subject: string,
+    origin: string,
+    buildChallenge: (nonce: string) => string,
+  ): { challenge: string; nonce: string } {
     const nonce = randomBytes(16).toString('hex');
     const challenge = buildChallenge(nonce);
 
@@ -46,20 +51,20 @@ export class ChallengeStore {
     }
 
     this.subjectToNonce.set(subject, nonce);
-    this.entries.set(nonce, { challenge, subject, expiresAt: this.now() + this.ttlMs });
+    this.entries.set(nonce, { challenge, subject, origin, expiresAt: this.now() + this.ttlMs });
 
     return { challenge, nonce };
   }
 
-  /** Consume once by nonce + exact subject. */
-  consume(nonce: string, subject: string): string | null {
+  /** Consume once by nonce + exact subject + exact issuing origin. */
+  consume(nonce: string, subject: string, origin: string): string | null {
     const entry = this.entries.get(nonce);
     if (!entry || entry.expiresAt <= this.now()) {
       if (entry) this.subjectToNonce.delete(entry.subject);
       this.entries.delete(nonce);
       return null;
     }
-    if (entry.subject !== subject) return null;
+    if (entry.subject !== subject || entry.origin !== origin) return null;
 
     this.entries.delete(nonce);
     this.subjectToNonce.delete(subject);

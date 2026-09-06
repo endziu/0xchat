@@ -45,6 +45,7 @@ export async function handleRegisterChallenge({ req, ip }: Context): Promise<Res
 
   const { challenge, nonce } = regStore.issue(
     registrationSubject(address, pubkey),
+    origin,
     (n) => buildRegistrationChallenge(origin, address, pubkey, n),
   );
 
@@ -83,9 +84,15 @@ export async function handleRegister({ req, ip }: Context): Promise<Response> {
     return json({ error: 'invalid signature format' }, 400);
   }
 
-  const challenge = regStore.consume(nonce, registrationSubject(address, pubkey));
+  const origin = requestOrigin(req);
+  if (!origin) {
+    warn('[invalid] register unusable origin');
+    return json({ error: 'Invalid origin' }, 400);
+  }
+
+  const challenge = regStore.consume(nonce, registrationSubject(address, pubkey), origin);
   if (!challenge) {
-    warn('[invalid] register challenge not found/expired', nonce);
+    warn('[invalid] register challenge not found/expired or origin mismatch', nonce);
     return json({ error: 'Invalid or expired challenge' }, 401);
   }
 
