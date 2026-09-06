@@ -144,6 +144,5 @@ a fresh 30-day window on migration. Cleanup runs every 30 seconds. A pruned
 recipient cannot receive messages (`Recipient not registered`) until they
 register again. New sessions store addresses in lowercase, consistently with
 public-key lookups and authenticated message addresses.
-Public-key registrations with no session or message activity are pruned after 30 days.
 
 ---
