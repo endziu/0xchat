@@ -106,7 +106,7 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
   sseTokenStore.consume(sseToken); // single-use
 
   const ping = new TextEncoder().encode(`event: ping\ndata: {}\n\n`);
-  let ctrl: ReadableStreamDefaultController;
+  let controller: ReadableStreamDefaultController;
   let interval: ReturnType<typeof setInterval> | undefined;
   let cleanedUp = false;
 
@@ -114,21 +114,21 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
     if (cleanedUp) return;
     cleanedUp = true;
     if (interval !== undefined) clearInterval(interval);
-    removeClient(address, ctrl);
+    removeClient(address, controller);
     log('[sse]', address, 'disconnected');
   };
 
   const stream = new ReadableStream({
-    start(c) {
-      ctrl = c;
-      addClient(address, ctrl);
+    start(streamController) {
+      controller = streamController;
+      addClient(address, controller);
       log('[sse]', address, 'connected');
 
-      ctrl.enqueue(ping);
+      controller.enqueue(ping);
 
       interval = setInterval(() => {
         try {
-          ctrl.enqueue(ping);
+          controller.enqueue(ping);
         } catch {
           error('[sse]', address, 'disconnected (heartbeat error)');
           cleanup();

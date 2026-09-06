@@ -12,6 +12,13 @@ const address = `0x${'b'.repeat(40)}`
 const otherAddress = `0x${'c'.repeat(40)}`
 const sessionToken = 'sse-route-test-token'
 const otherSessionToken = 'sse-route-other-test-token'
+const textDecoder = new TextDecoder()
+
+async function readEventText(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<string> {
+  return textDecoder.decode((await reader.read()).value)
+}
 
 beforeAll(() => {
   initDb(':memory:')
@@ -53,7 +60,7 @@ async function openSse(ip: string, sseToken: string) {
   const res = await handleSSE(makeContext(`/api/events?token=${sseToken}`, ip))
   expect(res.status).toBe(200)
   const reader = res.body!.getReader()
-  const first = new TextDecoder().decode((await reader.read()).value)
+  const first = await readEventText(reader)
   return { reader, first }
 }
 
@@ -67,8 +74,7 @@ describe('SSE route', () => {
 
     // client is live: notifications reach it
     notify(address, 'message', { id: 'm1' })
-    const second = await reader.read()
-    expect(new TextDecoder().decode(second.value)).toContain('event: message')
+    expect(await readEventText(reader)).toContain('event: message')
 
     await reader.cancel()
 
@@ -147,8 +153,7 @@ describe('SSE route', () => {
 
       // the heartbeat actually fires while the stream is open
       jest.advanceTimersByTime(30_000)
-      const heartbeat = await reader.read()
-      expect(new TextDecoder().decode(heartbeat.value)).toContain('event: ping')
+      expect(await readEventText(reader)).toContain('event: ping')
 
       await reader.cancel()
       expect(jest.getTimerCount()).toBe(baseline) // heartbeat disposed
@@ -234,25 +239,23 @@ describe('SSE over real HTTP', () => {
     expect(mint.status).toBe(200)
     const { sse_token } = (await mint.json()) as { sse_token: string }
 
-    const ctrl = new AbortController()
+    const abortController = new AbortController()
     const res = await fetch(`${base}/api/events?token=${sse_token}`, {
-      signal: ctrl.signal,
+      signal: abortController.signal,
     })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/event-stream')
 
     const reader = res.body!.getReader()
-    const first = new TextDecoder().decode((await reader.read()).value)
-    expect(first).toContain('event: ping')
+    expect(await readEventText(reader)).toContain('event: ping')
     expect(connectionCount(address)).toBe(1)
 
     // events reach the client over the wire
     notify(address, 'message', { id: 'wire-1' })
-    const second = new TextDecoder().decode((await reader.read()).value)
-    expect(second).toContain('event: message')
+    expect(await readEventText(reader)).toContain('event: message')
 
     // real disconnect: abort the fetch and let the server observe it
-    ctrl.abort()
+    abortController.abort()
     for (let i = 0; i < 100 && connectionCount(address) !== 0; i++) {
       await new Promise((r) => setTimeout(r, 10))
     }
