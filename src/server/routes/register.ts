@@ -1,6 +1,7 @@
 import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
-import { json, requestOrigin } from '../http.ts';
+import { json } from '../http.ts';
+import { requestOrigin } from '../origin.ts';
 import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
 import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';

@@ -23,21 +23,29 @@ const FRAGMENT_GUARD_SCRIPT_HASH = "'sha256-Olc28AYxu82N88jdJ2+7hDwwbaJ+eX53CxH6
 export const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
+  // No external fonts are loaded, so font-src stays same-origin.
   'Content-Security-Policy': [
     "default-src 'self'",
     `script-src 'self' ${FRAGMENT_GUARD_SCRIPT_HASH}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "form-action 'self'",
     "connect-src 'self'",
     "img-src 'self' data: blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "object-src 'none'",
   ].join('; '),
+  // The camera is used for QR scanning; everything else stays denied.
+  'Permissions-Policy': 'camera=(self), geolocation=(), microphone=(), payment=()',
 } as const;
 
 export const VALID_TTLS = new Set([5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]);
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+export const PUBKEY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Max concurrent SSE streams per address — covers multi-tab plus a reconnect overlap. */
+export const MAX_SSE_CONNECTIONS_PER_ADDRESS = 3;
 
 export const VAPID_PUBLIC_KEY = process.env['VAPID_PUBLIC_KEY'] ?? '';
 export const VAPID_PRIVATE_KEY = process.env['VAPID_PRIVATE_KEY'] ?? '';

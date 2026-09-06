@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { ChallengeStore } from '../challenge.ts';
 import { createSession } from '../db.ts';
-import { json, requestOrigin } from '../http.ts';
+import { json } from '../http.ts';
+import { requestOrigin } from '../origin.ts';
 import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
 import { isValidAddress, isValidSig } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn, SESSION_TTL_MS } from '../constants.ts';
+import { buildSessionChallenge } from '../../shared/session-challenge.ts';
 import type { Context } from '../http.ts';
 
 export const authStore = new ChallengeStore();
@@ -39,7 +41,7 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
   const { challenge, nonce } = authStore.issue(
     address,
     origin,
-    (n) => `0xChat session request\nAddress: ${address}\nNonce: ${n}`,
+    (n) => buildSessionChallenge(origin, address, n),
   );
 
   return json({ challenge, nonce });

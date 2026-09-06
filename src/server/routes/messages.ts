@@ -1,6 +1,6 @@
 import { createMessage, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { messageLimiter } from '../rate-limiters.ts';
+import { messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, error, VALID_TTLS } from '../constants.ts';
@@ -43,7 +43,7 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  if (messageLimiter.hit(`${ip}:${sessionAddress}`)) {
+  if (messageIpLimiter.hit(ip) || messageLimiter.hit(`${ip}:${sessionAddress}`)) {
     warn('[rate-limit] msg', sessionAddress, ip);
     return json({ error: 'Too many requests' }, 429);
   }
@@ -117,7 +117,11 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
   }
   const beforeRowid = beforeRowidNum && beforeRowidNum > 0 ? beforeRowidNum : undefined;
   const limitParam = url.searchParams.get('limit');
-  const limit = limitParam ? Math.min(Math.max(Number(limitParam), 1), 100) : 50;
+  const limitNum = limitParam ? Number(limitParam) : null;
+  if (limitParam != null && (!Number.isSafeInteger(limitNum) || (limitNum ?? 0) <= 0)) {
+    return json({ error: 'Invalid limit parameter: must be a positive integer' }, 400);
+  }
+  const limit = limitNum && limitNum > 0 ? Math.min(limitNum, 100) : 50;
 
   const page = getConversationMessages(address, counterparty, limit, before, beforeRowid);
   return json({
