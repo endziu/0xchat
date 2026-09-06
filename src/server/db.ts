@@ -11,21 +11,39 @@ function hashToken(token: string): string {
 
 let db: Database;
 
+function tableColumns(table: 'pubkeys' | 'sessions' | 'messages'): Set<string> {
+  const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return new Set(columns.map((column) => column.name));
+}
+
+function markAddressesActive(addresses: string[], at: number): void {
+  const placeholders = addresses.map(() => '?').join(', ');
+  db.query(`UPDATE pubkeys SET last_active_at = ? WHERE address IN (${placeholders})`)
+    .run(at, ...addresses.map((address) => address.toLowerCase()));
+}
+
 export function initDb(path = 'chat.db'): void {
   db = new Database(path);
   db.run('PRAGMA journal_mode = WAL');
   db.run('PRAGMA foreign_keys = ON');
-  const sessionColumns = db.query('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
-  if (sessionColumns.length > 0
-    && !sessionColumns.some((column) => column.name === 'version')) {
+  const pubkeyColumns = tableColumns('pubkeys');
+  if (pubkeyColumns.size > 0 && !pubkeyColumns.has('last_active_at')) {
+    db.run('ALTER TABLE pubkeys ADD COLUMN last_active_at INTEGER NOT NULL DEFAULT 0');
+    db.query('UPDATE pubkeys SET last_active_at = ? WHERE last_active_at = 0').run(Date.now());
+  }
+  const sessionColumns = tableColumns('sessions');
+  if (sessionColumns.size > 0 && !sessionColumns.has('version')) {
     // Legacy sessions stored the raw bearer token; the digest format cannot upgrade them.
     db.run('DROP TABLE sessions');
   }
   db.run(`
     CREATE TABLE IF NOT EXISTS pubkeys (
-      address TEXT PRIMARY KEY,
-      pubkey  TEXT NOT NULL
+      address        TEXT PRIMARY KEY,
+      pubkey         TEXT NOT NULL,
+      last_active_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_pubkeys_last_active
+      ON pubkeys(last_active_at);
 
     CREATE TABLE IF NOT EXISTS sessions (
       token      TEXT PRIMARY KEY, -- sha256 hex digest of the bearer token, never the raw token
@@ -48,15 +66,14 @@ export function initDb(path = 'chat.db'): void {
       ON push_subscriptions(address);
   `);
 
-  const messageColumns = db.query('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+  const messageColumns = tableColumns('messages');
   const requiredMessageColumns = [
     'version', 'id', 'sender', 'recipient', 'ct_recipient', 'ephemeral_pub_recipient',
     'iv_recipient', 'ct_sender', 'ephemeral_pub_sender', 'iv_sender', 'ttl_seconds',
     'signature', 'created_at', 'expires_at',
   ];
-  const existingMessageColumns = new Set(messageColumns.map((column) => column.name));
-  if (messageColumns.length > 0
-    && requiredMessageColumns.some((column) => !existingMessageColumns.has(column))) {
+  if (messageColumns.size > 0
+    && requiredMessageColumns.some((column) => !messageColumns.has(column))) {
     // Protocol v1 cutover: legacy messages have no authenticated envelope and cannot be upgraded safely.
     db.run('DROP TABLE messages');
   }
@@ -91,8 +108,9 @@ export function initDb(path = 'chat.db'): void {
 export function registerPubkey(address: string, pubkey: string): void {
   const normalized = address.toLowerCase();
   db.query(
-    'INSERT OR REPLACE INTO pubkeys (address, pubkey) VALUES (?, ?)',
-  ).run(normalized, pubkey);
+    `INSERT INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)
+     ON CONFLICT(address) DO UPDATE SET pubkey = excluded.pubkey`,
+  ).run(normalized, pubkey, Date.now());
 }
 
 export function getPubkey(address: string): string | null {
@@ -103,14 +121,21 @@ export function getPubkey(address: string): string | null {
   return row?.pubkey ?? null;
 }
 
+export function deleteInactivePubkeys(cutoff: number): number {
+  return db.query('DELETE FROM pubkeys WHERE last_active_at < ?').run(cutoff).changes;
+}
+
 export function createSession(
   token: string,
   address: string,
   expiresAt: number,
 ): void {
+  const normalized = address.toLowerCase();
+  const createdAt = Date.now();
   db.query(
     'INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(hashToken(token), address, Date.now(), expiresAt);
+  ).run(hashToken(token), normalized, createdAt, expiresAt);
+  markAddressesActive([normalized], createdAt);
 }
 
 export interface SessionRow {
@@ -159,7 +184,9 @@ export function createMessage(
     envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
     envelope.ttl, envelope.signature, createdAt, expiresAt,
   );
-  return result.changes === 1 ? { createdAt, expiresAt } : null;
+  if (result.changes !== 1) return null;
+  markAddressesActive([envelope.sender, envelope.recipient], createdAt);
+  return { createdAt, expiresAt };
 }
 
 export interface MessageRow {
