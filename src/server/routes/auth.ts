@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { ChallengeStore } from '../challenge.ts';
 import { createSession } from '../db.ts';
-import { json } from '../http.ts';
+import { json, requestOrigin } from '../http.ts';
 import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
 import { isValidAddress, isValidSig } from '../validation.ts';
 import { verifySig } from '../verify.ts';
@@ -30,8 +30,15 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
     return json({ error: 'invalid address' }, 400);
   }
 
+  const origin = requestOrigin(req);
+  if (!origin) {
+    warn('[invalid] auth-challenge unusable origin');
+    return json({ error: 'Invalid origin' }, 400);
+  }
+
   const { challenge, nonce } = authStore.issue(
     address,
+    origin,
     (n) => `0xChat session request\nAddress: ${address}\nNonce: ${n}`,
   );
 
@@ -65,9 +72,15 @@ export async function handleAuthSession({ req, ip }: Context): Promise<Response>
     return json({ error: 'invalid signature format' }, 400);
   }
 
-  const challenge = authStore.consume(nonce, address);
+  const origin = requestOrigin(req);
+  if (!origin) {
+    warn('[invalid] auth-session unusable origin');
+    return json({ error: 'Invalid origin' }, 400);
+  }
+
+  const challenge = authStore.consume(nonce, address, origin);
   if (!challenge) {
-    warn('[invalid] auth-session challenge not found/expired', nonce);
+    warn('[invalid] auth-session challenge not found/expired or origin mismatch', nonce);
     return json({ error: 'Challenge expired or not found' }, 401);
   }
 

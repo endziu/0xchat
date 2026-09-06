@@ -1,6 +1,6 @@
 import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
-import { json } from '../http.ts';
+import { json, requestOrigin } from '../http.ts';
 import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
 import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';
@@ -12,17 +12,6 @@ export const regStore = new ChallengeStore();
 
 function registrationSubject(address: string, pubkey: string): string {
   return `${address}:${pubkey}`;
-}
-
-function requestOrigin(req: Request): string | null {
-  const value = req.headers.get('Origin') ?? new URL(req.url).origin;
-  try {
-    const url = new URL(value);
-    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.origin !== value) return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
 }
 
 export async function handleRegisterChallenge({ req, ip }: Context): Promise<Response> {
@@ -55,6 +44,7 @@ export async function handleRegisterChallenge({ req, ip }: Context): Promise<Res
 
   const { challenge, nonce } = regStore.issue(
     registrationSubject(address, pubkey),
+    origin,
     (n) => buildRegistrationChallenge(origin, address, pubkey, n),
   );
 
@@ -93,9 +83,15 @@ export async function handleRegister({ req, ip }: Context): Promise<Response> {
     return json({ error: 'invalid signature format' }, 400);
   }
 
-  const challenge = regStore.consume(nonce, registrationSubject(address, pubkey));
+  const origin = requestOrigin(req);
+  if (!origin) {
+    warn('[invalid] register unusable origin');
+    return json({ error: 'Invalid origin' }, 400);
+  }
+
+  const challenge = regStore.consume(nonce, registrationSubject(address, pubkey), origin);
   if (!challenge) {
-    warn('[invalid] register challenge not found/expired', nonce);
+    warn('[invalid] register challenge not found/expired or origin mismatch', nonce);
     return json({ error: 'Invalid or expired challenge' }, 401);
   }
 

@@ -40,3 +40,19 @@ export function getBearerToken(req: Request): string | null {
   if (!auth?.startsWith('Bearer ')) return null;
   return auth.slice(7) || null;
 }
+
+/**
+ * The origin the request came from: the Origin header when present and well
+ * formed, otherwise the request URL's own origin. Returns null when no usable
+ * origin can be determined.
+ */
+export function requestOrigin(req: Request): string | null {
+  const value = req.headers.get('Origin') ?? new URL(req.url).origin;
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.origin !== value) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
