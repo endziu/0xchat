@@ -31,6 +31,20 @@ Open the app and it creates a fresh **burner identity** in your browser. Share i
 
 SQLite is built into Bun; no separate database server is required.
 
+## Terminal client
+
+With the server running, create a CLI identity and open a conversation:
+
+```sh
+bun run cli init
+bun run cli chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
+```
+
+Use `--server https://your-chat.example` for a remote instance. The CLI supports
+encrypted text chat with browser identities, live updates, key import/export,
+and scriptable send/read commands with JSON output. See [the CLI guide](docs/cli.md)
+or `bun run cli --help`.
+
 ## Install
 
 ```sh
