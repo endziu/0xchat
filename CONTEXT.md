@@ -32,9 +32,12 @@ The removal of messages, including when they expire, rather than merely hiding t
 _Avoid_: Hide conversation
 
 **Message lifetime**:
-The sender-selected duration a message remains available once the recipient opens its conversation.
+The sender-selected duration a message remains available once the recipient opens that message in its conversation.
 _Avoid_: Retention period, time since sending
 
+**Message opening**:
+The recipient accessing a successfully loaded message in an open conversation. Unloaded history remains unopened; individual messages need not be scrolled into view.
+
 **Unopened retention limit**:
-The maximum time a message may wait for the recipient to open its conversation.
+The maximum time a message may wait for the recipient to open that message.
 _Avoid_: Message lifetime
