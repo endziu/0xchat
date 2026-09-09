@@ -11,6 +11,7 @@ chat.db*
 
 # Local tooling
 .claude/
+.scratch/
 
 # Editor / OS
 .DS_Store
