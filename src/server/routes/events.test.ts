@@ -267,3 +267,13 @@ describe('SSE over real HTTP', () => {
     await replay.body?.cancel()
   })
 })
+
+test('delivery capability is bound to the SSE token independently of envelope version', async () => {
+  const store = new SseTokenStore(30_000);
+  const legacy = store.mint(address);
+  const capable = store.mint(address, true);
+  expect(store.supportsOpening(legacy)).toBe(false);
+  expect(store.supportsOpening(capable)).toBe(true);
+  store.consume(capable);
+  expect(store.supportsOpening(capable)).toBe(false);
+});

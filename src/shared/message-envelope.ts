@@ -26,9 +26,35 @@ export interface MessageEnvelope extends MessageMetadata {
   signature: string
 }
 
-export interface DeliveredMessage extends MessageEnvelope {
+export const UNOPENED_RETENTION_MS = 24 * 60 * 60 * 1000
+export const DELIVERY_CAPABILITY = 'recipient-opening-v1'
+export type DeliveryPolicy = 'legacy' | 'recipient-opening'
+
+export interface MessageLifecycle {
+  delivery_policy: DeliveryPolicy
   created_at: number
+  opened_at: number | null
   expires_at: number
+}
+
+export interface DeliveredMessage extends MessageEnvelope, MessageLifecycle {}
+
+export type OpeningResult = { id: string; status: 'unavailable' }
+  | ({ id: string; status: 'available' } & MessageLifecycle)
+
+export interface OpeningResponse {
+  server_time: number
+  results: OpeningResult[]
+}
+
+export interface ExpiryUpdate extends MessageLifecycle {
+  id: string
+  sender: string
+  recipient: string
+}
+
+export function advertisesDeliveryCapability(headers: Headers): boolean {
+  return headers.get('X-0xChat-Delivery-Capability') === DELIVERY_CAPABILITY
 }
 
 const ADDRESS = /^0x[0-9a-f]{40}$/
@@ -40,7 +66,7 @@ const ENVELOPE_KEYS = [
   'ct_recipient', 'ephemeral_pub_recipient', 'iv_recipient',
   'ct_sender', 'ephemeral_pub_sender', 'iv_sender', 'signature',
 ].sort()
-const DELIVERED_KEYS = [...ENVELOPE_KEYS, 'created_at', 'expires_at'].sort()
+const DELIVERED_KEYS = [...ENVELOPE_KEYS, 'delivery_policy', 'created_at', 'opened_at', 'expires_at'].sort()
 
 export function canonicalMessageAad(metadata: MessageMetadata): string {
   return [
@@ -126,11 +152,27 @@ export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredM
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
   const value = input as Record<string, unknown>
   if (Object.keys(value).sort().join(',') !== DELIVERED_KEYS.join(',')) return null
-  const { created_at: createdAt, expires_at: expiresAt, ...candidate } = value
-  if (!Number.isSafeInteger(createdAt) || !Number.isSafeInteger(expiresAt)) return null
-  if ((expiresAt as number) !== (createdAt as number) + (candidate['ttl'] as number) * 1000) return null
+  const { delivery_policy, created_at, opened_at, expires_at, ...candidate } = value
   const envelope = await verifyMessageEnvelope(candidate)
-  return envelope ? { ...envelope, created_at: createdAt as number, expires_at: expiresAt as number } : null
+  if (!envelope) return null
+  if (!Number.isSafeInteger(created_at) || (created_at as number) < 0
+    || !Number.isSafeInteger(expires_at)) return null
+  const accepted = created_at as number
+  const retentionDeadline = accepted + UNOPENED_RETENTION_MS
+  if (delivery_policy === 'legacy') {
+    if (opened_at !== null || expires_at !== accepted + envelope.ttl * 1000) return null
+  } else if (delivery_policy === 'recipient-opening') {
+    if (!Number.isSafeInteger(retentionDeadline)) return null
+    if (opened_at === null) {
+      if (expires_at !== retentionDeadline) return null
+    } else {
+      if (!Number.isSafeInteger(opened_at) || (opened_at as number) < accepted
+        || (opened_at as number) >= retentionDeadline
+        || expires_at !== (opened_at as number) + envelope.ttl * 1000) return null
+    }
+  } else return null
+  return { ...envelope, delivery_policy, created_at: accepted,
+    opened_at: opened_at as number | null, expires_at: expires_at as number }
 }
 
 export function isEnvelopeParticipant(

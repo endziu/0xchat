@@ -30,3 +30,7 @@ export const pushSubscribeLimiter = new RateLimiter({ max: 10, windowMs: MINUTE 
 
 /** SSE token, per ip. A live client re-mints only on reconnect. */
 export const sseTokenLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+
+/** Opening batches support rapid consumption of 100-message history pages. */
+export const openingLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
+export const openingIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });

@@ -3,6 +3,7 @@ import { getSession } from './db.ts';
 import { TRUSTED_PROXY_IPS, resolveClientIp } from './trusted-proxy.ts';
 
 export interface Context {
+  testDeliveryPolicy?: 'recipient-opening';
   req: Request;
   url: URL;
   path: string;
