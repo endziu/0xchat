@@ -3,7 +3,7 @@ import { SECURITY_HEADERS, log } from './constants.ts';
 import { handleRegisterChallenge, handleRegister, regStore } from './routes/register.ts';
 import { handleAuthChallenge, handleAuthSession, authStore } from './routes/auth.ts';
 import { handleGetPubkey } from './routes/pubkey.ts';
-import { handleOpenMessages, handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
+import { handleMessageStates, handleRecoverMessages, handleOpenMessages, handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
 import { handleGetSSEToken, handleSSE, cleanupSseTokens } from './routes/events.ts';
 import { handleGetVapidPublicKey, handleSubscribePush, handleUnsubscribePush } from './routes/push.ts';
 import { handleDeleteAddress } from './routes/account.ts';
@@ -29,6 +29,8 @@ const routes: Route[] = [
   { method: 'POST',   test: eq('/api/auth/session'),                    handler: handleAuthSession },
   { method: 'DELETE', test: eq('/api/session'),                         handler: handleDeleteSession },
   { method: 'POST',   test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}\/open$/), handler: handleOpenMessages },
+  { method: 'GET',    test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}\/recover$/), handler: handleRecoverMessages },
+  { method: 'POST',   test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}\/state$/), handler: handleMessageStates },
   { method: 'POST',   test: eq('/api/messages'),                        handler: handleSendMessage },
   { method: 'GET',    test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}$/), handler: handleGetMessages },
   { method: 'GET',    test: eq('/api/conversations'),                   handler: handleGetConversations },
