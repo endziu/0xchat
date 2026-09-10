@@ -9,6 +9,7 @@ import {
   parseMessageEnvelope,
   verifyMessageEnvelope,
   type DeliveredMessage,
+  type OpeningResponse,
   type MessageLifecycle,
   type MessageEnvelope,
 } from '../../shared/message-envelope.ts';
@@ -151,8 +152,12 @@ export async function handleGetConversations({ req, ip }: Context): Promise<Resp
 
 export async function handleOpenMessages({ req, path, ip }: Context): Promise<Response> {
   const address = getSessionAddress(req);
-  if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (!address) {
+    warn('[unauth] open messages no session', ip);
+    return json({ error: 'Unauthorized' }, 401);
+  }
   if (openingIpLimiter.hit(ip) || openingLimiter.hit(address)) {
+    warn('[rate-limit] open messages', address, ip);
     return json({ error: 'Too many requests' }, 429);
   }
   // Bound streaming bodies too; Content-Length is neither required nor trusted.
@@ -166,7 +171,7 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 4096) {
+      if (size > 8192) {
         await reader.cancel();
         return json({ error: 'Opening request too large' }, 413);
       }
@@ -185,10 +190,12 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
     || ids.some(id => typeof id !== 'string' || !/^0x[0-9a-f]{32}$/.test(id))
     || new Set(ids).size !== ids.length) return json({ error: 'Invalid message IDs' }, 400);
   const counterparty = path.split('/')[3]!.toLowerCase();
-  const { updates, ...response } = openMessages(address, counterparty, ids);
+  const { updates, server_time, results } = openMessages(address, counterparty, ids);
+  const response: OpeningResponse = { server_time, results };
   for (const update of updates) {
     notify(update.sender, 'expiry-update', update);
     notify(update.recipient, 'expiry-update', update);
   }
+  log('[open]', address, counterparty, `requested=${ids.length}`, `opened=${updates.length}`);
   return json(response);
 }

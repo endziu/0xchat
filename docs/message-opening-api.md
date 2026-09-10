@@ -33,7 +33,7 @@ It is separate from the historical unauthenticated-envelope cutover.
 `POST /api/messages/:counterparty/open`, authenticated by the recipient's bearer
 session, accepts exactly `{ "ids": ["0x…"] }`. IDs are canonical lowercase
 16-byte hex message IDs. Supply 1–100 distinct IDs from one conversation.
-The body limit is 4096 bytes, including streamed bodies. Limits are 120 requests
+The body limit is 8192 bytes (8 KiB), including streamed bodies. Limits are 120 requests
 per minute per recipient and 240 per minute per IP, independently of sending.
 Malformed requests return 400, oversized bodies 413, missing/invalid sessions
 401, and rate-limited requests 429.
@@ -91,6 +91,8 @@ Do not run `bun run test` in the working checkout: it deletes `chat.db` and
 `dist`. Run that full command from an isolated copy with its own database.
 
 No client reveal/acknowledgement UI, rollout gate, recovery API, push TTL change,
-or push endpoint allowlist change is included in this slice. Deploy compatible
-shared validators with this metadata format; older strict delivery validators
-reject the added fields even though the signed-envelope version is unchanged.
+or push endpoint allowlist change is included in this slice. Deploy the rebuilt
+frontend alongside the server and refresh existing browser tabs so they load the
+updated shared delivery validator. Older strict delivery validators reject the
+added fields even though the signed-envelope version is unchanged. There are no
+production CLI clients, so CLI compatibility does not block this deployment.

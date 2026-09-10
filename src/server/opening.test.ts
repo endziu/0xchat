@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,7 @@ import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
+import * as limiters from './rate-limiters.ts';
 
 function identity(byte: string) {
   const privateKey = `0x${byte.repeat(32)}` as const;
@@ -22,7 +23,20 @@ const bob = identity('23');
 let server: ReturnType<typeof Bun.serve>;
 let clock: ReturnType<typeof spyOn>;
 let tempDirectory: string | undefined;
-afterEach(() => { server?.stop(true); clock?.mockRestore(); getDb().close(); if (tempDirectory) { rmSync(tempDirectory, { recursive: true }); tempDirectory = undefined; } });
+beforeEach(() => {
+  for (const limiter of Object.values(limiters)) limiter.reset();
+});
+
+afterEach(() => {
+  server?.stop(true);
+  clock?.mockRestore();
+  getDb().close();
+  for (const limiter of Object.values(limiters)) limiter.reset();
+  if (tempDirectory) {
+    rmSync(tempDirectory, { recursive: true });
+    tempDirectory = undefined;
+  }
+});
 
 function start(newPolicy = true, path = ':memory:') {
   initDb(path);
@@ -100,7 +114,7 @@ test('opening rejects unauthorized and malformed requests and conceals inaccessi
     { ids: [message.id], extra: true }, [], { ids: Array.from({ length: 101 }, (_, n) => `0x${n.toString(16).padStart(32, '0')}`) }]) {
     expect((await request(`/api/messages/${alice.address}/open`, bob.address, body)).status).toBe(400);
   }
-  expect((await request(`/api/messages/${alice.address}/open`, bob.address, { ids: ['a'.repeat(4096)] })).status).toBe(413);
+  expect((await request(`/api/messages/${alice.address}/open`, bob.address, { ids: ['a'.repeat(8192)] })).status).toBe(413);
   const invalidJson = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
     method: 'POST', headers: { Authorization: `Bearer ${bob.address}` }, body: '{' });
   expect(invalidJson.status).toBe(400);
@@ -110,9 +124,6 @@ test('opening rejects unauthorized and malformed requests and conceals inaccessi
     { id: absent, status: 'unavailable' },
   ]);
 });
-
-
-
 
 test('pre-upgrade initialization twice preserves signed deliveries and original deadlines through HTTP', async () => {
   tempDirectory = mkdtempSync(join(tmpdir(), '0xchat-migration-'));
@@ -138,7 +149,10 @@ test('pre-upgrade initialization twice preserves signed deliveries and original 
     expect(page.messages).toEqual([expected]);
     expect(await verifyDeliveredMessage(page.messages[0])).toEqual(expected);
     expect((await (await open([envelope.id])).json()).results[0].expires_at).toBe(6000);
-    if (initialization === 0) { getDb().close(); initDb(path); }
+    if (initialization === 0) {
+      getDb().close();
+      initDb(path);
+    }
   }
   clock.mockReturnValue(6000);
   deleteExpiredMessages();
@@ -182,7 +196,8 @@ test('SSE records advertised capability without enforcement and both participant
     const page = await (await request(`/api/messages/${alice.address}`)).json();
     expect(page.messages[0].expires_at).toBe(7000);
   } finally {
-    sender.abort.abort(); recipient.abort.abort();
+    sender.abort.abort();
+    recipient.abort.abort();
     await Promise.allSettled([sender.reader.cancel(), recipient.reader.cancel()]);
   }
 });
@@ -197,4 +212,57 @@ test('opening accepts 100 distinct IDs and bounds sustained request volume', asy
   expect((await response.json()).results).toHaveLength(100);
   for (let n = 1; n < 120; n++) expect((await open(ids, rateIdentity)).status).toBe(200);
   expect((await open(ids, rateIdentity)).status).toBe(429);
+});
+
+test('opening accepts a pretty-printed batch of 100 distinct IDs', async () => {
+  start();
+  const ids = Array.from({ length: 100 }, (_, n) => `0x${n.toString(16).padStart(32, '0')}`);
+  const response = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }, null, 2),
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json()).results).toEqual(ids.map(id => ({ id, status: 'unavailable' })));
+});
+
+test('opening limits each recipient independently of other recipients', async () => {
+  start();
+  const ids = [`0x${'00'.repeat(16)}`];
+  for (let n = 0; n < 120; n++) expect((await open(ids)).status).toBe(200);
+  expect((await open(ids)).status).toBe(429);
+  expect((await open(ids, alice.address)).status).toBe(200);
+});
+
+test('opening limits an IP across recipients below their individual limits', async () => {
+  start();
+  const third = identity('45').address;
+  createSession(third, third, 1_000_000_000);
+  const ids = [`0x${'00'.repeat(16)}`];
+  for (const recipient of [alice.address, bob.address, third]) {
+    for (let n = 0; n < 80; n++) expect((await open(ids, recipient)).status).toBe(200);
+  }
+  expect((await open(ids, third)).status).toBe(429);
+});
+
+test('opening bounds streamed bodies at 8 KiB without Content-Length', async () => {
+  start();
+  const id = `0x${'00'.repeat(16)}`;
+  const json = JSON.stringify({ ids: [id] });
+  for (const [size, status] of [[8192, 200], [8193, 413]] as const) {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(json));
+        controller.enqueue(new TextEncoder().encode(' '.repeat(size - json.length)));
+        controller.close();
+      },
+    });
+    const response = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json' },
+      body,
+    });
+    expect(response.status).toBe(status);
+    await response.body?.cancel();
+  }
 });

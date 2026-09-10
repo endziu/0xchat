@@ -211,8 +211,6 @@ export interface MessageRow extends MessageLifecycle {
   iv_sender: string;
   ttl_seconds: number;
   signature: string;
-  created_at: number;
-  expires_at: number;
 }
 
 export interface ConversationPage {
