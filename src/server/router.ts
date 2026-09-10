@@ -3,7 +3,7 @@ import { SECURITY_HEADERS, log } from './constants.ts';
 import { handleRegisterChallenge, handleRegister, regStore } from './routes/register.ts';
 import { handleAuthChallenge, handleAuthSession, authStore } from './routes/auth.ts';
 import { handleGetPubkey } from './routes/pubkey.ts';
-import { handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
+import { handleOpenMessages, handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
 import { handleGetSSEToken, handleSSE, cleanupSseTokens } from './routes/events.ts';
 import { handleGetVapidPublicKey, handleSubscribePush, handleUnsubscribePush } from './routes/push.ts';
 import { handleDeleteAddress } from './routes/account.ts';
@@ -28,6 +28,7 @@ const routes: Route[] = [
   { method: 'POST',   test: eq('/api/auth/challenge'),                  handler: handleAuthChallenge },
   { method: 'POST',   test: eq('/api/auth/session'),                    handler: handleAuthSession },
   { method: 'DELETE', test: eq('/api/session'),                         handler: handleDeleteSession },
+  { method: 'POST',   test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}\/open$/), handler: handleOpenMessages },
   { method: 'POST',   test: eq('/api/messages'),                        handler: handleSendMessage },
   { method: 'GET',    test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}$/), handler: handleGetMessages },
   { method: 'GET',    test: eq('/api/conversations'),                   handler: handleGetConversations },
@@ -47,7 +48,10 @@ function re(pattern: RegExp) {
   return (path: string) => pattern.test(path);
 }
 
-export function createFetch() {
+export function createFetch(options: { testDeliveryPolicy?: 'recipient-opening' } = {}) {
+  if (options.testDeliveryPolicy && process.env['NODE_ENV'] !== 'test') {
+    throw new Error('New delivery policy is restricted to isolated tests');
+  }
   return async (req: Request, server: { requestIP: (r: Request) => { address: string } | null }): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/$/, '') || '/';
@@ -60,7 +64,7 @@ export function createFetch() {
       return new Response(null, { status: 200, headers: SECURITY_HEADERS });
     }
 
-    const ctx: Context = { req, url, path, method, ip };
+    const ctx: Context = { req, url, path, method, ip, ...options };
     const route = routes.find((r) => r.method === method && r.test(path));
     return route ? route.handler(ctx) : notFound();
   };

@@ -1,6 +1,6 @@
-import { createMessage, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
+import { createMessage, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
+import { openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, error, VALID_TTLS } from '../constants.ts';
@@ -9,12 +9,15 @@ import {
   parseMessageEnvelope,
   verifyMessageEnvelope,
   type DeliveredMessage,
+  type OpeningResponse,
+  type MessageLifecycle,
   type MessageEnvelope,
 } from '../../shared/message-envelope.ts';
 import type { Context } from '../http.ts';
 
-function delivered(envelope: MessageEnvelope, createdAt: number, expiresAt: number): DeliveredMessage {
-  return { ...envelope, created_at: createdAt, expires_at: expiresAt };
+function delivered(envelope: MessageEnvelope, lifecycle: MessageLifecycle): DeliveredMessage {
+  return { ...envelope, delivery_policy: lifecycle.delivery_policy, created_at: lifecycle.created_at,
+    opened_at: lifecycle.opened_at, expires_at: lifecycle.expires_at };
 }
 
 function deliveredRow(row: MessageRow): Record<string, unknown> {
@@ -31,12 +34,14 @@ function deliveredRow(row: MessageRow): Record<string, unknown> {
     ephemeral_pub_sender: row.ephemeral_pub_sender,
     iv_sender: row.iv_sender,
     signature: row.signature,
+    delivery_policy: row.delivery_policy,
+    opened_at: row.opened_at,
     created_at: row.created_at,
     expires_at: row.expires_at,
   };
 }
 
-export async function handleSendMessage({ req, ip }: Context): Promise<Response> {
+export async function handleSendMessage({ req, ip, testDeliveryPolicy }: Context): Promise<Response> {
   const sessionAddress = getSessionAddress(req);
   if (!sessionAddress) {
     warn('[unauth] message no session', ip);
@@ -78,13 +83,13 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
     return json({ error: 'invalid envelope signature' }, 400);
   }
 
-  const stored = createMessage(envelope);
+  const stored = createMessage(envelope, testDeliveryPolicy);
   if (!stored) {
     warn('[invalid] message replay', envelope.id, sessionAddress);
     return json({ error: 'duplicate message ID' }, 409);
   }
 
-  const event = delivered(envelope, stored.createdAt, stored.expiresAt);
+  const event = delivered(envelope, stored);
   notify(envelope.recipient, 'message', event);
   notify(envelope.sender, 'message', event);
   pushNotify(envelope.recipient, envelope.ttl).catch((err) => error('[push] notify failed', envelope.recipient, err));
@@ -143,4 +148,54 @@ export async function handleGetConversations({ req, ip }: Context): Promise<Resp
   return json({
     conversations: convs.map((c) => ({ address: c.counterparty, last_message_at: c.last_message_at })),
   });
+}
+
+export async function handleOpenMessages({ req, path, ip }: Context): Promise<Response> {
+  const address = getSessionAddress(req);
+  if (!address) {
+    warn('[unauth] open messages no session', ip);
+    return json({ error: 'Unauthorized' }, 401);
+  }
+  if (openingIpLimiter.hit(ip) || openingLimiter.hit(address)) {
+    warn('[rate-limit] open messages', address, ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
+  // Bound streaming bodies too; Content-Length is neither required nor trusted.
+  const reader = req.body?.getReader();
+  if (!reader) return json({ error: 'Invalid opening request' }, 400);
+  let body: unknown;
+  try {
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
+    let size = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 8192) {
+        await reader.cancel();
+        return json({ error: 'Opening request too large' }, 413);
+      }
+      chunks.push(new Uint8Array(value));
+    }
+    body = JSON.parse(await new Blob(chunks).text());
+  } catch {
+    return json({ error: 'Invalid JSON' }, 400);
+  } finally {
+    reader.releaseLock();
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || Object.keys(body).join(',') !== 'ids') return json({ error: 'Invalid opening request' }, 400);
+  const ids = (body as { ids: unknown }).ids;
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 100
+    || ids.some(id => typeof id !== 'string' || !/^0x[0-9a-f]{32}$/.test(id))
+    || new Set(ids).size !== ids.length) return json({ error: 'Invalid message IDs' }, 400);
+  const counterparty = path.split('/')[3]!.toLowerCase();
+  const { updates, server_time, results } = openMessages(address, counterparty, ids);
+  const response: OpeningResponse = { server_time, results };
+  for (const update of updates) {
+    notify(update.sender, 'expiry-update', update);
+    notify(update.recipient, 'expiry-update', update);
+  }
+  log('[open]', address, counterparty, `requested=${ids.length}`, `opened=${updates.length}`);
+  return json(response);
 }

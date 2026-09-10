@@ -1,3 +1,4 @@
+import { advertisesDeliveryCapability } from '../../shared/message-envelope.ts';
 import { randomBytes } from 'node:crypto';
 import { addClient, connectionCount, removeClient } from '../sse.ts';
 import { json, getSessionAddress } from '../http.ts';
@@ -11,6 +12,7 @@ const SSE_TOKEN_TTL_MS = 30_000;
 interface SseTokenEntry {
   address: string;
   expiresAt: number;
+  supportsOpening: boolean;
 }
 
 /**
@@ -30,9 +32,9 @@ export class SseTokenStore {
     private readonly now: () => number = Date.now,
   ) {}
 
-  mint(address: string): string {
+  mint(address: string, supportsOpening = false): string {
     const token = randomBytes(16).toString('hex');
-    this.tokens.set(token, { address, expiresAt: this.now() + this.ttlMs });
+    this.tokens.set(token, { address, expiresAt: this.now() + this.ttlMs, supportsOpening });
     return token;
   }
 
@@ -44,6 +46,10 @@ export class SseTokenStore {
       return null;
     }
     return entry.address;
+  }
+
+  supportsOpening(token: string): boolean {
+    return this.lookup(token) !== null && this.tokens.get(token)!.supportsOpening;
   }
 
   /** Consume a token (single-use); the bound address if live, else null. */
@@ -81,7 +87,7 @@ export async function handleGetSSEToken({ req, ip }: Context): Promise<Response>
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  const sseToken = sseTokenStore.mint(address);
+  const sseToken = sseTokenStore.mint(address, advertisesDeliveryCapability(req.headers));
 
   log('[sse-token]', address);
   return json({ sse_token: sseToken });
@@ -103,6 +109,7 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
     return json({ error: 'Too many requests' }, 429);
   }
 
+  const supportsOpening = sseTokenStore.supportsOpening(sseToken);
   sseTokenStore.consume(sseToken); // single-use
 
   const ping = new TextEncoder().encode(`event: ping\ndata: {}\n\n`);
@@ -121,7 +128,7 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
   const stream = new ReadableStream({
     start(streamController) {
       controller = streamController;
-      addClient(address, controller);
+      addClient(address, controller, supportsOpening);
       log('[sse]', address, 'connected');
 
       controller.enqueue(ping);

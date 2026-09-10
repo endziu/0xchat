@@ -149,7 +149,10 @@ Runtime data is stored in `chat.db` beside the project. The database, build outp
 Message submissions are limited to 120 per minute per IP/address pair and 240 per
 minute across all addresses on one IP. The aggregate cap allows two identities
 sharing an IP their full individual allowance while placing a fixed ceiling on
-identity cycling. Registration writes are limited to 10 per minute per IP.
+identity cycling. Message opening is limited separately to 120 requests per minute
+per recipient address across devices and networks, and 240 per minute per IP
+across recipients. Opening accepts 1–100 distinct IDs per batch with an 8 KiB
+body limit, including streamed bodies. Registration writes are limited to 10 per minute per IP.
 
 Public-key registrations are pruned after 30 days without a new session or a sent
 or received message. Initial registration starts the retention window;

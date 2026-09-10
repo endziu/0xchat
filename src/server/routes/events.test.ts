@@ -204,6 +204,16 @@ describe('SseTokenStore', () => {
     expect(store.lookup(token)).toBeNull()
   })
 
+  test('delivery capability is bound to the SSE token independently of envelope version', async () => {
+    const store = new SseTokenStore(30_000)
+    const legacy = store.mint(address)
+    const capable = store.mint(address, true)
+    expect(store.supportsOpening(legacy)).toBe(false)
+    expect(store.supportsOpening(capable)).toBe(true)
+    store.consume(capable)
+    expect(store.supportsOpening(capable)).toBe(false)
+  })
+
   test('prune drops only expired entries', () => {
     let now = 1_000
     const store = new SseTokenStore(30_000, () => now)

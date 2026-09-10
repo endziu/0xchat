@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
-import { MESSAGE_ENVELOPE_VERSION, type MessageEnvelope } from '../shared/message-envelope.ts';
+import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type DeliveryPolicy, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 // Session tokens are stored as sha256 hex digests so a copy of the database
 // never yields a valid bearer token. Callers keep using the raw token; the
@@ -101,6 +101,14 @@ export function initDb(path = 'chat.db'): void {
     CREATE INDEX IF NOT EXISTS idx_msg_expires
       ON messages(expires_at);
   `);
+  // Separate from the envelope cutover: preserve every existing payload and deadline.
+  db.transaction(() => {
+    const columns = tableColumns('messages');
+    if (!columns.has('delivery_policy')) {
+      db.run("ALTER TABLE messages ADD COLUMN delivery_policy TEXT NOT NULL DEFAULT 'legacy'");
+    }
+    if (!columns.has('opened_at')) db.run('ALTER TABLE messages ADD COLUMN opened_at INTEGER');
+  }).immediate();
   // Cipher and canonicalization changes cannot be upgraded without plaintext.
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
 }
@@ -168,28 +176,29 @@ export function deleteExpiredSessions(): void {
 
 export function createMessage(
   envelope: MessageEnvelope,
-): { createdAt: number; expiresAt: number } | null {
+  policy: DeliveryPolicy = 'legacy',
+): MessageLifecycle | null {
   const createdAt = Date.now();
-  const expiresAt = createdAt + envelope.ttl * 1000;
+  const expiresAt = createdAt + (policy === 'legacy' ? envelope.ttl * 1000 : UNOPENED_RETENTION_MS);
   const result = db.query(
     `INSERT OR IGNORE INTO messages (
       version, id, sender, recipient,
       ct_recipient, ephemeral_pub_recipient, iv_recipient,
       ct_sender, ephemeral_pub_sender, iv_sender,
-      ttl_seconds, signature, created_at, expires_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ttl_seconds, signature, created_at, expires_at, delivery_policy
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     envelope.version, envelope.id, envelope.sender, envelope.recipient,
     envelope.ct_recipient, envelope.ephemeral_pub_recipient, envelope.iv_recipient,
     envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
-    envelope.ttl, envelope.signature, createdAt, expiresAt,
+    envelope.ttl, envelope.signature, createdAt, expiresAt, policy,
   );
   if (result.changes !== 1) return null;
   markAddressesActive([envelope.sender, envelope.recipient], createdAt);
-  return { createdAt, expiresAt };
+  return { delivery_policy: policy, created_at: createdAt, opened_at: null, expires_at: expiresAt };
 }
 
-export interface MessageRow {
+export interface MessageRow extends MessageLifecycle {
   version: number;
   id: string;
   sender: string;
@@ -202,8 +211,6 @@ export interface MessageRow {
   iv_sender: string;
   ttl_seconds: number;
   signature: string;
-  created_at: number;
-  expires_at: number;
 }
 
 export interface ConversationPage {
@@ -280,7 +287,7 @@ export function getConversations(
 }
 
 export function deleteExpiredMessages(): void {
-  db.query('DELETE FROM messages WHERE expires_at < ?').run(Date.now());
+  db.query('DELETE FROM messages WHERE expires_at <= ?').run(Date.now());
 }
 
 export function deleteAddressSessions(address: string): void {
@@ -351,4 +358,31 @@ export function getConversationPartners(address: string): string[] {
 
 export function getDb(): Database {
   return db;
+}
+
+/** The write lock covers the clock read, availability check and transition. */
+export function openMessages(recipient: string, sender: string, ids: string[]): {
+  server_time: number; results: OpeningResult[]; updates: ExpiryUpdate[];
+} {
+  return db.transaction(() => {
+    const now = Date.now();
+    const updates: ExpiryUpdate[] = [];
+    const results = ids.map((id): OpeningResult => {
+      const row = db.query(`SELECT * FROM messages
+        WHERE id = ? AND recipient = ? AND sender = ? AND expires_at > ?`)
+        .get(id, recipient, sender, now) as MessageRow | null;
+      if (!row) return { id, status: 'unavailable' };
+      if (row.delivery_policy === 'recipient-opening' && row.opened_at === null) {
+        row.opened_at = now;
+        row.expires_at = now + row.ttl_seconds * 1000;
+        db.query('UPDATE messages SET opened_at = ?, expires_at = ? WHERE id = ?')
+          .run(row.opened_at, row.expires_at, id);
+        updates.push({ id, sender, recipient, delivery_policy: row.delivery_policy,
+          created_at: row.created_at, opened_at: row.opened_at, expires_at: row.expires_at });
+      }
+      return { id, status: 'available', delivery_policy: row.delivery_policy,
+        created_at: row.created_at, opened_at: row.opened_at, expires_at: row.expires_at };
+    });
+    return { server_time: now, results, updates };
+  }).immediate();
 }

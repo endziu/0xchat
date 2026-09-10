@@ -30,3 +30,10 @@ export const pushSubscribeLimiter = new RateLimiter({ max: 10, windowMs: MINUTE 
 
 /** SSE token, per ip. A live client re-mints only on reconnect. */
 export const sseTokenLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+
+/** 120/min keyed by recipient address, shared across devices and networks.
+ * Supports rapid history opening without multiplying an identity's allowance. */
+export const openingLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
+/** 240/min keyed by IP across recipients, bounding identity cycling while
+ * allowing two recipients behind one IP their full allowance. */
+export const openingIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });

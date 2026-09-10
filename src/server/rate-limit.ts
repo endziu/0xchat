@@ -59,6 +59,12 @@ export class RateLimiter {
     return false;
   }
 
+  /** Clears request history and stops cleanup, allowing isolated reuse in tests. */
+  reset(): void {
+    this.stop();
+    this.windows.clear();
+  }
+
   /** Stops the periodic cleanup timer. Safe to call before the first hit. */
   stop(): void {
     this.disposeTimer?.();
