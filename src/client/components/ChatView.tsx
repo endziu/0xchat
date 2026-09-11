@@ -75,7 +75,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
 
   return (
     <div className={`flex flex-1 overflow-hidden max-sm:flex-col ${recipientAddress ? 'max-sm:[&>:first-child]:hidden' : 'max-sm:[&>:last-child]:hidden'}`}>
-      <nav className="w-72 shrink-0 border-r border-neutral-800 flex flex-col max-sm:w-full">
+      <nav className="w-72 shrink-0 border-r border-neutral-800 flex flex-col max-sm:w-full max-sm:flex-1 max-sm:min-h-0">
         <div className="flex items-center justify-between p-2 border-b border-neutral-800">
           <span className="text-sm uppercase tracking-wider text-neutral-500">Conversations</span>
           <button onClick={() => { setNewChatAddr(''); setNewChatError('') }} aria-label="New conversation" title="New conversation" className="border-0"><Plus size={18} /></button>
