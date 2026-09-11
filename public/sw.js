@@ -74,20 +74,27 @@ self.addEventListener('push', (event) => {
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: '0xchat-message',
-      data: { url: '/chat' },
     }),
   )
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const targetUrl = event.notification.data?.url || '/chat'
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ('focus' in client) return client.focus()
-      }
-      return self.clients.openWindow(targetUrl)
+      const usableClients = clients.filter((client) => {
+        if (typeof client.focus !== 'function') return false
+        try {
+          return new URL(client.url).origin === self.location.origin
+        } catch {
+          return false
+        }
+      })
+      usableClients.sort((a, b) => {
+        const rank = (client) => client.focused ? 0 : client.visibilityState === 'visible' ? 1 : 2
+        return rank(a) - rank(b) || a.id.localeCompare(b.id)
+      })
+      return usableClients[0]?.focus() || self.clients.openWindow('/chat')
     }),
   )
 })
