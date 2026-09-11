@@ -154,7 +154,7 @@ export function Layout({
       <InstallBanner />
       <main className="flex-1 overflow-hidden flex flex-col">
         {showSettings && identity && (
-          <section className="p-3 border-b border-neutral-800">
+          <section className="min-h-0 overflow-y-auto p-3 border-b border-neutral-800">
             <div className="flex justify-between items-center">
               <h2>Identity</h2>
               <button onClick={() => setShowSettings(false)}>Close</button>
