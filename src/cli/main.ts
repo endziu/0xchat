@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, address, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, address, isMessageAvailable, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
@@ -96,7 +96,8 @@ async function follow(
         if (!synced) {
           // Subscribe first; messages arriving during history fetch remain buffered.
           const history: PlainMessage[] = []
-          for await (const page of client.history(partner)) history.unshift(...page)
+          // Live opening and deadline updates are implemented in issue #79.
+          for await (const page of client.history(partner, { confirmAvailability: false })) history.unshift(...page)
           history.forEach(deliver)
           synced = true
           backoff = 1000
@@ -259,14 +260,14 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       if (values.json) {
         let serialized: string
         do {
-          result.messages = result.messages.filter(message => message.expires_at > Date.now())
-          serialized = JSON.stringify(result)
+          result.messages = result.messages.filter(isMessageAvailable)
           // Large all-history results can cross a deadline during serialization.
-        } while (result.messages.some(message => message.expires_at <= Date.now()))
+          serialized = JSON.stringify(result)
+        } while (result.messages.some(message => !isMessageAvailable(message)))
         console.log(serialized)
       } else for (const message of result.messages) {
         const text = displayMessage(message, identity.address)
-        if (message.expires_at > Date.now()) console.log(text)
+        if (isMessageAvailable(message)) console.log(text)
       }
     } else if (command === 'watch') {
       await follow(client, partner, controller.signal,

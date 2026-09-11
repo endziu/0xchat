@@ -11,6 +11,7 @@ import * as limiters from '../server/rate-limiters'
 import { canonicalMessageEnvelope, type DeliveredMessage, type OpeningResponse } from '../shared/message-envelope'
 import { signEIP191 } from '../client/lib/burner'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
+import * as serverConstants from '../server/constants'
 
 let server: ReturnType<typeof Bun.serve>
 let alice: ChatClient
@@ -20,9 +21,20 @@ let directory: string
 let bobPath: string
 let legacy: boolean
 let openingBodies: string[][]
+let stateBodies: string[][]
 let transform: (request: Request, response: Response) => Promise<Response>
+let serverLog: ReturnType<typeof spyOn>
+
+function isMessageAction(request: Request, action: 'open' | 'state'): boolean {
+  return new URL(request.url).pathname.endsWith(`/${action}`)
+}
+
+function isMessagePage(request: Request): boolean {
+  return request.method === 'GET' && new URL(request.url).pathname.startsWith('/api/messages/')
+}
 
 beforeEach(async () => {
+  serverLog = spyOn(serverConstants, 'log').mockImplementation(() => {})
   initDb(':memory:')
   for (const limiter of Object.values(limiters)) limiter.reset()
   clock = spyOn(Date, 'now').mockReturnValue(1_000_000)
@@ -30,12 +42,14 @@ beforeEach(async () => {
   bobPath = join(directory, 'bob.json')
   const identity = await createIdentity(bobPath)
   openingBodies = []
+  stateBodies = []
   legacy = false
   transform = async (_request, response) => response
   const handler = createFetch({ testDeliveryPolicy: 'recipient-opening' })
   const legacyHandler = createFetch()
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, server) {
-    if (new URL(request.url).pathname.endsWith('/open')) openingBodies.push((await request.clone().json()).ids)
+    if (isMessageAction(request, 'open')) openingBodies.push((await request.clone().json()).ids)
+    if (isMessageAction(request, 'state')) stateBodies.push((await request.clone().json()).ids)
     return transform(request, await (legacy ? legacyHandler : handler)(request, server))
   } })
   alice = new ChatClient(server.url.origin, parsePrivateKey('12'.repeat(32)))
@@ -48,6 +62,7 @@ afterEach(async () => {
   await Promise.all([alice.close(), bob.close()])
   server.stop(true)
   clock.mockRestore()
+  serverLog.mockRestore()
   getDb().close()
   for (const limiter of Object.values(limiters)) limiter.reset()
   await rm(directory, { recursive: true, force: true })
@@ -64,7 +79,7 @@ test('read confirms incoming messages and returns the first opening deadline', a
   expect((await bob.read(alice.identity.address)).messages[0]?.expires_at).toBe(1_006_000)
 })
 
-test('listing and sender reads leave messages unopened; pagination opens only consumed pages', async () => {
+test('listing and sender reads leave messages unopened; pagination opens only requested pages', async () => {
   for (let index = 0; index < 101; index++) await alice.send(bob.identity.address, `page ${index}`)
   await bob.conversations()
   const senderPage = await alice.read(bob.identity.address)
@@ -82,24 +97,48 @@ test('listing and sender reads leave messages unopened; pagination opens only co
   expect(openingBodies).toHaveLength(1)
   await history.return(undefined)
   expect(openingBodies).toHaveLength(1)
+  openingBodies = []
+  const liveHistory = bob.history(alice.identity.address, { confirmAvailability: false })
+  await liveHistory.next()
+  expect(openingBodies).toEqual([])
+  await liveHistory.return(undefined)
 }, 20_000)
 
 async function runRead(json = true, all = false) {
+  return runCommand(['read', alice.identity.address, ...(json ? ['--json'] : []), ...(all ? ['--all'] : [])])
+}
+
+async function runCommand(command: string[]) {
   const lines: string[] = []
   const output = spyOn(console, 'log').mockImplementation(value => { lines.push(String(value)) })
   try {
-    await main(['--identity', bobPath, '--server', server.url.origin, 'read', alice.identity.address,
-      ...(json ? ['--json'] : []), ...(all ? ['--all'] : [])])
+    await main(['--identity', bobPath, '--server', server.url.origin, ...command])
     return lines.join('\n')
   } finally { output.mockRestore() }
 }
+
+test('CLI listing leaves messages unopened and cursor flags open only that page', async () => {
+  for (let index = 0; index < 101; index++) await alice.send(bob.identity.address, `command page ${index}`)
+  const conversations = JSON.parse(await runCommand(['conversations', '--json']))
+  expect(conversations.conversations.some((item: { address: string }) => item.address === alice.identity.address.toLowerCase())).toBe(true)
+  expect(openingBodies).toEqual([])
+
+  const latest = JSON.parse(await runRead())
+  expect(latest.messages).toHaveLength(100)
+  expect(openingBodies[0]).toHaveLength(100)
+  openingBodies = []
+  const older = JSON.parse(await runCommand(['read', alice.identity.address, '--json',
+    '--before', String(latest.next_before), '--before-rowid', String(latest.next_before_rowid)]))
+  expect(older.messages.map((message: { plaintext: string }) => message.plaintext)).toEqual(['command page 0'])
+  expect(openingBodies).toEqual([[older.messages[0].id]])
+}, 20_000)
 
 test('partial and unavailable confirmations never reach text or JSON output', async () => {
   const allowed = await alice.send(bob.identity.address, 'visible\x1b[31m\ntext')
   await alice.send(bob.identity.address, 'unavailable secret')
   await alice.send(bob.identity.address, 'missing secret')
   transform = async (request, response) => {
-    if (!new URL(request.url).pathname.endsWith('/open')) return response
+    if (!isMessageAction(request, 'open')) return response
     const body: OpeningResponse = await response.json()
     return Response.json({ ...body, results: body.results.filter((result, index) => result.id === allowed.id || index === 0)
       .map(result => result.id === allowed.id ? result : { id: result.id, status: 'unavailable' }) })
@@ -112,7 +151,7 @@ test('partial and unavailable confirmations never reach text or JSON output', as
 
 test('an opening failure exposes neither plaintext nor the server error body', async () => {
   await alice.send(bob.identity.address, 'private plaintext')
-  transform = async (request, response) => new URL(request.url).pathname.endsWith('/open')
+  transform = async (request, response) => isMessageAction(request, 'open')
     ? Response.json({ error: 'private plaintext' }, { status: 503 }) : response
   for (const json of [false, true]) {
     const output = spyOn(console, 'log').mockImplementation(() => {})
@@ -127,7 +166,7 @@ test('an opening failure exposes neither plaintext nor the server error body', a
 test('retry after a lost response preserves the committed deadline and cannot revive expiry', async () => {
   await alice.send(bob.identity.address, 'lost response', 5)
   clock.mockReturnValue(1_001_000)
-  transform = async (request, response) => new URL(request.url).pathname.endsWith('/open')
+  transform = async (request, response) => isMessageAction(request, 'open')
     ? new Response('{') : response
   await expect(bob.read(alice.identity.address)).rejects.toThrow('Message opening failed')
   transform = async (_request, response) => response
@@ -137,16 +176,20 @@ test('retry after a lost response preserves the committed deadline and cannot re
   expect((await bob.read(alice.identity.address)).messages).toEqual([])
 })
 
-test('all-history output excludes messages that expired while older pages were consumed', async () => {
+test('all-history output excludes messages that expired while older pages were opened', async () => {
   for (let index = 0; index < 101; index++) await alice.send(bob.identity.address, `secret ${index}`, 5)
+  let elapsed = 0
+  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => elapsed)
   transform = async (request, response) => {
-    if (new URL(request.url).searchParams.has('before')) clock.mockReturnValue(1_005_000)
+    if (new URL(request.url).searchParams.has('before')) elapsed = 5_000
     return response
   }
-  const result = JSON.parse(await runRead(true, true))
-  expect(result.messages.map((message: { plaintext: string }) => message.plaintext)).toEqual(['secret 0'])
-  expect(result.next_before).toBeNull()
-  expect(openingBodies.map(ids => ids.length)).toEqual([100, 1])
+  try {
+    const result = JSON.parse(await runRead(true, true))
+    expect(result.messages.map((message: { plaintext: string }) => message.plaintext)).toEqual(['secret 0'])
+    expect(result.next_before).toBeNull()
+    expect(openingBodies.map(ids => ids.length)).toEqual([100, 1])
+  } finally { monotonicClock.mockRestore() }
 }, 20_000)
 
 test('legacy incoming messages require confirmation without changing their deadline', async () => {
@@ -156,7 +199,7 @@ test('legacy incoming messages require confirmation without changing their deadl
   const result = await bob.read(alice.identity.address)
   expect(result.messages[0]).toMatchObject({ delivery_policy: 'legacy', opened_at: null, expires_at: 1_005_000 })
   expect(openingBodies).toEqual([[sent.id]])
-  transform = async (request, response) => new URL(request.url).pathname.endsWith('/open')
+  transform = async (request, response) => isMessageAction(request, 'open')
     ? Response.json({ server_time: Date.now(), results: [{ id: sent.id, status: 'unavailable' }] }) : response
   expect((await bob.read(alice.identity.address)).messages).toEqual([])
 })
@@ -165,7 +208,7 @@ for (const corruption of ['signature', 'ciphertext', 'misaddressed']) {
   test(`rejects ${corruption} input before opening or printing any plaintext`, async () => {
     await alice.send(bob.identity.address, 'private plaintext')
     transform = async (request, response) => {
-      if (request.method !== 'GET' || !new URL(request.url).pathname.startsWith('/api/messages/')) return response
+      if (!isMessagePage(request)) return response
       const page: { messages: DeliveredMessage[] } = await response.json()
       const message = page.messages[0]!
       if (corruption === 'signature') message.signature = `0x${'00'.repeat(65)}`
@@ -179,42 +222,34 @@ for (const corruption of ['signature', 'ciphertext', 'misaddressed']) {
       }
       return Response.json(page)
     }
-    for (const json of [false, true]) {
-      const lines: unknown[] = []
-      const output = spyOn(console, 'log').mockImplementation(value => { lines.push(value) })
-      try {
-        let error: unknown
-        try { await main(['--identity', bobPath, '--server', server.url.origin, 'read', alice.identity.address, ...(json ? ['--json'] : [])]) }
-        catch (caught) { error = caught }
-        expect(error).toBeInstanceOf(Error)
-        expect(String(error)).not.toContain('private plaintext')
-        expect(lines).toEqual([])
-        expect(openingBodies).toEqual([])
-      } finally { output.mockRestore() }
-    }
+    expect(JSON.parse(await runRead()).messages).toEqual([])
+    expect(await runRead(false)).toBe('')
+    expect(openingBodies).toEqual([])
   })
 }
 
 test('text output checks expiry separately before each printed message', async () => {
   await alice.send(bob.identity.address, 'first', 5)
   await alice.send(bob.identity.address, 'expires before printing', 5)
+  let elapsed = 0
+  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => elapsed)
   const lines: string[] = []
   const output = spyOn(console, 'log').mockImplementation(value => {
     lines.push(String(value))
-    clock.mockReturnValue(1_005_000)
+    elapsed = 5_000
   })
   try {
     await main(['--identity', bobPath, '--server', server.url.origin, 'read', alice.identity.address])
     expect(lines).toHaveLength(1)
     expect(lines[0]).toContain('first')
-  } finally { output.mockRestore() }
+  } finally { output.mockRestore(); monotonicClock.mockRestore() }
 })
 
 test('rejects duplicate or invalid lifecycle confirmations without revealing plaintext', async () => {
   await alice.send(bob.identity.address, 'private plaintext')
   for (const fault of ['duplicate', 'unopened', 'deadline', 'server-time']) {
     transform = async (request, response) => {
-      if (!new URL(request.url).pathname.endsWith('/open')) return response
+      if (!isMessageAction(request, 'open')) return response
       const body: OpeningResponse = await response.json()
       const result = body.results[0]!
       if (result.status !== 'available') throw new Error('Expected available fixture')
@@ -230,12 +265,72 @@ test('rejects duplicate or invalid lifecycle confirmations without revealing pla
 
 test('JSON output excludes messages that expire during serialization', async () => {
   await alice.send(bob.identity.address, 'expires during serialization', 5)
+  let elapsed = 0
+  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => elapsed)
   const stringify = JSON.stringify
   const serialization = spyOn(JSON, 'stringify').mockImplementation(value => {
     const result = stringify(value)
-    if (value?.messages?.some((message: { plaintext?: string }) => message.plaintext)) clock.mockReturnValue(1_005_000)
+    if (value?.messages?.some((message: { plaintext?: string }) => message.plaintext)) elapsed = 5_000
     return result
   })
   try { expect(JSON.parse(await runRead()).messages).toEqual([]) }
-  finally { serialization.mockRestore() }
+  finally { serialization.mockRestore(); monotonicClock.mockRestore() }
+})
+
+test('uses server time and elapsed time when the local wall clock is behind', async () => {
+  await alice.send(bob.identity.address, 'expired on the server', 5)
+  let elapsed = 100
+  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => elapsed)
+  transform = async (request, response) => {
+    if (isMessageAction(request, 'open')) {
+      elapsed = 5_100
+      clock.mockReturnValue(0)
+    }
+    return response
+  }
+  try { expect(JSON.parse(await runRead()).messages).toEqual([]) }
+  finally { monotonicClock.mockRestore() }
+})
+
+test('does not hide a confirmed message when the local wall clock is ahead', async () => {
+  await alice.send(bob.identity.address, 'available on the server', 5)
+  transform = async (request, response) => {
+    if (isMessageAction(request, 'open')) clock.mockReturnValue(99_000_000)
+    return response
+  }
+  expect(JSON.parse(await runRead()).messages.map((message: { plaintext: string }) => message.plaintext))
+    .toEqual(['available on the server'])
+})
+
+test('confirms sender-copy availability without opening it or trusting the local clock', async () => {
+  const sent = await alice.send(bob.identity.address, 'sender copy', 5)
+  transform = async (request, response) => {
+    if (isMessageAction(request, 'state')) clock.mockReturnValue(99_000_000)
+    return response
+  }
+  expect((await alice.read(bob.identity.address)).messages.map(message => message.plaintext)).toEqual(['sender copy'])
+  expect(openingBodies).toEqual([])
+  expect(stateBodies).toEqual([[sent.id]])
+})
+
+test('opens and returns valid neighbours when one message is corrupt', async () => {
+  const valid = await alice.send(bob.identity.address, 'valid neighbour')
+  await alice.send(bob.identity.address, 'corrupt neighbour')
+  transform = async (request, response) => {
+    if (!isMessagePage(request)) return response
+    const page: { messages: DeliveredMessage[] } = await response.json()
+    page.messages[0]!.signature = `0x${'00'.repeat(65)}`
+    return Response.json(page)
+  }
+  expect((await bob.read(alice.identity.address)).messages.map(message => message.plaintext)).toEqual(['valid neighbour'])
+  expect(openingBodies).toEqual([[valid.id]])
+})
+
+test('checks sender copies before opening incoming messages on mixed pages', async () => {
+  await alice.send(bob.identity.address, 'incoming')
+  await bob.send(alice.identity.address, 'sender copy')
+  transform = async (request, response) => isMessageAction(request, 'state')
+    ? Response.json({ error: 'state unavailable' }, { status: 503 }) : response
+  await expect(bob.read(alice.identity.address)).rejects.toThrow('Message availability check failed')
+  expect(openingBodies).toEqual([])
 })
