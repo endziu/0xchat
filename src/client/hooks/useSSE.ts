@@ -2,7 +2,12 @@ import { useEffect, useState } from 'preact/hooks'
 import { api } from '../lib/api'
 import { SseConnection } from '../lib/sse-connection'
 
-export function useSSE(token: string | null, onMessage: (data: unknown) => void, onDisconnect?: (address: string) => void) {
+export function useSSE(
+  token: string | null,
+  onMessage: (data: unknown) => void,
+  onDisconnect?: (address: string) => void,
+  onExpiryUpdate?: (data: unknown) => void,
+) {
   const [connected, setConnected] = useState(false)
 
   useEffect(() => {
@@ -22,6 +27,7 @@ export function useSSE(token: string | null, onMessage: (data: unknown) => void,
       onOpen: () => setConnected(true),
       onDisconnect: () => setConnected(false),
       onMessage,
+      onExpiryUpdate,
       onUserDisconnected: onDisconnect,
     })
     conn.connect()
@@ -30,7 +36,7 @@ export function useSSE(token: string | null, onMessage: (data: unknown) => void,
       conn.close()
       setConnected(false)
     }
-  }, [token, onMessage, onDisconnect])
+  }, [token, onMessage, onDisconnect, onExpiryUpdate])
 
   return { connected }
 }

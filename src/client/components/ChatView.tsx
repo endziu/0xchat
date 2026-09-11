@@ -20,15 +20,20 @@ interface ChatViewProps {
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
   const { conversations, refresh: refreshConversations, reload: reloadConversations, error: conversationsError, labels, setLabel, deleteConversation } = useConversations(token)
-  const { messages, sendMessage, addMessage, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, prependMessages } = useMessages(recipientAddress, identity, token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
   const [newChatError, setNewChatError] = useState('')
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
   const [showScanner, setShowScanner] = useState(false)
 
+  // The stream comes before the message hook, whose synchronization depends
+  // on it; these handlers call the message hook's latest functions.
   const handleSSE = useLatest((data: unknown) => {
     refreshConversations()
     if (recipientAddress) addMessage(data)
+  })
+
+  const handleExpiryUpdate = useLatest((data: unknown) => {
+    if (recipientAddress) applyExpiryUpdate(data)
   })
 
   const handleDisconnect = useLatest((address: string) => {
@@ -38,7 +43,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     }
   })
 
-  const { connected } = useSSE(token, handleSSE, handleDisconnect)
+  const { connected } = useSSE(token, handleSSE, handleDisconnect, handleExpiryUpdate)
+  const { messages, sendMessage, addMessage, applyExpiryUpdate, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, prependMessages, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
 
@@ -134,6 +140,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             loadingOlder={loadingOlder}
             fetchOlder={fetchOlder}
             prependMessages={prependMessages}
+            openingFailed={openingFailed}
+            onRetryOpening={retryOpening}
             onSendMessage={sendMessage}
             onBack={() => navigate('/chat')}
           />

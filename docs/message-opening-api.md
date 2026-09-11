@@ -93,9 +93,37 @@ Do not run `bun run test` in the working checkout: it deletes `chat.db` and
 Recovery and read-only lifecycle refresh are now documented in
 [message-recovery-api.md](message-recovery-api.md) (issue #76).
 
-No client reveal/acknowledgement UI, rollout gate, push TTL change,
-or push endpoint allowlist change is included in this slice. Deploy the rebuilt
+No rollout gate, push TTL change, or push endpoint allowlist change is
+included in this slice; browser reveal is described below. Deploy the rebuilt
 frontend alongside the server and refresh existing browser tabs so they load the
 updated shared delivery validator. Older strict delivery validators reject the
 added fields even though the signed-envelope version is unchanged. There are no
 production CLI clients, so CLI compatibility does not block this deployment.
+
+## Browser opening and reveal
+
+Issue #77. The browser verifies and decrypts every delivery, then requests
+opening only for incoming messages loaded in the selected conversation while
+the document is visible and the window focused. Eligibility is checked again
+after decryption, immediately before the request; sender copies never open.
+The initial page, live SSE messages and older pages follow the same rule,
+unloaded history stays unopened, and each request carries at most 100 IDs.
+
+Incoming plaintext of either delivery policy appears only after its ID is
+confirmed available with a final deadline that has not passed. A confirmation
+that lands after the window lost focus waits until the window is attentive
+again. Unavailable IDs are removed; failed, missing or invalid confirmations
+stay hidden behind a retry notice. Only confirmed openings and the identity's
+own messages advance a conversation's unread marker.
+
+Expiry updates merge forward: opened state replaces unopened state, final
+deadlines never change, and removed IDs cannot return. One timer tracks the
+earliest deadline; renders and regained attention re-check expiry. While the
+stream is down, unopened recipient-opening messages, including sender copies,
+are hidden but retained, even past their old unopened deadline. After the
+stream reopens, a complete `state` lookup of the loaded IDs on that connection
+restores them; an open transport alone does not. #80 replaces this refresh
+with interval recovery and adds focus-driven stream closure.
+
+`src/client/components/ChatView.test.tsx` mounts the conversation view with
+happy-dom against an in-process test server that uses the new policy.

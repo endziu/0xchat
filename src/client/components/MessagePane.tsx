@@ -19,6 +19,9 @@ interface MessagePaneProps {
   loadingOlder?: boolean
   fetchOlder?: () => Promise<(Message & { plaintext: string })[]>
   prependMessages?: (fresh: (Message & { plaintext: string })[]) => void
+  // Incoming messages whose opening was not confirmed stay hidden until retry.
+  openingFailed?: boolean
+  onRetryOpening?: () => void
   onSendMessage: (plaintext: string, ttl: number) => Promise<any>
   onBack: () => void
 }
@@ -26,7 +29,7 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, openingFailed, onRetryOpening, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   // Resolved per conversation (the pane is keyed by recipient) and again
@@ -185,6 +188,13 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
           newest message, so a notice placed above the list would be scrolled
           out of sight exactly when a refresh fails over existing messages. */}
       {error && <ErrorState title="Failed to load messages" detail={error} onRetry={onRetry} />}
+      {openingFailed && onRetryOpening && (
+        <ErrorState
+          title="Some messages could not be opened"
+          detail="They stay hidden until the server confirms opening."
+          onRetry={onRetryOpening}
+        />
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
         {loading

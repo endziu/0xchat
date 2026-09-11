@@ -148,19 +148,15 @@ export async function verifyMessageEnvelope(input: unknown): Promise<MessageEnve
   }
 }
 
-export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredMessage | null> {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
-  const value = input as Record<string, unknown>
-  if (Object.keys(value).sort().join(',') !== DELIVERED_KEYS.join(',')) return null
-  const { delivery_policy, created_at, opened_at, expires_at, ...candidate } = value
-  const envelope = await verifyMessageEnvelope(candidate)
-  if (!envelope) return null
+/** Validates server-assigned lifecycle metadata against a message's signed lifetime. */
+export function parseDeliveryLifecycle(ttl: number, input: object): MessageLifecycle | null {
+  const { delivery_policy, created_at, opened_at, expires_at } = input as Record<string, unknown>
   if (!Number.isSafeInteger(created_at) || (created_at as number) < 0
     || !Number.isSafeInteger(expires_at)) return null
   const accepted = created_at as number
   const retentionDeadline = accepted + UNOPENED_RETENTION_MS
   if (delivery_policy === 'legacy') {
-    if (opened_at !== null || expires_at !== accepted + envelope.ttl * 1000) return null
+    if (opened_at !== null || expires_at !== accepted + ttl * 1000) return null
   } else if (delivery_policy === 'recipient-opening') {
     if (!Number.isSafeInteger(retentionDeadline)) return null
     if (opened_at === null) {
@@ -168,15 +164,44 @@ export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredM
     } else {
       if (!Number.isSafeInteger(opened_at) || (opened_at as number) < accepted
         || (opened_at as number) >= retentionDeadline
-        || expires_at !== (opened_at as number) + envelope.ttl * 1000) return null
+        || expires_at !== (opened_at as number) + ttl * 1000) return null
     }
   } else return null
-  return { ...envelope, delivery_policy, created_at: accepted,
-    opened_at: opened_at as number | null, expires_at: expires_at as number }
+  return { delivery_policy, created_at: accepted, opened_at: opened_at as number | null, expires_at: expires_at as number }
+}
+
+export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredMessage | null> {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
+  const value = input as Record<string, unknown>
+  if (Object.keys(value).sort().join(',') !== DELIVERED_KEYS.join(',')) return null
+  const { delivery_policy: _policy, created_at: _created, opened_at: _opened, expires_at: _expires, ...candidate } = value
+  const envelope = await verifyMessageEnvelope(candidate)
+  if (!envelope) return null
+  const lifecycle = parseDeliveryLifecycle(envelope.ttl, value)
+  return lifecycle && { ...envelope, ...lifecycle }
+}
+
+const EXPIRY_UPDATE_KEYS = ['id', 'sender', 'recipient', 'delivery_policy', 'created_at', 'opened_at', 'expires_at'].sort()
+
+/**
+ * Structural check of an SSE expiry update. Its deadline can only be checked
+ * against the loaded message's signed lifetime, with parseDeliveryLifecycle.
+ */
+export function parseExpiryUpdate(input: unknown): ExpiryUpdate | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
+  const value = input as Record<string, unknown>
+  if (Object.keys(value).sort().join(',') !== EXPIRY_UPDATE_KEYS.join(',')) return null
+  if (typeof value['id'] !== 'string' || !MESSAGE_ID.test(value['id'])) return null
+  if (typeof value['sender'] !== 'string' || !ADDRESS.test(value['sender'])) return null
+  if (typeof value['recipient'] !== 'string' || !ADDRESS.test(value['recipient'])) return null
+  if (value['delivery_policy'] !== 'legacy' && value['delivery_policy'] !== 'recipient-opening') return null
+  if (!Number.isSafeInteger(value['created_at']) || !Number.isSafeInteger(value['expires_at'])) return null
+  if (value['opened_at'] !== null && !Number.isSafeInteger(value['opened_at'])) return null
+  return value as unknown as ExpiryUpdate
 }
 
 export function isEnvelopeParticipant(
-  envelope: MessageEnvelope,
+  envelope: Pick<MessageEnvelope, 'sender' | 'recipient'>,
   identityAddress: string,
   counterpartyAddress?: string,
 ): boolean {

@@ -28,6 +28,8 @@ export interface SseConnectionOptions {
   /** The socket is open (a 2xx text/event-stream response arrived). */
   onOpen?: () => void
   onMessage?: (data: unknown) => void
+  /** A message's authoritative lifecycle changed (its first opening). */
+  onExpiryUpdate?: (data: unknown) => void
   onUserDisconnected?: (address: string) => void
   /** A socket that was open has been lost (fires before the reconnect delay). */
   onDisconnect?: () => void
@@ -42,6 +44,7 @@ export class SseConnection {
   private readonly buildUrl: (sseToken: string) => string
   private readonly onOpen: (() => void) | undefined
   private readonly onMessage: ((data: unknown) => void) | undefined
+  private readonly onExpiryUpdate: ((data: unknown) => void) | undefined
   private readonly onUserDisconnected: ((address: string) => void) | undefined
   private readonly onDisconnect: (() => void) | undefined
   private readonly createEventSource: (url: string) => EventSource
@@ -59,6 +62,7 @@ export class SseConnection {
     this.buildUrl = options.buildUrl
     this.onOpen = options.onOpen
     this.onMessage = options.onMessage
+    this.onExpiryUpdate = options.onExpiryUpdate
     this.onUserDisconnected = options.onUserDisconnected
     this.onDisconnect = options.onDisconnect
     this.createEventSource = options.createEventSource ?? ((url) => new EventSource(url))
@@ -117,6 +121,14 @@ export class SseConnection {
         this.onMessage?.(JSON.parse(e.data))
       } catch (err) {
         console.error('SSE: failed to parse message data:', err)
+      }
+    })
+
+    es.addEventListener('expiry-update', (e: MessageEvent) => {
+      try {
+        this.onExpiryUpdate?.(JSON.parse(e.data))
+      } catch (err) {
+        console.error('SSE: failed to parse expiry update:', err)
       }
     })
 

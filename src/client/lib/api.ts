@@ -142,6 +142,22 @@ export const api = {
     return request(`/api/messages/${address}${query ? `?${query}` : ''}`, {}, token)
   },
 
+  // Opening starts recipient-opening lifetimes; state lookup never does. Both
+  // responses are server input and are validated by the caller.
+  openMessages: (address: string, ids: string[], token: string): Promise<unknown> =>
+    request(`/api/messages/${address}/open`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+      headers: { 'Content-Type': 'application/json' },
+    }, token),
+
+  getMessageStates: (address: string, ids: string[], token: string): Promise<unknown> =>
+    request(`/api/messages/${address}/state`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+      headers: { 'Content-Type': 'application/json' },
+    }, token),
+
   getConversations: (token: string): Promise<{ conversations: Conversation[] }> =>
     request('/api/conversations', {}, token),
 
