@@ -1,7 +1,7 @@
 import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
 import { createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
+import { recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, error, VALID_TTLS } from '../constants.ts';
@@ -175,9 +175,10 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
   return json(response);
 }
 
-export async function handleRecoverMessages({ req, url, path }: Context): Promise<Response> {
+export async function handleRecoverMessages({ req, url, path, ip }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (recoveryIpLimiter.hit(ip) || recoveryLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
   const counterparty = path.split('/')[3]!.toLowerCase();
   const after = url.searchParams.get('after');
   const continuation = url.searchParams.get('cursor');

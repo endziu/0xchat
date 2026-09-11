@@ -154,6 +154,12 @@ per recipient address across devices and networks, and 240 per minute per IP
 across recipients. Opening accepts 1–100 distinct IDs per batch with an 8 KiB
 body limit, including streamed bodies. Registration writes are limited to 10 per minute per IP.
 
+Message recovery and lifecycle lookup each have separate budgets of 120 requests
+per minute per identity and 240 per minute per IP. Recovery counts both initial
+and continuation pages; neither operation consumes the sending or opening budget.
+See [the recovery API contract](docs/message-recovery-api.md) for pagination and
+lookup request limits.
+
 Public-key registrations are pruned after 30 days without a new session or a sent
 or received message. Initial registration starts the retention window;
 re-registering an existing key alone does not extend it. Existing databases get

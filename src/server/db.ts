@@ -219,6 +219,7 @@ export function createMessage(
     envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
     envelope.ttl, envelope.signature, createdAt, expiresAt, policy,
   );
+  // Bun includes the acceptance trigger's updates in changes; only zero means an ignored insert.
   if (result.changes === 0) return null;
   markAddressesActive([envelope.sender, envelope.recipient], createdAt);
   return { delivery_policy: policy, created_at: createdAt, opened_at: null, expires_at: expiresAt };

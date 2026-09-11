@@ -44,7 +44,12 @@ When `exhausted` is false, `next_cursor` is an opaque continuation token and
 `GET /api/messages/:counterparty/recover?cursor=<next_cursor>` until exhausted.
 Only an exhausted response supplies the new completed checkpoint. Exactly one
 `after` or `cursor` parameter is required; other or repeated parameters are
-rejected. Page size is fixed at at most 100.
+rejected. Each page contains at most 100 messages.
+
+Recovery has an independent budget of 120 requests/minute per identity and
+240/minute per IP, shared by initial and continuation requests. Exceeding either
+limit returns 429 without consuming sending, opening, or lifecycle lookup budgets.
+Keep the current cursor and retry after the rate limit subsides.
 
 Continuation tokens preserve the original upper bound. They advance past the
 last returned acceptance sequence without requiring that message to still

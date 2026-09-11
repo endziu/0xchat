@@ -194,6 +194,28 @@ test('cursor authorization, type, and integrity reject forged or cross-conversat
   expect(empty.recovery_cursor).toBe(cursor);
 });
 
+test('recovery limits an identity independently of sending, opening, and state lookup', async () => {
+  const { recovery_cursor: cursor } = await (await request()).json();
+  for (let n = 0; n < 120; n++) await recover(`after=${cursor}`);
+  expect((await request(`/recover?after=${cursor}`)).status).toBe(429);
+  const { recovery_cursor: other } = await (await request('', alice.address, undefined, bob.address)).json();
+  expect((await request(`/recover?after=${other}`, alice.address, undefined, bob.address)).status).toBe(200);
+  const message = await send();
+  expect((await request('/state', bob.address, { ids: [message.id] })).status).toBe(200);
+  expect((await request('/open', bob.address, { ids: [message.id] })).status).toBe(200);
+});
+
+test('recovery caps requests across identities on one IP', async () => {
+  for (const address of [alice.address, bob.address]) {
+    const { recovery_cursor: cursor } = await (await request('', address)).json();
+    for (let n = 0; n < 120; n++) {
+      expect((await request(`/recover?after=${cursor}`, address)).status).toBe(200);
+    }
+  }
+  const { recovery_cursor: cursor } = await (await request('', carol.address)).json();
+  expect((await request(`/recover?after=${cursor}`, carol.address)).status).toBe(429);
+});
+
 test('state lookup bounds IDs, streamed bodies, and request rate independently of opening', async () => {
   const id = `0x${'00'.repeat(16)}`;
   expect((await request('/state', 'invalid', { ids: [id] })).status).toBe(401);
