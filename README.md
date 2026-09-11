@@ -33,14 +33,20 @@ SQLite is built into Bun; no separate database server is required.
 
 ## Terminal client
 
-With the server running, create a CLI identity and open a conversation:
+Create a CLI identity on `https://chat.endziu.xyz` and open a conversation:
 
 ```sh
-bun run cli init
-bun run cli chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
+bun run cli --server prod init
+bun run cli --server prod chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
 ```
 
-Use `--server https://your-chat.example` for a remote instance. The CLI supports
+For local development, start `bun run dev` and use `--server local` (the default,
+`http://localhost:3000`). Set `OXCHAT_SERVER=prod` to use production by default,
+or pass `--server ORIGIN` for a custom server. If `init` saved an identity but
+could not connect, retry with `bun run cli --server prod register` or
+`bun run cli --server local register` once the local server is running.
+
+The CLI supports
 encrypted text chat with browser identities, live updates, key import/export,
 and scriptable send/read commands with JSON output. See [the CLI guide](docs/cli.md)
 or `bun run cli --help`.

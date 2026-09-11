@@ -28,6 +28,8 @@ export function address(value: string): string {
 }
 
 export function serverOrigin(value: string): string {
+  if (value === 'prod') value = 'https://chat.endziu.xyz'
+  if (value === 'local') value = 'http://localhost:3000'
   const url = new URL(value)
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new Error('Server must be an origin, for example https://chat.example.com')
@@ -54,7 +56,7 @@ export class ChatClient {
 
   private async request<T>(path: string, method = 'GET', body?: unknown, authenticated = true, retry = true): Promise<T> {
     if (authenticated && !this.token) await this.login()
-    const response = await fetch(this.origin + path, {
+    const response = await this.fetch(path, {
       method,
       headers: {
         Origin: this.origin,
@@ -75,6 +77,18 @@ export class ChatClient {
       throw new HttpError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
     }
     return response.status === 204 ? undefined as T : await response.json() as T
+  }
+
+  private async fetch(path: string, options: RequestInit): Promise<Response> {
+    try { return await fetch(this.origin + path, options) }
+    catch (cause) {
+      if (options.signal?.aborted) throw cause
+      const local = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(this.origin).hostname)
+      const hint = local
+        ? 'Start the local server with bun run dev, or select production with --server prod.'
+        : 'Check your connection and the server URL, or select local development with --server local.'
+      throw new Error(`Cannot connect to ${this.origin}. ${hint}`, { cause })
+    }
   }
 
   async register(): Promise<void> {
@@ -179,7 +193,7 @@ export class ChatClient {
     const connectTimer = setTimeout(() => controller.abort(), 15_000)
     let response: Response
     try {
-      response = await fetch(`${this.origin}/api/events?token=${encodeURIComponent(sse_token)}`, {
+      response = await this.fetch(`/api/events?token=${encodeURIComponent(sse_token)}`, {
         redirect: 'error',
         signal: AbortSignal.any([signal, controller.signal]),
       })

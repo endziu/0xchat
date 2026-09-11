@@ -6,14 +6,43 @@ dependencies are required.
 
 ## Quick start
 
-Run the existing server (`bun run start:prod`) or select a deployed instance with
-`--server https://your-chat.example`. The default is `http://localhost:3000`.
+Select production with `--server prod` (`https://chat.endziu.xyz`):
 
 ```sh
-bun run cli init
+bun run cli --server prod init
 bun run cli address
-bun run cli chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
+bun run cli --server prod chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
 ```
+
+For local development, run `bun run dev` in another terminal, then use
+`--server local` (`http://localhost:3000`, also the default):
+
+```sh
+bun run cli --server local register
+bun run cli --server local chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
+```
+
+Use `init` instead of `register` if you have not created an identity yet. Each
+server has its own registrations and conversations. These examples reuse the
+same identity; use `--identity FILE` for a separate development identity.
+
+To select a server for the shell session, run `export OXCHAT_SERVER=prod` or
+`export OXCHAT_SERVER=local`. An explicit `--server` overrides this setting.
+Custom origins also work, for example `--server http://localhost:4000` or
+`--server https://your-chat.example`. The CLI connects to the Bun API port, not
+the Vite frontend port.
+
+If `init` reports a connection failure after saving the identity, keep that file
+and retry registration after selecting or starting the server:
+
+```sh
+bun run cli --server prod register
+# Or, after starting bun run dev:
+bun run cli --server local register
+```
+
+Do not rerun `init`: the identity already exists and will not be overwritten.
+If you originally supplied `--identity FILE`, supply it again when registering.
 
 The partner must register on the same server, using either the browser or CLI.
 Inside chat, Enter sends, `/ttl 60` changes the lifetime of subsequent messages,
@@ -70,7 +99,8 @@ history before resending.
 
 The default file is `$XDG_CONFIG_HOME/0xchat/identity.json`, falling back to
 `~/.config/0xchat/identity.json`. Override it with `--identity FILE` or
-`OXCHAT_IDENTITY`. `OXCHAT_SERVER` selects the default server; flags take precedence.
+`OXCHAT_IDENTITY`. `OXCHAT_SERVER` accepts `prod`, `local`, or an explicit origin
+and selects the default server; flags take precedence.
 
 `init` creates a fresh identity. `import` accepts the browser's exported raw hex
 private key, with or without a `0x` prefix:
