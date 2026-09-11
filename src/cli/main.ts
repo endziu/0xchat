@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ChatClient, address, isMessageAvailable, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
+import { UNOPENED_RETENTION_MS } from '../shared/message-envelope'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
 
@@ -74,17 +75,23 @@ function positiveInteger(value: string | undefined, name: string): number | unde
   return number
 }
 
+function canReceiveExpiryUpdate(message: PlainMessage): boolean {
+  return message.delivery_policy === 'recipient-opening' && message.opened_at === null
+    && Date.now() < message.created_at + UNOPENED_RETENTION_MS + message.ttl * 1000
+}
+
 async function follow(
   client: ChatClient,
   partner: string,
   signal: AbortSignal,
   receive: (message: PlainMessage) => void,
+  lifecycle: (message: PlainMessage) => void,
   status: (text: string) => void,
 ): Promise<void> {
-  const seen = new Map<string, number>()
+  const seen = new Map<string, PlainMessage>()
   const deliver = (message: PlainMessage) => {
-    if (seen.has(message.id) || message.expires_at <= Date.now()) return
-    seen.set(message.id, message.expires_at)
+    if (seen.has(message.id) || !isMessageAvailable(message)) return
+    seen.set(message.id, message)
     receive(message)
   }
   let backoff = 1000
@@ -92,12 +99,13 @@ async function follow(
     try {
       let synced = false
       for await (const event of client.events(signal)) {
-        for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id)
+        for (const [id, message] of seen) {
+          if (!isMessageAvailable(message) && !canReceiveExpiryUpdate(message)) seen.delete(id)
+        }
         if (!synced) {
           // Subscribe first; messages arriving during history fetch remain buffered.
           const history: PlainMessage[] = []
-          // Live opening and deadline updates are implemented in issue #79.
-          for await (const page of client.history(partner, { confirmAvailability: false })) history.unshift(...page)
+          for await (const page of client.history(partner)) history.unshift(...page)
           history.forEach(deliver)
           synced = true
           backoff = 1000
@@ -110,9 +118,16 @@ async function follow(
           const me = client.identity.address.toLowerCase()
           if (!((input.sender === me && input.recipient === partner) || (input.sender === partner && input.recipient === me))) continue
           try {
-            const message = await client.decode(input, partner)
+            const message = await client.confirmLiveMessage(partner, input)
             if (message) deliver(message)
           } catch { status('Rejected an invalid message') }
+        } else if (event.event === 'expiry-update') {
+          try {
+            const input: unknown = JSON.parse(event.data)
+            if (!input || typeof input !== 'object' || !('id' in input) || typeof input.id !== 'string') continue
+            const message = seen.get(input.id)
+            if (message && client.applyExpiryUpdate(message, input)) lifecycle(message)
+          } catch { /* Invalid lifecycle events never alter displayed messages. */ }
         }
       }
       if (!signal.aborted) throw new Error('Live connection closed')
@@ -132,10 +147,12 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   let sending = false
   process.stdout.write('\x1b[?1049h')
   const render = () => {
-    for (const [id, message] of messages) if (message.expires_at <= Date.now()) messages.delete(id)
+    for (const [id, message] of messages) {
+      if (!isMessageAvailable(message) && !canReceiveExpiryUpdate(message)) messages.delete(id)
+    }
     const width = Math.max(10, (process.stdout.columns || 80) - 1)
     const rows = Math.max(1, (process.stdout.rows || 24) - 6)
-    const lines = [...messages.values()].sort((a, b) => a.created_at - b.created_at)
+    const lines = [...messages.values()].filter(isMessageAvailable).sort((a, b) => a.created_at - b.created_at)
       .slice(-rows).flatMap(message => Bun.wrapAnsi(displayMessage(message, client.identity.address), width, { hard: true }).split('\n'))
       .slice(-rows)
     process.stdout.write('\x1b[2J\x1b[H' + [
@@ -145,7 +162,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     rl.prompt(true)
   }
   const timer = setInterval(() => {
-    if ([...messages.values()].some(message => message.expires_at <= Date.now())) render()
+    if ([...messages.values()].some(message => !isMessageAvailable(message) && !canReceiveExpiryUpdate(message))) render()
   }, 250)
   const onResize = () => render()
   process.stdout.on('resize', onResize)
@@ -174,7 +191,10 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   })
   render()
   try {
-    await follow(client, partner, controller.signal, message => { messages.set(message.id, message); render() }, text => { status = text; render() })
+    await follow(client, partner, controller.signal,
+      message => { messages.set(message.id, message); render() },
+      () => render(),
+      text => { status = text; render() })
   } finally {
     clearInterval(timer)
     process.stdout.off('resize', onResize)
@@ -272,6 +292,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     } else if (command === 'watch') {
       await follow(client, partner, controller.signal,
         message => console.log(values.json ? JSON.stringify(message) : displayMessage(message, identity.address)),
+        message => {
+          if (values.json) console.log(JSON.stringify({
+            event: 'expiry-update', id: message.id, delivery_policy: message.delivery_policy,
+            created_at: message.created_at, opened_at: message.opened_at, expires_at: message.expires_at,
+          }))
+        },
         text => console.error(terminalText(text)))
     } else if (command === 'chat') await chat(client, partner, ttl, controller)
   } catch (error) {
