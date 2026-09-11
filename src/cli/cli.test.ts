@@ -191,6 +191,76 @@ describe('unchanged server interoperability', () => {
     }
   })
 
+  test('watch opens received history before printing it', async () => {
+    const sent = await alice.send(bob.identity.address, 'watch history opens')
+    const db = new Database(join(directory, 'server', 'chat.db'))
+    try {
+      db.query(`UPDATE messages SET delivery_policy = 'recipient-opening', expires_at = created_at + 86400000 WHERE id = ?`).run(sent.id)
+    } finally { db.close() }
+    const identityPath = join(directory, 'server', 'bob.json')
+    const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, 'main.ts'), '--identity', identityPath, '--server', origin, 'watch', alice.identity.address], {
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let output = ''
+    try {
+      while (!output.includes('watch history opens')) {
+        const next = await Promise.race([
+          reader.read(),
+          Bun.sleep(3_000).then(() => { throw new Error('watch did not print history') }),
+        ])
+        if (next.done) throw new Error('watch exited before printing history')
+        output += decoder.decode(next.value, { stream: true })
+      }
+      const state = await alice.read(bob.identity.address)
+      expect(state.messages.find(message => message.id === sent.id)?.opened_at).not.toBeNull()
+    } finally {
+      proc.kill()
+      await proc.exited
+      reader.releaseLock()
+    }
+  }, 10_000)
+
+  test('confirms received live deliveries and applies their authoritative expiry updates', async () => {
+    const sent = await alice.send(bob.identity.address, 'live delivery opens')
+    const db = new Database(join(directory, 'server', 'chat.db'))
+    try {
+      db.query(`UPDATE messages SET delivery_policy = 'recipient-opening', expires_at = created_at + 86400000 WHERE id = ?`).run(sent.id)
+    } finally { db.close() }
+    const token = await browserSession(bob)
+    let raw: unknown
+    try {
+      raw = ((await fetch(origin + `/api/messages/${alice.identity.address}`, { headers: { Authorization: `Bearer ${token}` } }).then(response => response.json())) as { messages: unknown[] }).messages
+        .find(message => typeof message === 'object' && message !== null && 'id' in message && message.id === sent.id)
+    } finally {
+      await fetch(origin + '/api/session', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+    }
+    const beforeOpening = await bob.decode(raw, alice.identity.address)
+    const opened = await bob.confirmLiveMessage(alice.identity.address, raw)
+    expect(opened).toMatchObject({ id: sent.id, plaintext: 'live delivery opens', delivery_policy: 'recipient-opening' })
+    expect(opened?.opened_at).not.toBeNull()
+    expect(beforeOpening).not.toBeNull()
+    expect(bob.applyExpiryUpdate(beforeOpening!, {
+      id: opened!.id, sender: opened!.sender, recipient: opened!.recipient,
+      delivery_policy: opened!.delivery_policy, created_at: opened!.created_at,
+      opened_at: opened!.opened_at, expires_at: opened!.expires_at,
+    })).toBe(true)
+    expect(beforeOpening?.expires_at).toBe(opened?.expires_at)
+
+    const delayed = await bob.decode(raw, alice.identity.address)
+    const openedAt = delayed!.created_at + 86_400_000 - 1
+    const now = Date.now
+    Date.now = () => delayed!.expires_at + 1
+    try {
+      expect(bob.applyExpiryUpdate(delayed!, {
+        id: delayed!.id, sender: delayed!.sender, recipient: delayed!.recipient,
+        delivery_policy: 'recipient-opening', created_at: delayed!.created_at,
+        opened_at: openedAt, expires_at: openedAt + delayed!.ttl * 1000,
+      })).toBe(true)
+    } finally { Date.now = now }
+  })
+
   test('uses both pagination cursors without dropping messages', async () => {
     for (let i = 0; i < 101; i++) await alice.send(bob.identity.address, `page ${i}`)
     const latest = await bob.read(alice.identity.address)
