@@ -2,10 +2,9 @@ import type { ComponentChildren } from 'preact'
 import { useState, useRef, useEffect } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
-import { KeyManagement } from './KeyManagement'
-import { MessageLifetimeSettings } from './MessageLifetimeSettings'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
+import { SettingsModal } from './SettingsModal'
 import { useToast } from './Toast'
 import { version } from '../../../package.json'
 
@@ -153,46 +152,27 @@ export function Layout({
       </header>
       <InstallBanner />
       <main className="flex-1 overflow-hidden flex flex-col">
-        {showSettings && identity && (
-          <section className="min-h-0 overflow-y-auto p-3 border-b border-neutral-800">
-            <div className="flex justify-between items-center">
-              <h2>Identity</h2>
-              <button onClick={() => setShowSettings(false)}>Close</button>
-            </div>
-            <KeyManagement
-              identity={identity}
-              onImport={async (keypair) => {
-                await onImport?.(keypair)
-                setShowSettings(false)
-              }}
-            />
-            <MessageLifetimeSettings />
-            {pushSupported && (
-              <div className="mt-4">
-                <h3 className="text-sm text-neutral-400">Notifications</h3>
-                <p className="text-sm text-neutral-500 mt-1">
-                  Get an alert on this device when a new message arrives. No message content or contact info is ever sent through the notification — just a wakeup.
-                </p>
-                {pushPermission === 'denied' ? (
-                  <p className="text-sm text-neutral-500 mt-2">Notifications blocked — enable them in your browser/OS settings.</p>
-                ) : (
-                  <button
-                    className="mt-2 min-w-[44px] min-h-[44px]"
-                    onClick={pushSubscribed ? onPushUnsubscribe : onPushSubscribe}
-                  >
-                    {pushSubscribed ? 'Disable notifications' : 'Enable notifications'}
-                  </button>
-                )}
-                {pushError && <p className="text-sm text-red-400 mt-2">{pushError}</p>}
-              </div>
-            )}
-          </section>
-        )}
         {children}
       </main>
       <div className="fixed bottom-1 left-1 max-sm:bottom-auto max-sm:left-auto max-sm:top-1 max-sm:right-1 z-20 text-[0.625rem] leading-3 text-neutral-700 pointer-events-none" aria-label={`Version ${version}`}>
         v{version}
       </div>
+      {showSettings && identity && (
+        <SettingsModal
+          identity={identity}
+          onClose={() => setShowSettings(false)}
+          onImport={async (keypair) => {
+            await onImport?.(keypair)
+            setShowSettings(false)
+          }}
+          pushSupported={pushSupported}
+          pushSubscribed={pushSubscribed}
+          pushPermission={pushPermission}
+          pushError={pushError}
+          onPushSubscribe={onPushSubscribe}
+          onPushUnsubscribe={onPushUnsubscribe}
+        />
+      )}
       {showQR && identity && (
         <QRModal
           mode="show"

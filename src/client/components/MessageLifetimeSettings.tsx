@@ -15,23 +15,19 @@ export function MessageLifetimeSettings() {
   }
 
   return (
-    <div className="mt-4">
-      <h3 className="text-sm text-neutral-400">Message lifetime</h3>
-      <p className="text-sm text-neutral-500 mt-1">
-        The lifetime the composer uses for new messages. You can still change it for individual messages.
-      </p>
-      <label className="flex items-center gap-2 mt-2 text-sm text-neutral-400">
-        Default message lifetime
+    <section className="border-t border-neutral-800 p-3">
+      <label className="flex items-center justify-between gap-3">
+        <span className="text-sm uppercase tracking-wider text-neutral-500">Message lifetime</span>
         <select
           value={setting === null ? REMEMBER_LAST : setting}
           onChange={handleChange}
           aria-label="Default message lifetime"
-          className="text-sm"
+          className="max-w-[65%] text-sm"
         >
-          <option value={REMEMBER_LAST}>Remember last selection</option>
+          <option value={REMEMBER_LAST}>Remember last</option>
           <LifetimeOptions />
         </select>
       </label>
-    </div>
+    </section>
   )
 }
