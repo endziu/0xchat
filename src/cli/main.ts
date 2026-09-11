@@ -23,7 +23,10 @@ Usage: bun run cli [options] <command> [arguments]
   chat ADDRESS             Interactive chat; /quit, /ttl SECONDS, /help
 
 Options:
-  --server ORIGIN          Default: OXCHAT_SERVER or http://localhost:3000
+  --server ORIGIN          prod, local, or an explicit origin (HTTPS remotely)
+                           prod = https://chat.endziu.xyz
+                           local = http://localhost:3000
+                           Default: OXCHAT_SERVER or local
   --identity FILE          Default: OXCHAT_IDENTITY or ~/.config/0xchat/identity.json
   --ttl SECONDS            Message lifetime (default: 300)
   --json                   Machine-readable JSON (watch emits JSON lines)
@@ -204,7 +207,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const before = positiveInteger(values.before, 'before')
   const rowid = positiveInteger(values['before-rowid'], 'before-rowid')
   const identityPath = resolve(values.identity ?? process.env.OXCHAT_IDENTITY ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), '0xchat', 'identity.json'))
-  const server = serverOrigin(values.server ?? process.env.OXCHAT_SERVER ?? 'http://localhost:3000')
+  const server = serverOrigin(values.server ?? process.env.OXCHAT_SERVER ?? 'local')
   const output = (value: unknown, text: string) => console.log(values.json ? JSON.stringify(value) : terminalText(text))
   let identity
   if (command === 'init' || command === 'import') {
@@ -234,7 +237,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   try {
     if (['init', 'import', 'register'].includes(command!)) {
       await client.register()
-      output({ address: identity.address, server: client.origin }, `Registered ${identity.address}`)
+      output({ address: identity.address, server: client.origin }, `Registered ${identity.address} on ${client.origin}`)
     } else if (command === 'conversations') {
       const result = await client.conversations()
       if (values.json) console.log(JSON.stringify(result))
@@ -261,7 +264,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         text => console.error(terminalText(text)))
     } else if (command === 'chat') await chat(client, partner, ttl, controller)
   } catch (error) {
-    if (!controller.signal.aborted) throw error
+    if (!controller.signal.aborted) {
+      if (command === 'init' || command === 'import') {
+        console.error(`Identity remains saved at ${terminalText(identityPath)}. Run register with the same --identity and chosen --server options to retry; do not run init again.`)
+      }
+      throw error
+    }
   } finally {
     await client.close().catch(() => { console.error('Session cleanup failed; it will expire automatically.') })
     process.off('SIGINT', stop)

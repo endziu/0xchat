@@ -40,12 +40,38 @@ describe('local identity and input boundaries', () => {
   })
 
   test('validates server origins and addresses', () => {
+    expect(serverOrigin('prod')).toBe('https://chat.endziu.xyz')
+    expect(serverOrigin('local')).toBe('http://localhost:3000')
     expect(serverOrigin('https://example.com/')).toBe('https://example.com')
     expect(serverOrigin('http://localhost:3000')).toBe('http://localhost:3000')
     for (const url of ['http://example.com', 'https://u:p@example.com', 'https://example.com/api', 'https://example.com/?x=1', 'file:///tmp/a']) {
       expect(() => serverOrigin(url)).toThrow()
     }
     expect(() => address('../conversations')).toThrow()
+  })
+
+  test('failed init identifies the server and preserves the identity for register', async () => {
+    const listener = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response() })
+    const origin = listener.url.origin
+    await listener.stop(true)
+    const identityPath = join(directory, 'failed-init.json')
+    const run = async (command: string) => {
+      const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, 'main.ts'), '--identity', identityPath, '--server', origin, command], {
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+      return { stdout, stderr, code }
+    }
+    const result = await run('init')
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(`Cannot connect to ${origin}`)
+    expect(result.stderr).toContain('bun run dev')
+    expect(result.stderr).toContain('--server prod')
+    expect(result.stderr).toContain('Run register')
+    const saved = await loadIdentity(identityPath)
+    expect((await run('address')).stdout.trim()).toBe(saved.address)
+    expect((await run('register')).stderr).toContain(`Cannot connect to ${origin}`)
+    expect(await loadIdentity(identityPath)).toEqual(saved)
   })
 
   test('neutralizes terminal escapes, line injection and bidi controls', () => {
@@ -201,6 +227,23 @@ describe('unchanged server interoperability', () => {
     const stored = await readFile(identityPath, 'utf8')
     expect(stored).not.toContain('token')
   }, 10_000)
+
+  test('server environment setting and flag override register the saved identity', async () => {
+    const identityPath = join(directory, 'server-selection.json')
+    const identity = await createIdentity(identityPath)
+    const run = async (args: string[], server: string) => {
+      const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, 'main.ts'), '--identity', identityPath, ...args, 'register', '--json'], {
+        env: { ...process.env, OXCHAT_SERVER: server }, stdout: 'pipe', stderr: 'pipe',
+      })
+      const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+      expect(stderr).toBe('')
+      expect(code).toBe(0)
+      expect(JSON.parse(stdout)).toEqual({ address: identity.address, server: origin })
+    }
+    await run([], origin)
+    await run(['--server', origin], 'https://unused.invalid')
+    expect(await loadIdentity(identityPath)).toEqual(identity)
+  })
 
   test('expired messages disappear from history', async () => {
     const sent = await bob.send(alice.identity.address, 'short lived', 5)
