@@ -47,6 +47,8 @@ export interface OpeningResponse {
   results: OpeningResult[]
 }
 
+export type ConfirmationKind = 'opening' | 'availability'
+
 export interface ExpiryUpdate extends MessageLifecycle {
   id: string
   sender: string
@@ -173,6 +175,37 @@ export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredM
   } else return null
   return { ...envelope, delivery_policy, created_at: accepted,
     opened_at: opened_at as number | null, expires_at: expires_at as number }
+}
+
+export async function verifyMessageConfirmation(
+  deliveryInput: unknown,
+  confirmationInput: unknown,
+  serverTime: unknown,
+  kind: ConfirmationKind,
+): Promise<MessageLifecycle | null> {
+  if (!Number.isSafeInteger(serverTime) || (serverTime as number) < 0
+    || typeof confirmationInput !== 'object' || confirmationInput === null
+    || Array.isArray(confirmationInput)) return null
+  const confirmation = confirmationInput as Record<string, unknown>
+  const confirmationKeys = ['created_at', 'delivery_policy', 'expires_at', 'id', 'opened_at', 'status']
+  if (Object.keys(confirmation).sort().join(',') !== confirmationKeys.join(',')
+    || confirmation['status'] !== 'available') return null
+  const delivery = await verifyDeliveredMessage(deliveryInput)
+  if (!delivery || confirmation['id'] !== delivery.id) return null
+  const lifecycle = {
+    delivery_policy: confirmation['delivery_policy'],
+    created_at: confirmation['created_at'],
+    opened_at: confirmation['opened_at'],
+    expires_at: confirmation['expires_at'],
+  } as MessageLifecycle
+  const updated = await verifyDeliveredMessage({ ...(deliveryInput as object), ...lifecycle })
+  if (!updated || updated.delivery_policy !== delivery.delivery_policy
+    || updated.created_at !== delivery.created_at
+    || (delivery.opened_at !== null && updated.opened_at !== delivery.opened_at)
+    || (kind === 'opening' && updated.delivery_policy === 'recipient-opening' && updated.opened_at === null)
+    || (updated.opened_at !== null && updated.opened_at > (serverTime as number))
+    || updated.expires_at <= (serverTime as number)) return null
+  return lifecycle
 }
 
 export function isEnvelopeParticipant(

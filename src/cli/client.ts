@@ -5,21 +5,29 @@ import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, verifyDeliveredMessage } from '../shared/message-envelope'
+import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
-export interface PlainMessage {
+const availabilityDeadline = Symbol('availabilityDeadline')
+export interface PlainMessage extends MessageLifecycle {
   id: string
   sender: string
   recipient: string
-  created_at: number
-  expires_at: number
+  ttl: number
   plaintext: string
+  [availabilityDeadline]: number
 }
 export interface MessagePage {
   messages: PlainMessage[]
   next_before: number | null
   next_before_rowid: number | null
+}
+interface ReadOptions {
+  confirmAvailability?: boolean
+}
+
+export function isMessageAvailable(message: PlainMessage): boolean {
+  return performance.now() < message[availabilityDeadline]
 }
 
 export function address(value: string): string {
@@ -146,7 +154,6 @@ export class ChatClient {
   async decode(input: unknown, partner: string): Promise<PlainMessage | null> {
     const msg = await verifyDeliveredMessage(input)
     if (!msg || !isEnvelopeParticipant(msg, this.identity.address, partner)) throw new Error('Rejected unauthenticated or misaddressed message')
-    if (msg.expires_at <= Date.now()) return null
     const mine = msg.sender === this.identity.address.toLowerCase()
     const plaintext = await decrypt(
       mine ? msg.ct_sender : msg.ct_recipient,
@@ -154,29 +161,86 @@ export class ChatClient {
       mine ? msg.iv_sender : msg.iv_recipient,
       this.identity.privateKey, canonicalMessageAad(msg),
     )
-    return { id: msg.id, sender: msg.sender, recipient: msg.recipient, created_at: msg.created_at, expires_at: msg.expires_at, plaintext }
+    return { id: msg.id, sender: msg.sender, recipient: msg.recipient, ttl: msg.ttl,
+      delivery_policy: msg.delivery_policy, created_at: msg.created_at, opened_at: msg.opened_at,
+      expires_at: msg.expires_at, plaintext,
+      [availabilityDeadline]: performance.now() + Math.max(0, msg.expires_at - Date.now()) }
   }
 
   conversations(): Promise<{ conversations: { address: string; last_message_at: number }[] }> {
     return this.request('/api/conversations')
   }
 
-  async read(partner: string, before?: number, rowid?: number): Promise<MessagePage> {
+  private async confirmMessages(
+    partner: string,
+    messages: Array<{ raw: unknown; message: PlainMessage }>,
+    action: 'open' | 'state',
+  ): Promise<Map<string, MessageLifecycle>> {
+    const confirmed = new Map<string, MessageLifecycle>()
+    if (!messages.length) return confirmed
+    let response: OpeningResponse
+    const requestStarted = performance.now()
+    try {
+      response = await this.request<OpeningResponse>(`/api/messages/${partner}/${action}`, 'POST',
+        { ids: messages.map(item => item.message.id) })
+    } catch {
+      const operation = action === 'open' ? 'opening' : 'availability check'
+      throw new Error(`Message ${operation} failed; retry read to confirm availability`)
+    }
+    if (!response || !Number.isSafeInteger(response.server_time) || response.server_time < 0
+      || !Array.isArray(response.results)) throw new Error('Invalid message confirmation response')
+    for (const { raw, message } of messages) {
+      const results = response.results.filter(result => result && result.id === message.id)
+      if (results.length !== 1 || results[0]!.status !== 'available') continue
+      const result = results[0]!
+      const kind: ConfirmationKind = action === 'open' ? 'opening' : 'availability'
+      const lifecycle = await verifyMessageConfirmation(raw, result, response.server_time, kind)
+      if (!lifecycle) continue
+      confirmed.set(message.id, lifecycle)
+      message[availabilityDeadline] = requestStarted + lifecycle.expires_at - response.server_time
+    }
+    return confirmed
+  }
+
+  async read(partner: string, before?: number, rowid?: number, options: ReadOptions = {}): Promise<MessagePage> {
     partner = address(partner)
     const query = new URLSearchParams({ limit: '100' })
     if (before !== undefined) query.set('before', String(before))
     if (rowid !== undefined) query.set('before_rowid', String(rowid))
     const page = await this.request<{ messages: unknown[]; next_before: number | null; next_before_rowid: number | null }>(`/api/messages/${partner}?${query}`)
-    const messages = await Promise.all(page.messages.map(msg => this.decode(msg, partner)))
-    return { ...page, messages: messages.filter((msg): msg is PlainMessage => msg !== null).reverse() }
+    const decoded = await Promise.all(page.messages.map(async raw => {
+      try {
+        const message = await this.decode(raw, partner)
+        return message ? { raw, message } : null
+      } catch { return null }
+    }))
+    const messages = decoded.filter((item): item is { raw: unknown; message: PlainMessage } => item !== null)
+    const identity = this.identity.address.toLowerCase()
+    const isIncoming = (message: PlainMessage) => message.recipient === identity
+    const incoming = messages.filter(item => isIncoming(item.message))
+    const confirmAvailability = options.confirmAvailability ?? true
+    const confirmed = new Map<string, MessageLifecycle>()
+    if (confirmAvailability) {
+      const senderCopies = messages.filter(item => !isIncoming(item.message))
+      for (const [id, lifecycle] of await this.confirmMessages(partner, senderCopies, 'state')) confirmed.set(id, lifecycle)
+      for (const [id, lifecycle] of await this.confirmMessages(partner, incoming, 'open')) confirmed.set(id, lifecycle)
+    }
+    return { next_before: page.next_before, next_before_rowid: page.next_before_rowid, messages: messages.flatMap(({ message: msg }) => {
+      if (confirmAvailability) {
+        const lifecycle = confirmed.get(msg.id)
+        if (!lifecycle) return []
+        msg = { ...msg, ...lifecycle }
+      }
+      return isMessageAvailable(msg) ? [msg] : []
+    }).reverse() }
   }
 
-  async *history(partner: string): AsyncGenerator<PlainMessage[]> {
+  async *history(partner: string, options: ReadOptions = {}): AsyncGenerator<PlainMessage[]> {
     let before: number | undefined
     let rowid: number | undefined
     const cursors = new Set<string>()
     do {
-      const page = await this.read(partner, before, rowid)
+      const page = await this.read(partner, before, rowid, options)
       yield page.messages
       if (page.next_before === null) return
       const cursor = `${page.next_before}:${page.next_before_rowid}`

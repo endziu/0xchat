@@ -134,8 +134,10 @@ placeholder in human-readable output; JSON contains their decrypted data URL.
 Image upload, push notifications, local conversation labels, and identity deletion
 are not implemented in the CLI.
 
-The current server starts message lifetime at acceptance, as described in
-[domain behavior](domain-behavior.md). The CLI follows server timestamps.
+Legacy messages keep the lifetime that started when the server accepted them.
+For recipient-opening messages, the server starts the signed lifetime at the
+first authenticated opening. Both policies are described in
+[domain behavior](domain-behavior.md), and the CLI follows server timestamps.
 `read`/`watch` output, shell history, redirected JSON, screenshots, and terminal
 recordings can retain plaintext beyond expiry; expiry cannot erase those copies.
 Even chat mode cannot prevent terminal capture. A reconnect can recover only
@@ -146,11 +148,39 @@ messages that have not expired.
 ```sh
 bun run typecheck
 bun run lint
-bun test src/cli/cli.test.ts
+bun test src/cli/cli.test.ts src/cli/read.test.ts
 ```
 
-The CLI tests start an unchanged server with a temporary working directory and
-database. They cover browser crypto interoperability, live events, pagination,
+The CLI tests use isolated servers and temporary or in-memory databases. They
+cover browser crypto interoperability, live events, page opening, pagination,
 expiry, identity file permissions, and command-line JSON/stdin behavior.
 The repository-wide `bun run test` still deletes the database in its working
 directory; run it only in a disposable copy if you have data to preserve.
+
+### Message opening and expiry
+
+`read` verifies signed envelopes and authenticates decryption before requesting
+message opening from the server. Both legacy and recipient-opening incoming
+deliveries require opening confirmation. Sender copies use the read-only lifecycle
+lookup for availability confirmation; they and `conversations` never open messages.
+A normal read opens only its returned page; cursor reads open that page, and
+`--all` opens each history page as it loads it.
+
+Only messages with valid, available confirmations reach output. Missing,
+unavailable, duplicate or invalid confirmations suppress the affected messages.
+An opening or availability request failure fails the read without printing its
+plaintext or the server's error body. Retry
+`read` after a lost response: the server preserves the first opening deadline;
+retrying cannot restart the lifetime or revive an expired message. The CLI uses
+the server time from the confirmation plus elapsed monotonic time, then checks
+expiry again before text or JSON output, including after collecting `--all`.
+
+JSON message objects also include `ttl`, `delivery_policy`, and `opened_at`, along
+with `created_at` and the confirmed `expires_at`. Text output retains terminal
+sanitization; JSON retains the original plaintext for scripts. Already printed
+output cannot be recalled from terminal logs or downstream scripts.
+
+The client library's `decode` only verifies and decrypts a delivery; its output is
+not an opening confirmation. The `read` command and its explicit `--all` history
+perform message opening. Live watch/chat opening and lifecycle updates remain
+tracked by #79.
