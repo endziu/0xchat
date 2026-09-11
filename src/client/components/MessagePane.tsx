@@ -159,6 +159,9 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
       await onSendMessage(msg, ttl)
       setInputText('')
       setImagePreview(null)
+      // A per-message override is spent once sent: a fixed default resumes,
+      // while "Remember last selection" resolves back to the same pick.
+      setTtl(resolveComposerLifetime())
     } catch (err: any) {
       toast(err.message || 'Failed to send', 'error')
     } finally { setSending(false) }

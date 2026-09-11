@@ -59,6 +59,21 @@ describe('composer message lifetime', () => {
     expect(resolveComposerLifetime()).toBe(3600)
   })
 
+  // Models two consecutive sends: the composer records the pick, sends, then
+  // re-resolves its lifetime for the next message.
+  test('after an override under a fixed default, the next message resumes the default', () => {
+    setDefaultLifetimeSetting(60)
+    rememberLifetimeSelection(86400)
+
+    expect(resolveComposerLifetime()).toBe(60)
+  })
+
+  test('after an override with no fixed default, the next message keeps the chosen lifetime', () => {
+    rememberLifetimeSelection(86400)
+
+    expect(resolveComposerLifetime()).toBe(86400)
+  })
+
   test('notifies subscribers when the default setting changes', () => {
     const seen: number[] = []
     const unsubscribe = subscribeDefaultLifetimeSetting(() => seen.push(resolveComposerLifetime()))
