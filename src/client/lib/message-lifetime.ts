@@ -4,7 +4,7 @@
 const DEFAULT_SETTING_KEY = '0xchat_default_message_lifetime_v1'
 const LAST_SELECTION_KEY = '0xchat_last_message_lifetime_v1'
 
-export interface MessageLifetimeOption {
+interface MessageLifetimeOption {
   seconds: number
   label: string
 }
@@ -23,6 +23,8 @@ export const MESSAGE_LIFETIMES: readonly MessageLifetimeOption[] = [
 
 export const FALLBACK_MESSAGE_LIFETIME = 1800
 
+const listeners = new Set<() => void>()
+
 function readLifetime(key: string): number | null {
   const raw = localStorage.getItem(key)
   if (raw === null) return null
@@ -38,9 +40,20 @@ export function getDefaultLifetimeSetting(): number | null {
 export function setDefaultLifetimeSetting(seconds: number | null) {
   if (seconds === null) localStorage.removeItem(DEFAULT_SETTING_KEY)
   else localStorage.setItem(DEFAULT_SETTING_KEY, String(seconds))
+  for (const listener of listeners) listener()
 }
 
+// Lets an open composer follow the setting without a remount. Returns the
+// unsubscribe function.
+export function subscribeDefaultLifetimeSetting(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
+}
+
+// Only meaningful while no fixed default is configured: an override made
+// under a fixed default is a one-off, not a new preference.
 export function rememberLifetimeSelection(seconds: number) {
+  if (getDefaultLifetimeSetting() !== null) return
   localStorage.setItem(LAST_SELECTION_KEY, String(seconds))
 }
 

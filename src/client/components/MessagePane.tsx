@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { compressImageFile, ImageTooLargeError } from '../lib/image'
-import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime } from '../lib/message-lifetime'
+import { rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
+import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
 
@@ -27,9 +28,11 @@ const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-d
 export function MessagePane({ recipientAddress, messages, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
-  // Resolved once per conversation (the pane is keyed by recipient): the
-  // configured default, else the last selection, else 30 minutes.
+  // Resolved per conversation (the pane is keyed by recipient) and again
+  // whenever the default setting changes: the configured default, else the
+  // last selection, else 30 minutes.
   const [ttl, setTtl] = useState(resolveComposerLifetime)
+  useEffect(() => subscribeDefaultLifetimeSetting(() => setTtl(resolveComposerLifetime())), [])
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -248,7 +251,7 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
             aria-label="Message expiry"
             className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer"
           >
-            {MESSAGE_LIFETIMES.map((o) => <option key={o.seconds} value={o.seconds}>{o.label}</option>)}
+            <LifetimeOptions />
           </select>
           <textarea
             ref={textareaRef}

@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks'
-import { MESSAGE_LIFETIMES, getDefaultLifetimeSetting, setDefaultLifetimeSetting } from '../lib/message-lifetime'
+import { getDefaultLifetimeSetting, setDefaultLifetimeSetting } from '../lib/message-lifetime'
+import { LifetimeOptions } from './LifetimeOptions'
 
 // Sentinel option value for "no fixed default": reuse the last selection.
 const REMEMBER_LAST = 'remember'
@@ -17,7 +18,7 @@ export function MessageLifetimeSettings() {
     <div className="mt-4">
       <h3 className="text-sm text-neutral-400">Message lifetime</h3>
       <p className="text-sm text-neutral-500 mt-1">
-        The lifetime the composer starts with when you open a conversation. You can still change it for individual messages.
+        The lifetime the composer uses for new messages. You can still change it for individual messages.
       </p>
       <label className="flex items-center gap-2 mt-2 text-sm text-neutral-400">
         Default message lifetime
@@ -28,7 +29,7 @@ export function MessageLifetimeSettings() {
           className="text-sm"
         >
           <option value={REMEMBER_LAST}>Remember last selection</option>
-          {MESSAGE_LIFETIMES.map((o) => <option key={o.seconds} value={o.seconds}>{o.label}</option>)}
+          <LifetimeOptions />
         </select>
       </label>
     </div>

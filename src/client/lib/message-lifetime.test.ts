@@ -5,6 +5,7 @@ import {
   rememberLifetimeSelection,
   resolveComposerLifetime,
   setDefaultLifetimeSetting,
+  subscribeDefaultLifetimeSetting,
 } from './message-lifetime'
 
 const values = new Map<string, string>()
@@ -23,7 +24,7 @@ beforeEach(() => {
 })
 
 describe('composer message lifetime', () => {
-  test('new users start with 30 minutes', () => {
+  test('a fresh identity starts with 30 minutes', () => {
     expect(resolveComposerLifetime()).toBe(1800)
   })
 
@@ -47,6 +48,26 @@ describe('composer message lifetime', () => {
 
     expect(getDefaultLifetimeSetting()).toBe(60)
     expect(resolveComposerLifetime()).toBe(60)
+  })
+
+  test('selections made under a fixed default are not remembered', () => {
+    rememberLifetimeSelection(3600)
+    setDefaultLifetimeSetting(60)
+    rememberLifetimeSelection(86400)
+    setDefaultLifetimeSetting(null)
+
+    expect(resolveComposerLifetime()).toBe(3600)
+  })
+
+  test('notifies subscribers when the default setting changes', () => {
+    const seen: number[] = []
+    const unsubscribe = subscribeDefaultLifetimeSetting(() => seen.push(resolveComposerLifetime()))
+
+    setDefaultLifetimeSetting(300)
+    unsubscribe()
+    setDefaultLifetimeSetting(60)
+
+    expect(seen).toEqual([300])
   })
 
   test('choosing "Remember last selection" clears the fixed default', () => {
