@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { compressImageFile, ImageTooLargeError } from '../lib/image'
+import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime } from '../lib/message-lifetime'
 import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
 
@@ -26,7 +27,9 @@ const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-d
 export function MessagePane({ recipientAddress, messages, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
-  const [ttl, setTtl] = useState(1800)
+  // Resolved once per conversation (the pane is keyed by recipient): the
+  // configured default, else the last selection, else 30 minutes.
+  const [ttl, setTtl] = useState(resolveComposerLifetime)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -239,16 +242,13 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
             <Plus size={18} />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleImageFile(f) }} hidden />
-          <select value={ttl} onChange={(e: any) => setTtl(Number(e.target.value))} aria-label="Message expiry" className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer">
-            <option value={5}>5s</option>
-            <option value={10}>10s</option>
-            <option value={30}>30s</option>
-            <option value={60}>1m</option>
-            <option value={300}>5m</option>
-            <option value={1800}>30m</option>
-            <option value={3600}>1h</option>
-            <option value={21600}>6h</option>
-            <option value={86400}>24h</option>
+          <select
+            value={ttl}
+            onChange={(e: any) => { const seconds = Number(e.target.value); setTtl(seconds); rememberLifetimeSelection(seconds) }}
+            aria-label="Message expiry"
+            className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer"
+          >
+            {MESSAGE_LIFETIMES.map((o) => <option key={o.seconds} value={o.seconds}>{o.label}</option>)}
           </select>
           <textarea
             ref={textareaRef}

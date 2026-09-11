@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
 import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
+import { MessageLifetimeSettings } from './MessageLifetimeSettings'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { useToast } from './Toast'
@@ -165,6 +166,7 @@ export function Layout({
                 setShowSettings(false)
               }}
             />
+            <MessageLifetimeSettings />
             {pushSupported && (
               <div className="mt-4">
                 <h3 className="text-sm text-neutral-400">Notifications</h3>
