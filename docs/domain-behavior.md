@@ -9,7 +9,7 @@ These notes capture agreed behavior separately from the glossary. They are not a
 
 ## Intended message expiry
 
-The implementation currently starts message lifetime when the server accepts a message. The following agreed behavior is not yet implemented:
+The implementation currently starts message lifetime when the server accepts a message; the unopened/opened lifecycle below is not yet enabled for new messages. The browser already follows the opening, reveal and synchronization rules for both delivery policies (see [browser opening and reveal](message-opening-api.md#browser-opening-and-reveal)). Agreed behavior:
 
 - An unopened message expires 24 hours after acceptance.
 - Opening a message in its conversation before that deadline starts the full sender-selected message lifetime.

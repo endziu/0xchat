@@ -6,6 +6,7 @@
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
+    "allowImportingTsExtensions": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "bundler",

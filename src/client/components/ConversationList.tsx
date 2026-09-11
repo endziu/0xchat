@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { MergedConversation } from '../hooks/useConversations'
-import { getLastSeenKey } from '../lib/contacts'
+import { getLastSeenKey, subscribeLastSeen } from '../lib/contacts'
 import { Pencil, Trash2, Check } from 'lucide-preact'
 import { ErrorState } from './ErrorState'
 
@@ -41,30 +41,20 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
     return () => { if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current) }
   }, [])
 
+  // last_seen advances only when the open conversation confirms opening its
+  // messages (or loads your own), so selecting a conversation in a hidden or
+  // unfocused window leaves it unread.
+  const [seenVersion, setSeenVersion] = useState(0)
+  useEffect(() => subscribeLastSeen(() => setSeenVersion(version => version + 1)), [])
+
   useEffect(() => {
     const map: Record<string, boolean> = {}
     for (const conv of conversations) {
-      const addrLower = conv.address.toLowerCase()
-      const key = getLastSeenKey(conv.address)
-      // The active conversation is always considered read — any activity in
-      // it (new message, sending, selecting) keeps last_seen current so the
-      // dot never reappears while it's open.
-      if (activeAddress?.toLowerCase() === addrLower) {
-        localStorage.setItem(key, String(Date.now()))
-        map[addrLower] = false
-        continue
-      }
-      const lastSeen = localStorage.getItem(key)
-      map[addrLower] = !lastSeen || Number(lastSeen) < conv.last_message_at
+      const lastSeen = localStorage.getItem(getLastSeenKey(conv.address))
+      map[conv.address.toLowerCase()] = !lastSeen || Number(lastSeen) < conv.last_message_at
     }
     setUnreadMap(map)
-  }, [conversations, activeAddress])
-
-  const handleSelect = (address: string) => {
-    localStorage.setItem(getLastSeenKey(address), String(Date.now()))
-    setUnreadMap(prev => ({ ...prev, [address.toLowerCase()]: false }))
-    onSelect(address)
-  }
+  }, [conversations, seenVersion])
 
   const handleStartEdit = (e: Event, address: string) => {
     e.stopPropagation()
@@ -118,7 +108,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
               key={conv.address}
               className={`group flex items-center gap-1 pl-3 pr-1 py-1 border-b border-neutral-900 cursor-pointer select-none ${isActive ? 'bg-neutral-900' : ''} ${conv.stale ? 'opacity-50' : ''}`}
               title={conv.stale ? 'No active messages' : undefined}
-              onClick={() => !isEditing && handleSelect(conv.address)}
+              onClick={() => !isEditing && onSelect(conv.address)}
             >
               {isEditing ? (
                 <input

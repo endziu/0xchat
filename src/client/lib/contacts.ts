@@ -12,6 +12,24 @@ export interface KnownContact {
 
 export const getLastSeenKey = (address: string) => `last_seen_${address.toLowerCase()}`
 
+const lastSeenListeners = new Set<() => void>()
+
+/**
+ * Records that a conversation has been read through the message accepted at
+ * `createdAt`. Only moves forward; listeners hear about each advance.
+ */
+export function markConversationSeen(address: string, createdAt: number): void {
+  const key = getLastSeenKey(address)
+  if (Number(localStorage.getItem(key)) >= createdAt) return
+  localStorage.setItem(key, String(createdAt))
+  for (const listener of lastSeenListeners) listener()
+}
+
+export function subscribeLastSeen(listener: () => void): () => void {
+  lastSeenListeners.add(listener)
+  return () => { lastSeenListeners.delete(listener) }
+}
+
 function loadDeleted(): Record<string, number> {
   migrateKey(OLD_DELETED_KEY, DELETED_KEY)
   try {
