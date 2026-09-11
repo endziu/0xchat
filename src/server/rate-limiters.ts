@@ -37,3 +37,11 @@ export const openingLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
 /** 240/min keyed by IP across recipients, bounding identity cycling while
  * allowing two recipients behind one IP their full allowance. */
 export const openingIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });
+
+/** Loaded lifecycle refresh has its own budget, independent of opening/sending. */
+export const stateLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
+export const stateIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });
+
+/** Recovery pages have their own budget so catching up does not block other operations. */
+export const recoveryLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
+export const recoveryIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });

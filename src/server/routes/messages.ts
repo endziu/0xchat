@@ -1,6 +1,7 @@
-import { createMessage, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
+import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
+import { createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
+import { recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, error, VALID_TTLS } from '../constants.ts';
@@ -134,6 +135,7 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
     // Server-issued cursor for the next older page; null when exhausted.
     next_before: page.next_before,
     next_before_rowid: page.next_before_rowid,
+    recovery_cursor: issueRecoveryCursor(address, counterparty, page.recovery_sequence),
   });
 }
 
@@ -160,9 +162,47 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
     warn('[rate-limit] open messages', address, ip);
     return json({ error: 'Too many requests' }, 429);
   }
+  const ids = await readMessageIds(req);
+  if (ids instanceof Response) return ids;
+  const counterparty = path.split('/')[3]!.toLowerCase();
+  const { updates, server_time, results } = openMessages(address, counterparty, ids);
+  const response: OpeningResponse = { server_time, results };
+  for (const update of updates) {
+    notify(update.sender, 'expiry-update', update);
+    notify(update.recipient, 'expiry-update', update);
+  }
+  log('[open]', address, counterparty, `requested=${ids.length}`, `opened=${updates.length}`);
+  return json(response);
+}
+
+export async function handleRecoverMessages({ req, url, path, ip }: Context): Promise<Response> {
+  const address = getSessionAddress(req);
+  if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (recoveryIpLimiter.hit(ip) || recoveryLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
+  const counterparty = path.split('/')[3]!.toLowerCase();
+  const after = url.searchParams.get('after');
+  const continuation = url.searchParams.get('cursor');
+  if ((after === null) === (continuation === null)
+    || [...url.searchParams.keys()].some(key => key !== 'after' && key !== 'cursor')
+    || url.searchParams.size !== 1) return json({ error: 'Supply one recovery cursor' }, 400);
+  const cursor = readRecoveryCursor((after ?? continuation)!, address, counterparty);
+  if (!cursor || (after !== null ? cursor.upper !== null : cursor.upper === null)) {
+    return json({ error: 'Invalid recovery cursor' }, 400);
+  }
+  const page = recoverMessages(address, counterparty, cursor.lower, cursor.upper ?? undefined);
+  return json({
+    messages: page.rows.map(deliveredRow),
+    server_time: page.server_time,
+    exhausted: page.exhausted,
+    next_cursor: page.exhausted ? null : issueRecoveryCursor(address, counterparty, page.rows.at(-1)!.acceptance_seq, page.upper),
+    recovery_cursor: page.exhausted ? issueRecoveryCursor(address, counterparty, page.upper) : null,
+  });
+}
+
+async function readMessageIds(req: Request): Promise<string[] | Response> {
   // Bound streaming bodies too; Content-Length is neither required nor trusted.
   const reader = req.body?.getReader();
-  if (!reader) return json({ error: 'Invalid opening request' }, 400);
+  if (!reader) return json({ error: 'Invalid message ID request' }, 400);
   let body: unknown;
   try {
     const chunks: Uint8Array<ArrayBuffer>[] = [];
@@ -173,7 +213,7 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
       size += value.byteLength;
       if (size > 8192) {
         await reader.cancel();
-        return json({ error: 'Opening request too large' }, 413);
+        return json({ error: 'Message ID request too large' }, 413);
       }
       chunks.push(new Uint8Array(value));
     }
@@ -184,18 +224,19 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
     reader.releaseLock();
   }
   if (!body || typeof body !== 'object' || Array.isArray(body)
-    || Object.keys(body).join(',') !== 'ids') return json({ error: 'Invalid opening request' }, 400);
+    || Object.keys(body).join(',') !== 'ids') return json({ error: 'Invalid message ID request' }, 400);
   const ids = (body as { ids: unknown }).ids;
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > 100
     || ids.some(id => typeof id !== 'string' || !/^0x[0-9a-f]{32}$/.test(id))
     || new Set(ids).size !== ids.length) return json({ error: 'Invalid message IDs' }, 400);
-  const counterparty = path.split('/')[3]!.toLowerCase();
-  const { updates, server_time, results } = openMessages(address, counterparty, ids);
-  const response: OpeningResponse = { server_time, results };
-  for (const update of updates) {
-    notify(update.sender, 'expiry-update', update);
-    notify(update.recipient, 'expiry-update', update);
-  }
-  log('[open]', address, counterparty, `requested=${ids.length}`, `opened=${updates.length}`);
-  return json(response);
+  return ids;
+}
+
+export async function handleMessageStates({ req, path, ip }: Context): Promise<Response> {
+  const address = getSessionAddress(req);
+  if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (stateIpLimiter.hit(ip) || stateLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
+  const ids = await readMessageIds(req);
+  if (ids instanceof Response) return ids;
+  return json(getMessageStates(address, path.split('/')[3]!.toLowerCase(), ids));
 }

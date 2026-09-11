@@ -90,7 +90,10 @@ switch. Tests explicitly initialize an in-memory or temporary SQLite database.
 Do not run `bun run test` in the working checkout: it deletes `chat.db` and
 `dist`. Run that full command from an isolated copy with its own database.
 
-No client reveal/acknowledgement UI, rollout gate, recovery API, push TTL change,
+Recovery and read-only lifecycle refresh are now documented in
+[message-recovery-api.md](message-recovery-api.md) (issue #76).
+
+No client reveal/acknowledgement UI, rollout gate, push TTL change,
 or push endpoint allowlist change is included in this slice. Deploy the rebuilt
 frontend alongside the server and refresh existing browser tabs so they load the
 updated shared delivery validator. Older strict delivery validators reject the

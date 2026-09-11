@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type DeliveryPolicy, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 // Session tokens are stored as sha256 hex digests so a copy of the database
@@ -109,6 +109,32 @@ export function initDb(path = 'chat.db'): void {
     }
     if (!columns.has('opened_at')) db.run('ALTER TABLE messages ADD COLUMN opened_at INTEGER');
   }).immediate();
+  db.transaction(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS message_recovery (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+      high_water INTEGER NOT NULL,
+      cursor_key TEXT NOT NULL
+    )`);
+    db.query('INSERT OR IGNORE INTO message_recovery VALUES (1, 0, ?)')
+      .run(randomBytes(32).toString('hex'));
+    if (!tableColumns('messages').has('acceptance_seq')) {
+      db.run('ALTER TABLE messages ADD COLUMN acceptance_seq INTEGER');
+      // Leave rowids untouched: deployed clients may still hold older-page cursors.
+      db.run(`WITH ordered AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY created_at, rowid) AS seq FROM messages
+      ) UPDATE messages SET acceptance_seq =
+        (SELECT seq FROM ordered WHERE ordered.id = messages.id)`);
+      db.run(`UPDATE message_recovery SET high_water =
+        MAX(high_water, COALESCE((SELECT MAX(acceptance_seq) FROM messages), 0))`);
+    }
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_acceptance ON messages(acceptance_seq);
+      CREATE INDEX IF NOT EXISTS idx_msg_conv_acceptance ON messages(sender, recipient, acceptance_seq);
+      CREATE TRIGGER IF NOT EXISTS message_acceptance AFTER INSERT ON messages BEGIN
+        UPDATE message_recovery SET high_water = high_water + 1 WHERE singleton = 1;
+        UPDATE messages SET acceptance_seq = (SELECT high_water FROM message_recovery WHERE singleton = 1)
+          WHERE id = NEW.id;
+      END`);
+  }).immediate();
   // Cipher and canonicalization changes cannot be upgraded without plaintext.
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
 }
@@ -193,7 +219,8 @@ export function createMessage(
     envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
     envelope.ttl, envelope.signature, createdAt, expiresAt, policy,
   );
-  if (result.changes !== 1) return null;
+  // Bun includes the acceptance trigger's updates in changes; only zero means an ignored insert.
+  if (result.changes === 0) return null;
   markAddressesActive([envelope.sender, envelope.recipient], createdAt);
   return { delivery_policy: policy, created_at: createdAt, opened_at: null, expires_at: expiresAt };
 }
@@ -223,7 +250,7 @@ export interface ConversationPage {
 // stamps Date.now() per message, so a strict created_at cutoff would skip
 // (or endlessly re-return) messages sharing a millisecond. rowid makes the
 // cursor total and strictly advancing.
-export function getConversationMessages(
+function readConversationMessages(
   addr1: string,
   addr2: string,
   limit = 50,
@@ -261,6 +288,35 @@ export function getConversationMessages(
     next_before: oldest ? oldest.created_at : null,
     next_before_rowid: oldest ? oldest.seq : null,
   };
+}
+
+// Capture the initial recovery checkpoint in the same SQLite snapshot as history.
+export function getConversationMessages(
+  addr1: string, addr2: string, limit = 50, before?: number, beforeRowid?: number,
+): ConversationPage & { recovery_sequence: number } {
+  return db.transaction(() => ({
+    recovery_sequence: recoveryMetadata().high_water,
+    ...readConversationMessages(addr1, addr2, limit, before, beforeRowid),
+  }))();
+}
+
+export function recoveryMetadata(): { high_water: number; cursor_key: string } {
+  return db.query('SELECT high_water, cursor_key FROM message_recovery WHERE singleton = 1')
+    .get() as { high_water: number; cursor_key: string };
+}
+
+export function recoverMessages(address: string, counterparty: string, lower: number, upper?: number) {
+  return db.transaction(() => {
+    const bound = upper ?? recoveryMetadata().high_water;
+    const now = Date.now();
+    const rows = db.query(`SELECT * FROM messages
+      WHERE acceptance_seq > ? AND acceptance_seq <= ? AND expires_at > ?
+      AND ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))
+      ORDER BY acceptance_seq LIMIT 101`)
+      .all(lower, bound, now, address, counterparty, counterparty, address) as Array<MessageRow & { acceptance_seq: number }>;
+    const exhausted = rows.length <= 100;
+    return { rows: rows.slice(0, 100), upper: bound, exhausted, server_time: now };
+  })();
 }
 
 export interface ConversationSummary {
@@ -385,4 +441,21 @@ export function openMessages(recipient: string, sender: string, ids: string[]): 
     });
     return { server_time: now, results, updates };
   }).immediate();
+}
+
+/** Read a consistent lifecycle snapshot without acknowledging opening. */
+export function getMessageStates(address: string, counterparty: string, ids: string[]): {
+  server_time: number; results: OpeningResult[];
+} {
+  return db.transaction(() => {
+    const now = Date.now();
+    const results = ids.map((id): OpeningResult => {
+      const row = db.query(`SELECT delivery_policy, created_at, opened_at, expires_at FROM messages
+        WHERE id = ? AND expires_at > ?
+        AND ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))`)
+        .get(id, now, address, counterparty, counterparty, address) as MessageLifecycle | null;
+      return row ? { id, status: 'available', ...row } : { id, status: 'unavailable' };
+    });
+    return { server_time: now, results };
+  })();
 }
