@@ -154,3 +154,27 @@ database. They cover browser crypto interoperability, live events, pagination,
 expiry, identity file permissions, and command-line JSON/stdin behavior.
 The repository-wide `bun run test` still deletes the database in its working
 directory; run it only in a disposable copy if you have data to preserve.
+
+### Read consumption and expiry
+
+`read` verifies signed envelopes and authenticates decryption before confirming
+incoming messages with the server. Both legacy and recipient-opening deliveries
+require confirmation. Sender copies and `conversations` never open messages.
+A normal read opens only its returned page; cursor reads open that page, and
+`--all` opens each page as it consumes history.
+
+Only available confirmations reach output. Missing, unavailable, duplicate or
+invalid confirmations suppress the affected messages. An opening request failure
+fails the read without printing its plaintext or the server's error body. Retry
+`read` after a lost response: the server preserves the first opening deadline;
+retrying cannot restart the lifetime or revive an expired message. Expiry is
+checked again before text or JSON output, including after collecting `--all`.
+
+JSON message objects also include `ttl`, `delivery_policy`, and `opened_at`, along
+with `created_at` and the confirmed `expires_at`. Text output retains terminal
+sanitization; JSON retains the original plaintext for scripts. Already printed
+output cannot be recalled from terminal logs or downstream scripts.
+
+The client library's `decode` only verifies and decrypts a delivery; its output is
+not an opening confirmation. `read` and `history` perform consumption confirmation.
+Live watch/chat orchestration and lifecycle updates remain tracked by #79.

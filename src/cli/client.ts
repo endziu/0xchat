@@ -5,15 +5,14 @@ import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, verifyDeliveredMessage } from '../shared/message-envelope'
+import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, verifyDeliveredMessage, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
-export interface PlainMessage {
+export interface PlainMessage extends MessageLifecycle {
   id: string
   sender: string
   recipient: string
-  created_at: number
-  expires_at: number
+  ttl: number
   plaintext: string
 }
 export interface MessagePage {
@@ -154,7 +153,7 @@ export class ChatClient {
       mine ? msg.iv_sender : msg.iv_recipient,
       this.identity.privateKey, canonicalMessageAad(msg),
     )
-    return { id: msg.id, sender: msg.sender, recipient: msg.recipient, created_at: msg.created_at, expires_at: msg.expires_at, plaintext }
+    return { id: msg.id, sender: msg.sender, recipient: msg.recipient, ttl: msg.ttl, delivery_policy: msg.delivery_policy, created_at: msg.created_at, opened_at: msg.opened_at, expires_at: msg.expires_at, plaintext }
   }
 
   conversations(): Promise<{ conversations: { address: string; last_message_at: number }[] }> {
@@ -168,7 +167,44 @@ export class ChatClient {
     if (rowid !== undefined) query.set('before_rowid', String(rowid))
     const page = await this.request<{ messages: unknown[]; next_before: number | null; next_before_rowid: number | null }>(`/api/messages/${partner}?${query}`)
     const messages = await Promise.all(page.messages.map(msg => this.decode(msg, partner)))
-    return { ...page, messages: messages.filter((msg): msg is PlainMessage => msg !== null).reverse() }
+    const incoming = messages.filter((msg): msg is PlainMessage => msg !== null && msg.recipient === this.identity.address.toLowerCase())
+    const confirmed = new Map<string, MessageLifecycle>()
+    if (incoming.length) {
+      let opening: OpeningResponse
+      try {
+        opening = await this.request<OpeningResponse>(`/api/messages/${partner}/open`, 'POST', { ids: incoming.map(msg => msg.id) })
+      } catch {
+        // Never echo a server-controlled error body alongside decrypted content.
+        throw new Error('Message opening failed; retry read to confirm availability')
+      }
+      if (!opening || !Number.isSafeInteger(opening.server_time) || opening.server_time < 0 || !Array.isArray(opening.results)) {
+        throw new Error('Invalid message opening response')
+      }
+      for (const msg of incoming) {
+        const results = opening.results.filter(result => result && result.id === msg.id)
+        if (results.length !== 1 || results[0]!.status !== 'available') continue
+        const result = results[0]!
+        const { delivery_policy, created_at, opened_at, expires_at } = result
+        const lifecycle = { delivery_policy, created_at, opened_at, expires_at }
+        const original = page.messages[messages.indexOf(msg)] as object
+        const verified = await verifyDeliveredMessage({ ...original, ...lifecycle })
+        if (!verified || delivery_policy !== msg.delivery_policy || created_at !== msg.created_at
+          || (msg.opened_at !== null && opened_at !== msg.opened_at)
+          || (delivery_policy === 'recipient-opening' && opened_at === null)
+          || (opened_at !== null && opened_at > opening.server_time)
+          || expires_at <= opening.server_time) continue
+        confirmed.set(msg.id, lifecycle)
+      }
+    }
+    return { next_before: page.next_before, next_before_rowid: page.next_before_rowid, messages: messages.flatMap(msg => {
+      if (!msg) return []
+      if (msg.recipient === this.identity.address.toLowerCase()) {
+        const lifecycle = confirmed.get(msg.id)
+        if (!lifecycle) return []
+        msg = { ...msg, ...lifecycle }
+      }
+      return msg.expires_at > Date.now() ? [msg] : []
+    }).reverse() }
   }
 
   async *history(partner: string): AsyncGenerator<PlainMessage[]> {

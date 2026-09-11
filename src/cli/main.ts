@@ -256,8 +256,18 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         result = { messages: [], next_before: null, next_before_rowid: null }
         for await (const page of client.history(partner)) result.messages.unshift(...page)
       } else result = await client.read(partner, before, rowid)
-      if (values.json) console.log(JSON.stringify(result))
-      else for (const message of result.messages) console.log(displayMessage(message, identity.address))
+      if (values.json) {
+        let serialized: string
+        do {
+          result.messages = result.messages.filter(message => message.expires_at > Date.now())
+          serialized = JSON.stringify(result)
+          // Large all-history results can cross a deadline during serialization.
+        } while (result.messages.some(message => message.expires_at <= Date.now()))
+        console.log(serialized)
+      } else for (const message of result.messages) {
+        const text = displayMessage(message, identity.address)
+        if (message.expires_at > Date.now()) console.log(text)
+      }
     } else if (command === 'watch') {
       await follow(client, partner, controller.signal,
         message => console.log(values.json ? JSON.stringify(message) : displayMessage(message, identity.address)),
