@@ -46,9 +46,19 @@ function pickLifecycle({ delivery_policy, created_at, opened_at, expires_at }: M
 /** The per-ID results of an opening or state response, or null if malformed. */
 function resultsOf(response: unknown): Record<string, unknown>[] | null {
   if (typeof response !== 'object' || response === null) return null
+  const serverTime = (response as { server_time?: unknown }).server_time
+  if (!Number.isSafeInteger(serverTime) || (serverTime as number) < 0) return null
   const results = (response as { results?: unknown }).results
   if (!Array.isArray(results)) return null
   return results.filter((result): result is Record<string, unknown> => typeof result === 'object' && result !== null)
+}
+
+function matchesLifecycle(current: MessageLifecycle, next: MessageLifecycle, serverTime: number): boolean {
+  return next.delivery_policy === current.delivery_policy && next.created_at === current.created_at
+    && next.created_at <= serverTime && (next.opened_at === null || next.opened_at <= serverTime)
+    && next.expires_at > serverTime
+    && !(isFinalDeadline(current) && isFinalDeadline(next)
+      && (current.opened_at !== next.opened_at || current.expires_at !== next.expires_at))
 }
 
 /**
@@ -74,9 +84,24 @@ export class ConversationMessages {
   private readonly removed = new Set<string>()
   private readonly updatesBeforeLoad = new Map<string, MessageLifecycle>()
   private readonly self: string
+  private serverOffset: number | null = null
 
   constructor(identityAddress: string) {
     this.self = identityAddress.toLowerCase()
+  }
+
+  /** Server time plus elapsed monotonic time; request latency shortens availability conservatively. */
+  now(fallback = Date.now()): number {
+    return this.serverOffset === null ? fallback : performance.now() + this.serverOffset
+  }
+
+  hasServerTime(): boolean {
+    return this.serverOffset !== null
+  }
+
+  private observeTime(serverTime: number, requestStarted: number): void {
+    const offset = serverTime - requestStarted
+    this.serverOffset = this.serverOffset === null ? offset : Math.max(this.serverOffset, offset)
   }
 
   add(messages: DecryptedMessage[], options: { staged?: boolean } = {}): void {
@@ -155,8 +180,9 @@ export class ConversationMessages {
    * confirmed independently, unavailable ones are removed, and missing,
    * duplicate or invalid results fail for retry.
    */
-  confirmOpening(ids: string[], response: unknown): void {
+  confirmOpening(ids: string[], response: unknown, requestStarted = performance.now()): void {
     const results = resultsOf(response) ?? []
+    const serverTime = (response as { server_time?: number } | null)?.server_time ?? NaN
     for (const id of ids) {
       const entry = this.entries.get(id)
       if (entry?.opening !== 'requested') continue
@@ -165,13 +191,12 @@ export class ConversationMessages {
         this.remove(id)
         continue
       }
-      if (!result || !isFinalDeadline(result)
-        || result.delivery_policy !== entry.message.delivery_policy
-        || result.created_at !== entry.message.created_at) {
+      if (!result || !isFinalDeadline(result) || !matchesLifecycle(entry.message, result, serverTime)) {
         entry.opening = 'failed'
         continue
       }
       this.applyTo(entry, result)
+      this.observeTime(serverTime, requestStarted)
       entry.opening = 'confirmed'
     }
   }
@@ -181,16 +206,20 @@ export class ConversationMessages {
    * unavailable IDs are removed. Returns false when any loaded ID lacks
    * exactly one valid result, so the refresh cannot count as authoritative.
    */
-  applyStates(ids: string[], response: unknown): boolean {
+  applyStates(ids: string[], response: unknown, requestStarted = performance.now()): boolean {
     const results = resultsOf(response)
     if (!results) return false
+    const serverTime = (response as { server_time: number }).server_time
     let complete = true
     for (const id of ids) {
       const entry = this.entries.get(id)
       if (!entry) continue
       const result = readResult(results, id, entry.message.ttl)
       if (result === 'unavailable') this.remove(id)
-      else if (result) this.applyTo(entry, result)
+      else if (result && matchesLifecycle(entry.message, result, serverTime)) {
+        this.applyTo(entry, result)
+        this.observeTime(serverTime, requestStarted)
+      }
       else complete = false
     }
     return complete
@@ -204,6 +233,7 @@ export class ConversationMessages {
    */
   display(now: number, conditions: DisplayConditions, { staged = false } = {}): DecryptedMessage[] {
     const shown: DecryptedMessage[] = []
+    if (!this.hasServerTime()) return shown
     for (const entry of this.entries.values()) {
       if (entry.staged !== staged || now >= entry.message.expires_at) continue
       if (!conditions.synchronized && !isFinalDeadline(entry.message)) continue
@@ -244,6 +274,9 @@ export class ConversationMessages {
    * (hidden) until an authoritative refresh decides.
    */
   sweep(now: number, { synchronized }: Pick<DisplayConditions, 'synchronized'>): void {
+    // Even a final sender copy needs an authoritative clock before a local
+    // expiry check can permanently remove it.
+    if (!this.hasServerTime()) return
     for (const [id, entry] of this.entries) {
       if (now >= entry.message.expires_at && (synchronized || isFinalDeadline(entry.message))) this.remove(id)
     }

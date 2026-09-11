@@ -338,6 +338,43 @@ test('switching conversations discards in-flight opening results', async () => {
   await carol.close()
 })
 
+test('queued openings from a previous conversation cannot consume the selected conversation messages', async () => {
+  const carolKey = parsePrivateKey('56'.repeat(32))
+  const carol = new ChatClient(origin, carolKey)
+  await carol.login()
+  await alice.send(bobKey.address, 'alice first', 300)
+  await carol.send(bobKey.address, 'carol first', 300)
+  let releaseAlice!: () => void
+  let releaseCarol!: () => void
+  const aliceGate = new Promise<void>(resolve => { releaseAlice = resolve })
+  const carolGate = new Promise<void>(resolve => { releaseCarol = resolve })
+  const requests: Array<{ path: string; ids: string[] }> = []
+  intercept = async (request, next) => {
+    if (isOpening(request)) {
+      const path = new URL(request.url).pathname
+      requests.push({ path, ids: (await request.clone().json()).ids })
+      await (path.includes(aliceAddress) ? aliceGate : carolGate)
+    }
+    return next()
+  }
+  const view = mount()
+  await waitFor(() => requests.length === 1 && streamReady())
+  await alice.send(bobKey.address, 'alice queued', 300)
+  await Bun.sleep(150)
+  view.select(carolKey.address.toLowerCase())
+  await waitFor(() => requests.length === 2)
+  const pending = await carol.send(bobKey.address, 'carol queued', 300)
+  await Bun.sleep(150)
+  releaseAlice()
+  await Bun.sleep(150)
+  expect(requests.filter(request => request.path.includes(aliceAddress))).toHaveLength(1)
+  releaseCarol()
+  await waitFor(() => view.text().includes('carol first') && view.text().includes('carol queued'))
+  expect(requests.at(-1)).toEqual({ path: `/api/messages/${carolKey.address.toLowerCase()}/open`, ids: [pending.id] })
+  expect(view.text()).not.toContain('alice queued')
+  await carol.close()
+})
+
 const OPENING_FAILED = 'Some messages could not be opened'
 
 function notice(title: string): HTMLElement | undefined {
@@ -513,6 +550,8 @@ test('stale deliveries cannot undo an opening or revive an expired message', asy
   const start = Date.now()
   let elapsed = 0
   const clock = spyOn(Date, 'now').mockImplementation(() => start + elapsed)
+  const monotonicNow = performance.now.bind(performance)
+  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => monotonicNow() + elapsed)
   try {
     const otherDevice = new ChatClient(origin, bobKey)
     const view = mount()
@@ -539,6 +578,41 @@ test('stale deliveries cannot undo an opening or revive an expired message', asy
     await otherDevice.close()
   } finally {
     clock.mockRestore()
+    monotonicClock.mockRestore()
+  }
+})
+
+test('opening visibility and focus expiry use server time despite wall-clock jumps', async () => {
+  focused = false
+  await alice.send(bobKey.address, 'server-clock secret', 5)
+  let refreshed = false
+  let localOffset = 0
+  let elapsed = 0
+  const wallNow = Date.now.bind(Date)
+  const monotonicNow = performance.now.bind(performance)
+  const clock = spyOn(Date, 'now').mockImplementation(() => wallNow() + localOffset)
+  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => monotonicNow() + elapsed)
+  try {
+    intercept = async (request, next) => {
+      const response = await next()
+      if (new URL(request.url).pathname.endsWith('/state')) refreshed = true
+      if (isOpening(request)) localOffset = 3_600_000
+      return response
+    }
+    const view = mount()
+    await waitFor(() => refreshed && streamReady())
+    await Bun.sleep(50)
+    setFocused(true)
+    await waitFor(() => view.text().includes('server-clock secret'))
+    setFocused(false)
+    await Bun.sleep(50)
+    localOffset = -3_600_000
+    elapsed = 5_000
+    setFocused(true)
+    await waitFor(() => !view.text().includes('server-clock secret'))
+  } finally {
+    clock.mockRestore()
+    monotonicClock.mockRestore()
   }
 })
 
@@ -665,7 +739,8 @@ test('forged or malformed expiry updates are ignored', async () => {
   }
 })
 
-test('an invalid state refresh keeps changeable content hidden and offers a retry', async () => {
+test.each(['missing result', 'different acceptance', 'different policy'])(
+  'an invalid state refresh (%s) keeps changeable content hidden and offers a retry', async invalid => {
   const otherDevice = new ChatClient(origin, bobKey)
   await otherDevice.send(aliceAddress, 'needs a valid refresh', 300)
   await otherDevice.close()
@@ -676,7 +751,13 @@ test('an invalid state refresh keeps changeable content hidden and offers a retr
     const response = await next()
     if (!corrupt || !new URL(request.url).pathname.endsWith('/state')) return response
     corrupt = false
-    return Response.json({ server_time: 0, results: [] })
+    const body = await response.json() as OpeningResponse
+    return Response.json({ ...body, results: invalid === 'missing result' ? [] : body.results.map(result => {
+      if (result.status !== 'available') return result
+      return invalid === 'different acceptance'
+        ? { ...result, created_at: result.created_at - 1, expires_at: result.expires_at - 1 }
+        : { ...result, delivery_policy: 'legacy', expires_at: result.created_at + 300_000 }
+    }) })
   }
 
   latestStream().drop()
@@ -684,6 +765,31 @@ test('an invalid state refresh keeps changeable content hidden and offers a retr
   expect(view.text()).not.toContain('needs a valid refresh')
   clickRetry('Failed to load messages')
   await waitFor(() => view.text().includes('needs a valid refresh'))
+})
+
+test('messages arriving in the final refresh round keep synchronization pending until retry', async () => {
+  const otherDevice = new ChatClient(origin, bobKey)
+  await otherDevice.send(aliceAddress, 'original sender copy', 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('original sender copy') && streamReady())
+  let rounds = 0
+  intercept = async (request, next) => {
+    const response = await next()
+    if (new URL(request.url).pathname.endsWith('/state') && rounds < 3) {
+      rounds++
+      await otherDevice.send(aliceAddress, `copy during round ${rounds}`, 300)
+      await Bun.sleep(150)
+    }
+    return response
+  }
+  latestStream().drop()
+  await waitFor(() => notice('Failed to load messages') !== undefined)
+  expect(rounds).toBe(3)
+  expect(view.text()).not.toContain('original sender copy')
+  expect(view.text()).not.toContain('copy during round 3')
+  clickRetry('Failed to load messages')
+  await waitFor(() => view.text().includes('original sender copy') && view.text().includes('copy during round 3'))
+  await otherDevice.close()
 })
 
 test('switching identity discards in-flight opening results', async () => {

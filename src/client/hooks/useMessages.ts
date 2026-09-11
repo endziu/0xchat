@@ -31,9 +31,9 @@ function batches<T>(items: T[], size: number): T[][] {
 
 /**
  * Messages of the selected conversation. `connected` is the live stream's
- * state: loaded lifecycle state is synchronized only after the initial load
- * completes on an unbroken connection, or a complete state refresh finishes
- * after (re)connecting. An open transport alone is not enough.
+ * state: loaded lifecycle state is synchronized only after a complete state
+ * refresh establishes authoritative deadlines and server time on the current
+ * connection. An open transport alone is not enough.
  */
 export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null, connected: boolean) {
   const [, setVersion] = useState(0)
@@ -114,14 +114,16 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // during one share the next instead of each spending the opening budget.
   const openingQueueRef = useRef<{ gen: number; queue: Promise<void> }>({ gen: 0, queue: Promise.resolve() })
   const openPending = useCallback((): Promise<void> => {
+    const scopeGen = loadGenRef.current
     const run = async (): Promise<void> => {
-      if (!recipientAddress || !token || !isWindowAttentive()) return
+      if (scopeGen !== loadGenRef.current || !recipientAddress || !token || !isWindowAttentive()) return
       const gen = loadGenRef.current
       const store = storeRef.current
       const ids = store.takePending()
       if (ids.length === 0) return
       await Promise.all(batches(ids, ID_BATCH).map(async batch => {
         let response: unknown
+        const requestStarted = performance.now()
         try {
           response = await api.openMessages(recipientAddress, batch, token)
         } catch (err) {
@@ -129,13 +131,12 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
           if (gen === loadGenRef.current) store.failOpening(batch)
           return
         }
-        if (gen === loadGenRef.current) store.confirmOpening(batch, response)
+        if (gen === loadGenRef.current) store.confirmOpening(batch, response, requestStarted)
       }))
       if (gen === loadGenRef.current) rerender()
     }
     // A new conversation, identity or session never waits behind the
     // previous one's requests.
-    const scopeGen = loadGenRef.current
     const previous = openingQueueRef.current.gen === scopeGen ? openingQueueRef.current.queue : Promise.resolve()
     const queued = previous.then(run, run)
     openingQueueRef.current = { gen: scopeGen, queue: queued }
@@ -162,15 +163,18 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       for (let round = 0; round < MAX_REFRESH_ROUNDS; round++) {
         const ids = store.ids().filter(id => !refreshed.has(id))
         if (ids.length === 0 && round > 0) break
-        const responses = await Promise.all(batches(ids, ID_BATCH).map(async batch =>
-          ({ batch, response: await api.getMessageStates(recipientAddress, batch, token) })))
+        const responses = await Promise.all(batches(ids, ID_BATCH).map(async batch => {
+          const requestStarted = performance.now()
+          return { batch, requestStarted, response: await api.getMessageStates(recipientAddress, batch, token) }
+        }))
         if (!current()) return
-        const complete = responses.map(({ batch, response }) => store.applyStates(batch, response)).every(Boolean)
+        const complete = responses.map(({ batch, response, requestStarted }) => store.applyStates(batch, response, requestStarted)).every(Boolean)
         if (!complete) throw new Error('Invalid message state response')
         for (const id of ids) refreshed.add(id)
       }
+      if (store.ids().some(id => !refreshed.has(id))) throw new Error('Messages changed during refresh; retry to synchronize')
       synchronizedRef.current = true
-      store.sweep(Date.now(), { synchronized: true })
+      store.sweep(store.now(), { synchronized: true })
       setError(null)
       rerender()
     } catch (err) {
@@ -191,7 +195,6 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     }
 
     const gen = loadGenRef.current
-    const epoch = epochRef.current
     setLoading(true)
     setError(null)
     setOlderError(null)
@@ -208,10 +211,10 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       storeRef.current.add(decrypted.reverse())
       setHasMore(page.messages.length === PAGE_SIZE)
       loadedRef.current = true
-      // The page is authoritative if the stream stayed up throughout;
-      // otherwise its state needs a refresh on the current connection.
-      if (connectedRef.current && epoch === epochRef.current) synchronizedRef.current = true
-      else void synchronize()
+      // History has no server clock sample. A lifecycle lookup establishes
+      // authoritative deadlines even when this device's wall clock is skewed.
+      synchronizedRef.current = false
+      void synchronize()
       rerender()
       void openPending()
     } catch (err) {
@@ -246,7 +249,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       await openPending()
       if (gen !== loadGenRef.current) return []
       const conditions = { eligible: isWindowAttentive(), synchronized: synchronizedRef.current }
-      const fresh = store.display(Date.now(), conditions, { staged: true })
+      const fresh = store.display(store.now(), conditions, { staged: true })
       if (fresh.length === 0) {
         store.unstage()
         rerender()
@@ -295,21 +298,23 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const attentive = useWindowAttention()
   useEffect(() => {
     if (!attentive) return
-    storeRef.current.sweep(Date.now(), { synchronized: synchronizedRef.current })
+    storeRef.current.sweep(storeRef.current.now(), { synchronized: synchronizedRef.current })
     rerender()
     void openPending()
   }, [attentive, openPending, rerender])
 
   // One timer for the earliest upcoming deadline, recomputed after every
-  // render so changed deadlines replace it.
+  // render so changed deadlines replace it. Capture it during render: the
+  // deadline may pass before the effect runs, in which case schedule now.
+  const nextExpiry = storeRef.current.nextDeadline(storeRef.current.now())
   useEffect(() => {
     const store = storeRef.current
-    const next = store.nextDeadline(Date.now())
+    const next = nextExpiry
     if (next === null) return
     const timer = setTimeout(() => {
-      store.sweep(Date.now(), { synchronized: synchronizedRef.current })
+      store.sweep(store.now(), { synchronized: synchronizedRef.current })
       rerender()
-    }, Math.min(next - Date.now(), MAX_TIMER_MS))
+    }, Math.max(0, Math.min(Math.ceil(next - store.now()), MAX_TIMER_MS)))
     return () => clearTimeout(timer)
   })
 
@@ -348,9 +353,13 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     const decrypted = await decryptMessage(input)
     if (!decrypted || gen !== loadGenRef.current) return
     storeRef.current.add([decrypted])
+    if (!storeRef.current.hasServerTime()) {
+      synchronizedRef.current = false
+      void synchronize()
+    }
     rerender()
     void openPending()
-  }, [decryptMessage, openPending, rerender])
+  }, [decryptMessage, openPending, synchronize, rerender])
 
   // Failed IDs stay hidden; retrying never revives what the server reported
   // unavailable, because those were removed.
@@ -377,7 +386,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     else void loadMessages()
   }, [loadMessages, synchronize])
 
-  const messages = storeRef.current.display(Date.now(), {
+  const messages = storeRef.current.display(storeRef.current.now(), {
     eligible: recipientAddress !== null && attentive,
     synchronized: synchronizedRef.current,
   })

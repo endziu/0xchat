@@ -108,6 +108,8 @@ the document is visible and the window focused. Eligibility is checked again
 after decryption, immediately before the request; sender copies never open.
 The initial page, live SSE messages and older pages follow the same rule,
 unloaded history stays unopened, and each request carries at most 100 IDs.
+Queued requests retain their identity, conversation and session generation;
+switching scope prevents older queued work from consuming the new scope's IDs.
 
 Incoming plaintext of either delivery policy appears only after its ID is
 confirmed available with a final deadline that has not passed. A confirmation
@@ -124,6 +126,14 @@ are hidden but retained, even past their old unopened deadline. After the
 stream reopens, a complete `state` lookup of the loaded IDs on that connection
 restores them; an open transport alone does not. #80 replaces this refresh
 with interval recovery and adds focus-driven stream closure.
+
+Initial loaded state also receives a lifecycle lookup to establish server time.
+Expiry uses that time plus elapsed monotonic time, conservatively including
+request latency, so changing the device's wall clock cannot extend visibility.
+Refresh results must match the message's policy, acceptance time and any final
+deadline already known. If messages keep arriving through the bounded refresh,
+the browser stays out of sync and offers retry instead of revealing unchecked
+state.
 
 `src/client/components/ChatView.test.tsx` mounts the conversation view with
 happy-dom against an in-process test server that uses the new policy.
