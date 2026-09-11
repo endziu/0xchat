@@ -6,6 +6,7 @@ import { rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLif
 import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
+import { MessageText } from './MessageText'
 
 interface MessagePaneProps {
   recipientAddress: string
@@ -219,7 +220,7 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
                 {isImage ? (
                   <img src={msg.plaintext} alt="Attachment" className="max-w-xs max-sm:max-w-full mt-1 border-0 cursor-pointer" onClick={() => window.open(msg.plaintext, '_blank')} />
                 ) : (
-                  <p className={`m-0 break-words ${isMine ? 'text-neutral-400' : 'text-neutral-200'}`}>{msg.plaintext}</p>
+                  <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
                 )}
                 {!sameSender && (
                   <span className="text-xs text-neutral-700 ml-2">expires {fmtTime(msg.expires_at)}</span>
