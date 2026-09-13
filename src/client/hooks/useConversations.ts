@@ -37,8 +37,14 @@ export function useConversations(token: string | null) {
   // Refreshes can overlap (token change, SSE, retry click). Only the newest one
   // is allowed to write state, so a slow failure can't clobber a newer success.
   const loadGenRef = useRef(0)
+  const tokenRef = useRef(token)
+  if (tokenRef.current !== token) {
+    tokenRef.current = token
+    loadGenRef.current++
+  }
 
   const doRefresh = useCallback(async () => {
+    if (token !== tokenRef.current) return
     const gen = ++loadGenRef.current
     if (!token) {
       setConversations([])
@@ -51,6 +57,7 @@ export function useConversations(token: string | null) {
       const data = await api.getConversations(token)
       if (gen !== loadGenRef.current) return
       setConversations(withKnownContacts(data.conversations))
+      return true
     } catch (err) {
       console.error('Failed to load conversations:', err)
       if (gen === loadGenRef.current) setError(errorMessage(err, 'Failed to load conversations'))
@@ -103,6 +110,7 @@ export function useConversations(token: string | null) {
 
   useEffect(() => {
     return () => {
+      loadGenRef.current++
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
       }

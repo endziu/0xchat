@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useState, useRef } from 'preact/hooks'
+import { isWindowAttentive } from './useWindowAttention'
 import { api } from '../lib/api'
 import { SseConnection } from '../lib/sse-connection'
 
@@ -8,11 +9,14 @@ export function useSSE(
   onDisconnect?: (address: string) => void,
   onExpiryUpdate?: (data: unknown) => void,
 ) {
-  const [connected, setConnected] = useState(false)
+  const [connected, setConnected] = useState(0)
+  // Updated synchronously at the transport boundary, before Preact renders.
+  const connection = useRef(0)
+  const serial = useRef(0)
 
   useEffect(() => {
     if (!token) {
-      setConnected(false)
+      setConnected(0)
       return
     }
     const activeToken: string = token
@@ -24,19 +28,28 @@ export function useSSE(
     const conn = new SseConnection({
       getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
       buildUrl: (sseToken) => `/api/events?token=${sseToken}`,
-      onOpen: () => setConnected(true),
-      onDisconnect: () => setConnected(false),
+      onOpen: () => { connection.current = ++serial.current; setConnected(connection.current) },
+      onDisconnect: () => { connection.current = 0; setConnected(0) },
       onMessage,
       onExpiryUpdate,
       onUserDisconnected: onDisconnect,
     })
-    conn.connect()
+    const update = () => conn.setActive(isWindowAttentive())
+    document.addEventListener('visibilitychange', update)
+    window.addEventListener('focus', update)
+    window.addEventListener('blur', update)
+    update()
+    if (isWindowAttentive()) conn.connect()
 
     return () => {
+      document.removeEventListener('visibilitychange', update)
+      window.removeEventListener('focus', update)
+      window.removeEventListener('blur', update)
+      connection.current = 0
       conn.close()
-      setConnected(false)
+      setConnected(0)
     }
   }, [token, onMessage, onDisconnect, onExpiryUpdate])
 
-  return { connected }
+  return { connected: connected !== 0, connection }
 }

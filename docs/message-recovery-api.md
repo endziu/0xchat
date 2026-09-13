@@ -67,7 +67,7 @@ invalid sessions return 401; malformed, forged, wrong-kind, wrong-identity, or
 wrong-conversation cursors return 400. There is no client-supplied numeric upper
 bound. Keep the prior completed checkpoint until all pages have been merged by
 message ID. Never infer gap completion from the largest live sequence or from a
-new history response. Browser orchestration is tracked separately in #80.
+new history response. Browser orchestration is implemented by #80, as described below.
 
 ## Refresh loaded lifecycle state
 
@@ -115,4 +115,29 @@ sends beyond a captured bound, expired/deleted boundaries, deleting all rows
 then inserting after restart, repeat migration, old pagination cursors,
 authorization, state limits, and read-only deadline refresh. Run the full
 `bun run test` only in an isolated copy: it deletes the working directory's
-`chat.db` and `dist`. No browser recovery orchestration is included here.
+`chat.db` and `dist`.
+
+## Browser recovery
+
+The browser closes SSE when hidden or unfocused, cancels reconnect timers, and
+ignores late token responses. Refocusing resumes with a fresh token and retains
+any remaining failure backoff. An open transport does not imply synchronization.
+
+For the selected conversation, the browser buffers live messages and lifecycle
+updates while loading the initial page or draining every page of a bounded
+recovery interval. It refreshes conversations and reconciles all loaded IDs
+before merging buffered events. Failed recovery retains its prior checkpoint
+for retry. Fetching older history does not replace that checkpoint.
+
+Messages with changeable deadlines remain hidden until current-connection
+recovery completes. Hidden copies survive their old local retention deadline
+until authoritative state decides availability. Recovered incoming messages
+still require verified envelopes and a confirmed opening in an attentive window.
+Loaded older history and its pagination cursor survive recovery; scroll position
+uses the nearest surviving message when its previous anchor disappears.
+
+Mounted browser tests exercise multi-page gaps, interleaved delivery and expiry,
+attention/token/backoff races, interrupted recovery and opening, history and
+scroll preservation, and retry without duplicate messages. Happy DOM tests use
+modeled row geometry for scroll assertions; they do not exercise native browser
+layout or mobile operating-system suspension.
