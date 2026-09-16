@@ -92,7 +92,7 @@ self.addEventListener('notificationclick', (event) => {
       })
       usableClients.sort((a, b) => {
         const rank = (client) => client.focused ? 0 : client.visibilityState === 'visible' ? 1 : 2
-        return rank(a) - rank(b) || a.id.localeCompare(b.id)
+        return rank(a) - rank(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
       })
       return usableClients[0]?.focus() || self.clients.openWindow('/chat')
     }),
