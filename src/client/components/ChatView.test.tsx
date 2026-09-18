@@ -981,3 +981,84 @@ test('recovery restores an older page interrupted during opening without waiting
   expect(view.text().split('interrupted older [0]')).toHaveLength(2)
   expect(view.text().split('interrupted older [59]')).toHaveLength(2)
 }, 15_000)
+
+test('short initial history does not offer another older page', async () => {
+  await alice.send(bobAddress, 'only message', 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('only message'))
+  expect(view.text()).not.toContain('Load older messages')
+})
+
+test.each([false, true])('a live conversation refresh cannot abort awaited recovery (stale failure: %s)', async staleFailure => {
+  const view = mount()
+  await waitFor(() => streamReady() && view.text().includes('No messages yet'))
+  setFocused(false)
+  await waitFor(() => !latestStream().live)
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let requests = 0
+  intercept = async (request, next) => {
+    if (new URL(request.url).pathname === '/api/conversations' && ++requests === 1) {
+      const response = await next()
+      await held
+      return staleFailure ? Response.json({ error: 'stale failure' }, { status: 503 }) : response
+    }
+    return next()
+  }
+  setFocused(true)
+  await waitFor(() => streamReady() && requests === 1)
+  await alice.send(bobAddress, 'arrived during conversation refresh', 300)
+  await Bun.sleep(450)
+  release()
+  await waitFor(() => view.text().includes('arrived during conversation refresh'))
+  expect(view.text()).not.toContain('Failed to refresh conversations')
+})
+
+test('recovery preserves the pre-disconnect position even at the bottom', async () => {
+  for (let index = 0; index < 5; index++) await alice.send(bobAddress, `bottom [${index}]`, 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('bottom [4]'))
+  const pane = document.querySelector<HTMLElement>('article')!.parentElement!
+  Object.defineProperty(pane, 'scrollHeight', { configurable: true, get: () => pane.querySelectorAll('article').length * 30 })
+  Object.defineProperty(pane, 'clientHeight', { configurable: true, value: 90 })
+  const rect = spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const index = this.tagName === 'ARTICLE' ? Array.from(pane.querySelectorAll('article')).indexOf(this) : -1
+    return new DOMRect(0, index < 0 ? 0 : index * 30 - pane.scrollTop, 400, 30)
+  })
+  const scroll = spyOn(pane, 'scrollTo').mockImplementation((options?: ScrollToOptions | number) => {
+    if (options && typeof options !== 'number') pane.scrollTop = Number(options.top) - pane.clientHeight
+  })
+  try {
+    pane.scrollTop = 60
+    pane.dispatchEvent(new Event('scroll'))
+    setFocused(false)
+    await waitFor(() => !latestStream().live)
+    await alice.send(bobAddress, 'new bottom message', 300)
+    setFocused(true)
+    await waitFor(() => view.text().includes('new bottom message'))
+    expect(pane.scrollTop).toBe(60)
+  } finally { rect.mockRestore(); scroll.mockRestore() }
+})
+
+test('a token mint rejected while hidden waits for backoff after refocus', async () => {
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let mints = 0
+  intercept = async (request, next) => {
+    if (new URL(request.url).pathname === '/api/events/token' && ++mints === 1) {
+      await held
+      return Response.json({ error: 'rate limited' }, { status: 429 })
+    }
+    return next()
+  }
+  const view = mount()
+  await waitFor(() => mints === 1)
+  setVisible(false)
+  release()
+  await Bun.sleep(100)
+  setVisible(true)
+  await Bun.sleep(100)
+  expect(mints).toBe(1)
+  await waitFor(() => streamReady() && view.text().includes('No messages yet'))
+  expect(mints).toBe(2)
+})

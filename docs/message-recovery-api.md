@@ -130,7 +130,7 @@ before merging buffered events. Failed recovery retains its prior checkpoint
 for retry. Fetching older history does not replace that checkpoint.
 
 Messages with changeable deadlines remain hidden until current-connection
-recovery completes. Hidden copies survive their old local retention deadline
+recovery completes. Hidden copies survive their previously known unopened retention limit
 until authoritative state decides availability. Recovered incoming messages
 still require verified envelopes and a confirmed opening in an attentive window.
 Loaded older history and its pagination cursor survive recovery; scroll position

@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
-import { api } from '../lib/api'
+import { api, type RecoveryPage } from '../lib/api'
+import type { ConversationRefreshResult } from './useConversations'
+import type { ConnectionEpoch, LiveConnection } from './useSSE'
 import { decrypt } from '../lib/crypto'
 import { createSignedMessageEnvelope } from '../lib/message-envelope'
 import { Keypair } from '../lib/burner'
@@ -29,13 +31,44 @@ function batches<T>(items: T[], size: number): T[][] {
   return result
 }
 
+interface MessageWork {
+  generation: number
+  connectionEpoch: ConnectionEpoch | null
+}
+
+function sameWork(left: MessageWork | null, right: MessageWork): boolean {
+  return left?.generation === right.generation && left.connectionEpoch === right.connectionEpoch
+}
+
+/** Drain a bounded recovery interval, checking validity at each async boundary. */
+async function recoverInterval(
+  page: RecoveryPage,
+  fetchNext: (cursor: string) => Promise<RecoveryPage>,
+  decryptPage: (messages: unknown[]) => Promise<DecryptedMessage[]>,
+  store: ConversationMessages,
+  current: () => boolean,
+): Promise<string | null> {
+  const continuations = new Set<string>()
+  for (;;) {
+    if (!Array.isArray(page.messages) || typeof page.exhausted !== 'boolean') throw new Error('Invalid recovery response')
+    const decrypted = await decryptPage(page.messages)
+    if (!current()) return null
+    store.add(decrypted)
+    if (page.exhausted) return page.recovery_cursor
+    if (!page.next_cursor || continuations.has(page.next_cursor)) throw new Error('Invalid recovery continuation')
+    continuations.add(page.next_cursor)
+    page = await fetchNext(page.next_cursor)
+    if (!current()) return null
+  }
+}
+
 /**
  * Messages of the selected conversation. `connected` is the live stream's
  * state: loaded lifecycle state is synchronized only after a complete state
  * refresh establishes authoritative deadlines and server time on the current
  * connection. An open transport alone is not enough.
  */
-export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null, connected: boolean, connection: { current: number }, refreshConversations: () => Promise<boolean | undefined>) {
+export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null, connected: boolean, connection: LiveConnection, refreshConversations: () => Promise<ConversationRefreshResult>) {
   const [, setVersion] = useState(0)
   const rerender = useCallback(() => setVersion(version => version + 1), [])
   const [loading, setLoading] = useState(false)
@@ -53,11 +86,11 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const loadGenRef = useRef(0)
   const loadedRef = useRef(false)
   const synchronizedRef = useRef(false)
-  const synchronizedConnection = useRef(0)
+  const synchronizedConnection = useRef<ConnectionEpoch | null>(null)
   const recoveryCursor = useRef<string | null>(null)
   const finalVisibleIds = useRef(new Set<string>())
   const buffered = useRef<Array<{ type: 'message' | 'expiry'; data: unknown }>>([])
-  const isSynchronized = () => synchronizedRef.current && connection.current !== 0
+  const isSynchronized = () => synchronizedRef.current && connection.current !== null
     && synchronizedConnection.current === connection.current && isWindowAttentive()
   if (scopeRef.current !== scope) {
     scopeRef.current = scope
@@ -81,6 +114,14 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // total order — timestamps alone are ambiguous (Date.now() millisecond
   // ties) — and it stays valid after the page's messages expire.
   const cursorRef = useRef<{ before: number; rowid: number | null } | null>(null)
+
+  const captureWork = (): MessageWork => ({ generation: loadGenRef.current, connectionEpoch: connection.current })
+  const isCurrentWork = (work: MessageWork) => sameWork(work, captureWork())
+  const bufferUntilSynchronized = (type: 'message' | 'expiry', data: unknown): boolean => {
+    if (isSynchronized()) return false
+    buffered.current.push({ type, data })
+    return true
+  }
 
   const decryptMessage = useCallback(async (input: unknown): Promise<DecryptedMessage | null> => {
     if (!identity || !recipientAddress) return null
@@ -120,15 +161,11 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // made, after any decryption. Plaintext stays hidden until the server
   // confirms each ID. Requests run one after another, so messages arriving
   // during one share the next instead of each spending the opening budget.
-  const openingQueueRef = useRef<{ gen: string; queue: Promise<void> }>({ gen: '', queue: Promise.resolve() })
+  const openingQueueRef = useRef<{ work: MessageWork | null; queue: Promise<void> }>({ work: null, queue: Promise.resolve() })
   const openPending = useCallback((): Promise<void> => {
-    const scopeGen = loadGenRef.current
-    const openingEpoch = connection.current
-    const queueKey = `${scopeGen}:${openingEpoch}`
+    const work = captureWork()
     const run = async (): Promise<void> => {
-      if (scopeGen !== loadGenRef.current || openingEpoch !== connection.current || !recipientAddress || !token || !isSynchronized()) return
-      const gen = loadGenRef.current
-      const live = connection.current
+      if (!isCurrentWork(work) || !recipientAddress || !token || !isSynchronized()) return
       const store = storeRef.current
       const ids = store.takePending()
       if (ids.length === 0) return
@@ -139,36 +176,31 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
           response = await api.openMessages(recipientAddress, batch, token)
         } catch (err) {
           console.error('Failed to open messages:', err)
-          if (gen === loadGenRef.current && live === connection.current) store.failOpening(batch)
+          if (isCurrentWork(work)) store.failOpening(batch)
           return
         }
-        if (gen === loadGenRef.current) {
-          if (live === connection.current && isSynchronized()) store.confirmOpening(batch, response, requestStarted)
-
-        }
+        if (isCurrentWork(work) && isSynchronized()) store.confirmOpening(batch, response, requestStarted)
       }))
-      if (gen === loadGenRef.current) rerender()
+      if (isCurrentWork(work)) rerender()
     }
     // A new conversation, identity or session never waits behind the
     // previous one's requests.
-    const previous = openingQueueRef.current.gen === queueKey ? openingQueueRef.current.queue : Promise.resolve()
+    const previous = sameWork(openingQueueRef.current.work, work) ? openingQueueRef.current.queue : Promise.resolve()
     const queued = previous.then(run, run)
-    openingQueueRef.current = { gen: queueKey, queue: queued }
+    openingQueueRef.current = { work, queue: queued }
     return queued
   }, [recipientAddress, token, rerender])
 
   // Refreshes every loaded message's lifecycle once the stream is open. Only
   // a complete refresh on the current connection restores content whose
   // deadline could have changed meanwhile, such as an unopened sender copy.
-  const syncingRef = useRef<string | null>(null)
+  const syncingRef = useRef<MessageWork | null>(null)
   const synchronize = useCallback(async (): Promise<void> => {
     if (!recipientAddress || !identity || !token || !connection.current || isSynchronized()) return
-    const gen = loadGenRef.current
-    const epoch = connection.current
-    const attempt = `${gen}:${epoch}`
-    if (syncingRef.current === attempt) return
+    const attempt = captureWork()
+    if (sameWork(syncingRef.current, attempt)) return
     syncingRef.current = attempt
-    const current = () => gen === loadGenRef.current && epoch === connection.current && isWindowAttentive()
+    const current = () => isCurrentWork(attempt) && isWindowAttentive()
     const store = storeRef.current
     setLoading(!loadedRef.current)
     try {
@@ -177,9 +209,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       const checkpoint = recoveryCursor.current
       const initial = checkpoint === null
         ? await api.getMessages(recipientAddress, token, undefined, undefined, PAGE_SIZE) : null
-      let page = checkpoint === null ? null : await api.recoverMessages(recipientAddress, token, { after: checkpoint })
+      const page = checkpoint === null ? null : await api.recoverMessages(recipientAddress, token, { after: checkpoint })
       if (!current()) return
-      if (!await refreshConversations()) throw new Error('Failed to refresh conversations')
+      if (await refreshConversations() !== 'refreshed') throw new Error('Failed to refresh conversations')
       if (!current()) return
       let completed: string | null = null
       if (initial) {
@@ -188,7 +220,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
         store.add(decrypted.reverse())
         if (!loadedRef.current) {
           cursorRef.current = initial.next_before != null ? { before: initial.next_before, rowid: initial.next_before_rowid } : null
-          setHasMore(initial.next_before !== null)
+          setHasMore(initial.messages.length === PAGE_SIZE)
         }
         // This initial page defines the baseline, even if the subsequent
         // lifecycle refresh fails. Retry must recover from it, never replace
@@ -197,16 +229,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
         recoveryCursor.current = completed
         loadedRef.current = true
       }
-      const continuations = new Set<string>()
-      while (page) {
-        if (!Array.isArray(page.messages) || typeof page.exhausted !== 'boolean') throw new Error('Invalid recovery response')
-        const decrypted = await decryptAll(page.messages)
-        if (!current()) return
-        store.add(decrypted)
-        if (page.exhausted) { completed = page.recovery_cursor; break }
-        if (!page.next_cursor || continuations.has(page.next_cursor)) throw new Error('Invalid recovery continuation')
-        continuations.add(page.next_cursor)
-        page = await api.recoverMessages(recipientAddress, token, { cursor: page.next_cursor })
+      if (page) {
+        completed = await recoverInterval(page,
+          cursor => api.recoverMessages(recipientAddress, token, { cursor }), decryptAll, store, current)
         if (!current()) return
       }
       if (typeof completed !== 'string' || !completed) throw new Error('Missing recovery checkpoint')
@@ -251,7 +276,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       if (!current()) return
       recoveryCursor.current = completed
       store.unstage()
-      synchronizedConnection.current = epoch
+      synchronizedConnection.current = attempt.connectionEpoch
       synchronizedRef.current = true
       store.sweep(store.now(), { synchronized: true })
       setError(null)
@@ -300,16 +325,16 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     const cursor = cursorRef.current
     if (!cursor) return
 
-    const live = connection.current
-    const gen = loadGenRef.current
+    const work = captureWork()
+    const gen = work.generation
     const store = storeRef.current
     setLoadingOlder(true)
     setOlderError(null)
     try {
       const page = await api.getMessages(recipientAddress, token, cursor.before, cursor.rowid ?? undefined, PAGE_SIZE)
-      if (gen !== loadGenRef.current || live !== connection.current) return
+      if (!isCurrentWork(work)) return
       const decrypted = await decryptAll(page.messages)
-      if (gen !== loadGenRef.current || live !== connection.current) return
+      if (!isCurrentWork(work)) return
       cursorRef.current = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
       setHasMore(page.messages.length === PAGE_SIZE)
       store.add(decrypted.reverse())
@@ -405,12 +430,10 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   }
 
   const addMessage = useCallback(async (input: unknown) => {
-    if (!isSynchronized()) { buffered.current.push({ type: 'message', data: input }); return }
-    const gen = loadGenRef.current
-    const live = connection.current
+    if (bufferUntilSynchronized('message', input)) return
+    const work = captureWork()
     const decrypted = await decryptMessage(input)
-    if (!decrypted || gen !== loadGenRef.current) return
-    if (live !== connection.current || !isSynchronized()) return
+    if (!decrypted || !isCurrentWork(work) || !isSynchronized()) return
     storeRef.current.add([decrypted])
     if (!storeRef.current.hasServerTime()) {
       synchronizedRef.current = false
@@ -431,7 +454,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // The stream carries expiry updates for every conversation; only this
   // one's apply, and the store only lets lifecycles move forward.
   const applyExpiryUpdate = useCallback((input: unknown) => {
-    if (!isSynchronized()) { buffered.current.push({ type: 'expiry', data: input }); return }
+    if (bufferUntilSynchronized('expiry', input)) return
     const update = parseExpiryUpdate(input)
     if (!update || !identity || !recipientAddress
       || !isEnvelopeParticipant(update, identity.address, recipientAddress)) return

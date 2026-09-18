@@ -309,3 +309,56 @@ describe('SseConnection', () => {
     expect(lastSocket().readyState).toBe(0) // still open
   })
 })
+
+test('a mint failing while suspended preserves backoff and does not report a lost socket', async () => {
+  let rejectMint!: (error: Error) => void
+  let calls = 0
+  const sut = makeSut(() => {
+    calls++
+    return calls === 1 ? new Promise<string>((_resolve, reject) => { rejectMint = reject }) : Promise.resolve('fresh')
+  })
+  sut.connection.connect()
+  sut.connection.setActive(false)
+  expect(sut.disconnected).toBe(0)
+  rejectMint(new Error('rate limited'))
+  await tick()
+  sut.connection.setActive(true)
+  await tick()
+  expect(calls).toBe(1)
+  sut.clock.advance(1_000)
+  await tick()
+  expect(calls).toBe(2)
+})
+
+test('refocus during a pending mint waits and replaces the token from the suspended attempt', async () => {
+  let resolveMint!: (token: string) => void
+  let calls = 0
+  const sut = makeSut(() => {
+    calls++
+    return calls === 1 ? new Promise<string>(resolve => { resolveMint = resolve }) : Promise.resolve('fresh')
+  })
+  sut.connection.connect()
+  sut.connection.setActive(false)
+  sut.connection.setActive(true)
+  expect(calls).toBe(1)
+  resolveMint('stale')
+  await tick()
+  expect(calls).toBe(2)
+  expect(FakeEventSource.instances).toHaveLength(1)
+  expect(lastSocket().url).toBe('/api/events?token=fresh')
+  expect(sut.disconnected).toBe(0)
+})
+
+test('suspension only reports disconnect after the socket opened', async () => {
+  const sut = makeSut()
+  sut.connection.connect()
+  await tick()
+  sut.connection.setActive(false)
+  expect(sut.disconnected).toBe(0)
+  sut.connection.setActive(true)
+  await tick()
+  lastSocket().emit('open')
+  sut.connection.setActive(false)
+  sut.connection.setActive(false)
+  expect(sut.disconnected).toBe(1)
+})

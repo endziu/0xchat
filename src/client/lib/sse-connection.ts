@@ -53,6 +53,7 @@ export class SseConnection {
 
   private es: EventSource | null = null
   private timer: unknown = null // pending reconnect delay, or null
+  private opened = false
   private minting = false // token request in flight
   private backoffMs = INITIAL_BACKOFF_MS
   private retryAt = 0
@@ -80,13 +81,12 @@ export class SseConnection {
     this.minting = true
     this.getSseToken()
       .then((sseToken) => {
-        if (generation !== this.generation) return
         this.minting = false
-        if (this.closed) return
+        if (this.closed || this.suspended) return
+        if (generation !== this.generation) { this.connect(); return }
         this.openEventSource(this.buildUrl(sseToken))
       })
       .catch((err) => {
-        if (generation !== this.generation) return
         this.minting = false
         // Mint failed (e.g. rate-limited): socket was never open, so only
         // the backoff changes — retry with a fresh mint.
@@ -109,12 +109,12 @@ export class SseConnection {
       return
     }
     this.generation++
-    this.minting = false
     if (this.timer !== null) this.clearTimer(this.timer)
     this.timer = null
     this.es?.close()
     this.es = null
-    this.onDisconnect?.()
+    if (this.opened) this.onDisconnect?.()
+    this.opened = false
   }
 
   /** Tear down. Idempotent; no reconnect is scheduled after this. */
@@ -132,11 +132,11 @@ export class SseConnection {
   private openEventSource(url: string): void {
     const es = this.createEventSource(url)
     this.es = es
-    let opened = false
+    this.opened = false
 
     es.addEventListener('open', () => {
       if (this.es !== es || this.closed || this.suspended) return
-      opened = true
+      this.opened = true
       this.backoffMs = INITIAL_BACKOFF_MS
       this.retryAt = 0
       if (this.timer !== null) {
@@ -178,7 +178,8 @@ export class SseConnection {
       if (this.es !== es) return
       es.close()
       this.es = null
-      if (opened) this.onDisconnect?.()
+      if (this.opened) this.onDisconnect?.()
+      this.opened = false
       this.scheduleReconnect()
     }
   }
@@ -186,9 +187,9 @@ export class SseConnection {
   private scheduleReconnect(): void {
     // One pending delay at a time: repeated error events (the browser can
     // fire 'error' more than once while CONNECTING) must not stack retries.
-    if (this.closed || this.suspended || this.timer !== null) return
+    if (this.closed || this.timer !== null) return
     this.retryAt = performance.now() + this.backoffMs
-    this.timer = this.setTimer(() => {
+    if (!this.suspended) this.timer = this.setTimer(() => {
       this.timer = null
       this.connect()
     }, this.backoffMs)

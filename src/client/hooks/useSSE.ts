@@ -3,20 +3,23 @@ import { isWindowAttentive } from './useWindowAttention'
 import { api } from '../lib/api'
 import { SseConnection } from '../lib/sse-connection'
 
+// Epochs are opaque identities: only equality has meaning to consumers.
+export type ConnectionEpoch = symbol
+export interface LiveConnection { current: ConnectionEpoch | null }
+
 export function useSSE(
   token: string | null,
   onMessage: (data: unknown) => void,
   onDisconnect?: (address: string) => void,
   onExpiryUpdate?: (data: unknown) => void,
 ) {
-  const [connected, setConnected] = useState(0)
+  const [connected, setConnected] = useState<ConnectionEpoch | null>(null)
   // Updated synchronously at the transport boundary, before Preact renders.
-  const connection = useRef(0)
-  const serial = useRef(0)
+  const connection = useRef<ConnectionEpoch | null>(null)
 
   useEffect(() => {
     if (!token) {
-      setConnected(0)
+      setConnected(null)
       return
     }
     const activeToken: string = token
@@ -28,8 +31,8 @@ export function useSSE(
     const conn = new SseConnection({
       getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
       buildUrl: (sseToken) => `/api/events?token=${sseToken}`,
-      onOpen: () => { connection.current = ++serial.current; setConnected(connection.current) },
-      onDisconnect: () => { connection.current = 0; setConnected(0) },
+      onOpen: () => { connection.current = Symbol('SSE connection'); setConnected(connection.current) },
+      onDisconnect: () => { connection.current = null; setConnected(null) },
       onMessage,
       onExpiryUpdate,
       onUserDisconnected: onDisconnect,
@@ -45,11 +48,11 @@ export function useSSE(
       document.removeEventListener('visibilitychange', update)
       window.removeEventListener('focus', update)
       window.removeEventListener('blur', update)
-      connection.current = 0
+      connection.current = null
       conn.close()
-      setConnected(0)
+      setConnected(null)
     }
   }, [token, onMessage, onDisconnect, onExpiryUpdate])
 
-  return { connected: connected !== 0, connection }
+  return { connected: connected !== null, connection }
 }

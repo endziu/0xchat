@@ -24,7 +24,7 @@ export interface RecoveryPage {
 export interface MessagePage {
   recovery_cursor: string
   messages: unknown[]
-  // Server-issued cursor for the next older page; null when exhausted.
+  // Server-issued cursor at the oldest returned message; null for an empty page.
   next_before: number | null
   next_before_rowid: number | null
 }

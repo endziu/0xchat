@@ -52,6 +52,7 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
 
   const positionRef = useRef<{ id: string; top: number }[]>([])
   const followingRef = useRef(true)
+  const restoreAfterRecovery = useRef(false)
   const capturePosition = () => {
     const el = scrollRef.current
     if (!el) return
@@ -72,18 +73,23 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
     const el = scrollRef.current
     if (!el) return
     // Keep the pre-disconnect anchor while changeable content is hidden.
-    if (recovering) return
-    if (!followingRef.current && positionRef.current.length) {
+    if (recovering) { restoreAfterRecovery.current = true; return }
+    if ((restoreAfterRecovery.current || !followingRef.current) && positionRef.current.length) {
       for (const prior of positionRef.current) {
         const anchor = el.querySelector(`[data-message-id="${prior.id}"]`)
         if (!anchor) continue
         el.scrollTop += anchor.getBoundingClientRect().top - prior.top
         break
       }
+      // Recovered incoming messages may appear later, after opening confirms.
+      // Keep this anchor until the next user scroll, including those renders.
+      if (restoreAfterRecovery.current) followingRef.current = false
+      restoreAfterRecovery.current = false
       lastNewestIdRef.current = messages.at(-1)?.id ?? null
       capturePosition()
       return
     }
+    restoreAfterRecovery.current = false
     if (messages.length === 0) {
       lastNewestIdRef.current = null
       return

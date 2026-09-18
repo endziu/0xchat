@@ -46,8 +46,6 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const { connected, connection } = useSSE(token, handleSSE, handleDisconnect, handleExpiryUpdate)
   const { messages, recovering, sendMessage, addMessage, applyExpiryUpdate, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
 
-  useEffect(() => { if (connected && !recipientAddress) void reloadConversations() }, [connected, recipientAddress, reloadConversations])
-
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
 
   const handleDeleteConversation = (address: string) => {
