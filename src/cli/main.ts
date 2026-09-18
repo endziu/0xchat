@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, address, isMessageAvailable, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
@@ -79,25 +79,42 @@ async function follow(
   partner: string,
   signal: AbortSignal,
   receive: (message: PlainMessage) => void,
+  lifecycle: (message: PlainMessage) => void,
   status: (text: string) => void,
+  unavailable: (id: string) => void = () => {},
 ): Promise<void> {
-  const seen = new Map<string, number>()
+  const seen = new Map<string, PlainMessage>()
   const deliver = (message: PlainMessage) => {
-    if (seen.has(message.id) || message.expires_at <= Date.now()) return
-    seen.set(message.id, message.expires_at)
-    receive(message)
+    if (signal.aborted || !isMessageAvailable(message)) return
+    const previous = seen.get(message.id)
+    if (previous) {
+      const changed = previous.opened_at !== message.opened_at || previous.expires_at !== message.expires_at
+      // Preserve the object shared with chat while refreshing its monotonic deadline.
+      Object.assign(previous, message)
+      if (changed) lifecycle(previous)
+    } else {
+      seen.set(message.id, message)
+      receive(message)
+    }
   }
   let backoff = 1000
   while (!signal.aborted) {
     try {
       let synced = false
       for await (const event of client.events(signal)) {
-        for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id)
+        if (signal.aborted) return
+        for (const [id, message] of seen) {
+          if (!shouldRetainMessage(message)) seen.delete(id)
+        }
         if (!synced) {
           // Subscribe first; messages arriving during history fetch remain buffered.
           const history: PlainMessage[] = []
-          // Live opening and deadline updates are implemented in issue #79.
-          for await (const page of client.history(partner, { confirmAvailability: false })) history.unshift(...page)
+          for await (const page of client.history(partner)) history.unshift(...page)
+          if (signal.aborted) return
+          const availableIds = new Set(history.filter(isMessageAvailable).map(message => message.id))
+          for (const id of seen.keys()) {
+            if (!availableIds.has(id)) { seen.delete(id); unavailable(id) }
+          }
           history.forEach(deliver)
           synced = true
           backoff = 1000
@@ -110,9 +127,16 @@ async function follow(
           const me = client.identity.address.toLowerCase()
           if (!((input.sender === me && input.recipient === partner) || (input.sender === partner && input.recipient === me))) continue
           try {
-            const message = await client.decode(input, partner)
+            const message = await client.confirmLiveMessage(partner, input)
             if (message) deliver(message)
           } catch { status('Rejected an invalid message') }
+        } else if (event.event === 'expiry-update') {
+          try {
+            const input: unknown = JSON.parse(event.data)
+            if (!input || typeof input !== 'object' || !('id' in input) || typeof input.id !== 'string') continue
+            const message = seen.get(input.id)
+            if (!signal.aborted && message && applyExpiryUpdate(message, input)) lifecycle(message)
+          } catch { /* Invalid lifecycle events never alter displayed messages. */ }
         }
       }
       if (!signal.aborted) throw new Error('Live connection closed')
@@ -130,12 +154,16 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 0 })
   let status = 'Connecting…'
   let sending = false
+  let visible = new Set<PlainMessage>()
   process.stdout.write('\x1b[?1049h')
   const render = () => {
-    for (const [id, message] of messages) if (message.expires_at <= Date.now()) messages.delete(id)
+    for (const [id, message] of messages) {
+      if (!shouldRetainMessage(message)) messages.delete(id)
+    }
     const width = Math.max(10, (process.stdout.columns || 80) - 1)
     const rows = Math.max(1, (process.stdout.rows || 24) - 6)
-    const lines = [...messages.values()].sort((a, b) => a.created_at - b.created_at)
+    visible = new Set([...messages.values()].filter(isMessageAvailable))
+    const lines = [...visible].sort((a, b) => a.created_at - b.created_at)
       .slice(-rows).flatMap(message => Bun.wrapAnsi(displayMessage(message, client.identity.address), width, { hard: true }).split('\n'))
       .slice(-rows)
     process.stdout.write('\x1b[2J\x1b[H' + [
@@ -145,7 +173,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     rl.prompt(true)
   }
   const timer = setInterval(() => {
-    if ([...messages.values()].some(message => message.expires_at <= Date.now())) render()
+    if ([...visible].some(message => !isMessageAvailable(message))) render()
   }, 250)
   const onResize = () => render()
   process.stdout.on('resize', onResize)
@@ -174,7 +202,11 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   })
   render()
   try {
-    await follow(client, partner, controller.signal, message => { messages.set(message.id, message); render() }, text => { status = text; render() })
+    await follow(client, partner, controller.signal,
+      message => { messages.set(message.id, message); render() },
+      message => { messages.set(message.id, message); render() },
+      text => { status = text; render() },
+      id => { messages.delete(id); render() })
   } finally {
     clearInterval(timer)
     process.stdout.off('resize', onResize)
@@ -272,6 +304,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     } else if (command === 'watch') {
       await follow(client, partner, controller.signal,
         message => console.log(values.json ? JSON.stringify(message) : displayMessage(message, identity.address)),
+        message => {
+          if (values.json) console.log(JSON.stringify({
+            event: 'expiry-update', id: message.id, delivery_policy: message.delivery_policy,
+            created_at: message.created_at, opened_at: message.opened_at, expires_at: message.expires_at,
+          }))
+        },
         text => console.error(terminalText(text)))
     } else if (command === 'chat') await chat(client, partner, ttl, controller)
   } catch (error) {

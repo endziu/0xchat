@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ChatClient } from './client'
+import { ChatClient, applyExpiryUpdate, isMessageAvailable } from './client'
 import { createIdentity, parsePrivateKey } from './identity'
 import { main } from './main'
 import { initDb, getDb } from '../server/db'
@@ -333,4 +333,27 @@ test('checks sender copies before opening incoming messages on mixed pages', asy
     ? Response.json({ error: 'state unavailable' }, { status: 503 }) : response
   await expect(bob.read(alice.identity.address)).rejects.toThrow('Message availability check failed')
   expect(openingBodies).toEqual([])
+})
+
+test('live expiry updates preserve server time across wall-clock jumps and repeated events', async () => {
+  const sent = await alice.send(bob.identity.address, 'clock independent', 5)
+  let elapsed = 0
+  const monotonic = spyOn(performance, 'now').mockImplementation(() => elapsed)
+  try {
+    const message = (await alice.read(bob.identity.address)).messages[0]!
+    clock.mockReturnValue(1_001_000)
+    const opened = (await bob.read(alice.identity.address)).messages[0]!
+    const update = { id: sent.id, sender: message.sender, recipient: message.recipient,
+      delivery_policy: opened.delivery_policy, created_at: opened.created_at,
+      opened_at: opened.opened_at, expires_at: opened.expires_at }
+    clock.mockReturnValue(99_000_000)
+    elapsed = 1000
+    expect(applyExpiryUpdate(message, { ...update, created_at: update.created_at + 1 })).toBe(false)
+    expect(applyExpiryUpdate(message, update)).toBe(true)
+    expect(isMessageAvailable(message)).toBe(true)
+    elapsed = 6000
+    clock.mockReturnValue(0)
+    expect(applyExpiryUpdate(message, update)).toBe(false)
+    expect(isMessageAvailable(message)).toBe(false)
+  } finally { monotonic.mockRestore() }
 })

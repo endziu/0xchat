@@ -5,7 +5,7 @@ import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
+import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, parseExpiryUpdate, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
 const availabilityDeadline = Symbol('availabilityDeadline')
@@ -28,6 +28,32 @@ interface ReadOptions {
 
 export function isMessageAvailable(message: PlainMessage): boolean {
   return performance.now() < message[availabilityDeadline]
+}
+
+function canReceiveExpiryUpdate(message: PlainMessage): boolean {
+  return message.delivery_policy === 'recipient-opening' && message.opened_at === null
+    && performance.now() < message[availabilityDeadline] + message.ttl * 1000
+}
+
+export function shouldRetainMessage(message: PlainMessage): boolean {
+  return isMessageAvailable(message) || canReceiveExpiryUpdate(message)
+}
+
+/** Applies a server-published first-opening lifecycle update to a loaded message. */
+export function applyExpiryUpdate(message: PlainMessage, input: unknown): boolean {
+  const update = parseExpiryUpdate(input)
+  if (!update || update.id !== message.id || update.sender !== message.sender || update.recipient !== message.recipient) return false
+  const lifecycle = parseDeliveryLifecycle(message.ttl, update)
+  if (!lifecycle || lifecycle.created_at !== message.created_at || lifecycle.delivery_policy !== message.delivery_policy) return false
+  // A recipient-opening message can move from its unopened deadline to its
+  // final deadline exactly once. Never let a stale event undo that change.
+  if (message.opened_at !== null && lifecycle.opened_at !== message.opened_at) return false
+  if (lifecycle.opened_at === message.opened_at && lifecycle.expires_at === message.expires_at) return false
+  // Keep the server-time/monotonic mapping established by confirmation.
+  // Repeated events must neither restart a timer nor consult the wall clock.
+  message[availabilityDeadline] += lifecycle.expires_at - message.expires_at
+  Object.assign(message, lifecycle)
+  return true
 }
 
 export function address(value: string): string {
@@ -233,6 +259,15 @@ export class ChatClient {
       }
       return isMessageAvailable(msg) ? [msg] : []
     }).reverse() }
+  }
+
+  /** Decrypts a live delivery, then confirms its current availability before exposing it. */
+  async confirmLiveMessage(partner: string, raw: unknown): Promise<PlainMessage | null> {
+    const message = await this.decode(raw, partner)
+    if (!message) return null
+    const incoming = message.recipient === this.identity.address.toLowerCase()
+    const lifecycle = (await this.confirmMessages(partner, [{ raw, message }], incoming ? 'open' : 'state')).get(message.id)
+    return lifecycle ? { ...message, ...lifecycle } : null
   }
 
   async *history(partner: string, options: ReadOptions = {}): AsyncGenerator<PlainMessage[]> {

@@ -84,12 +84,16 @@ bun run cli watch 0xPARTNER_ADDRESS --json
 `messages`, `next_before`, and `next_before_rowid`. Pass both non-null cursors as
 `--before` and `--before-rowid` to retrieve the next older page. `--all` fetches
 all available pages in chronological order. `watch` first outputs available
-history, then emits one JSON object per new message. Diagnostics go to stderr.
+history, then emits one JSON object per new message. With `--json`, lifecycle
+changes also emit metadata-only objects marked `event: "expiry-update"`; they
+contain no plaintext. Text watch stays silent on lifecycle changes. Diagnostics
+go to stderr.
 Use `--` before message text that starts with a dash.
 
 `watch` and `chat` use SSE, reconnect with bounded exponential backoff, and fetch
 history after reconnecting to recover messages still available on the server.
-Messages are deduplicated by ID. Sessions are kept in memory, renewed after an
+Messages are deduplicated by ID; reconnects refresh known messages’ authoritative
+deadlines without printing their plaintext again. Sessions are kept in memory, renewed after an
 authentication failure, and revoked on normal exit. A killed process's session
 expires according to the server's existing policy. Failed sends are not
 automatically retried after network errors; delivery may have succeeded, so check
@@ -181,6 +185,8 @@ sanitization; JSON retains the original plaintext for scripts. Already printed
 output cannot be recalled from terminal logs or downstream scripts.
 
 The client library's `decode` only verifies and decrypts a delivery; its output is
-not an opening confirmation. The `read` command and its explicit `--all` history
-perform message opening. Live watch/chat opening and lifecycle updates remain
-tracked by #79.
+not an opening confirmation. `read`, `watch`, and interactive `chat` confirm
+incoming messages before displaying plaintext. Live expiry updates apply the
+authoritative deadline to the active terminal view; text watch never repeats
+plaintext for an update, while JSON watch emits a metadata-only `expiry-update`
+event.
