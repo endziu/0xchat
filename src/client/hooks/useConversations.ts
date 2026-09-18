@@ -3,6 +3,8 @@ import { api, Conversation } from '../lib/api'
 import { mergeContacts, loadContacts, deleteContact, isDeleted } from '../lib/contacts'
 import { errorMessage } from '../lib/errors'
 
+export type ConversationRefreshResult = 'refreshed' | 'failed' | 'cancelled'
+
 export interface MergedConversation extends Conversation {
   stale?: boolean
 }
@@ -37,26 +39,44 @@ export function useConversations(token: string | null) {
   // Refreshes can overlap (token change, SSE, retry click). Only the newest one
   // is allowed to write state, so a slow failure can't clobber a newer success.
   const loadGenRef = useRef(0)
+  const tokenRef = useRef(token)
+  if (tokenRef.current !== token) {
+    tokenRef.current = token
+    loadGenRef.current++
+  }
 
-  const doRefresh = useCallback(async () => {
+  const latestRefresh = useRef<Promise<ConversationRefreshResult> | null>(null)
+  const doRefresh = useCallback((): Promise<ConversationRefreshResult> => {
+    if (token !== tokenRef.current) return Promise.resolve('cancelled')
     const gen = ++loadGenRef.current
     if (!token) {
       setConversations([])
       setError(null)
-      return
+      return Promise.resolve('cancelled')
     }
     setLoading(true)
     setError(null)
-    try {
-      const data = await api.getConversations(token)
-      if (gen !== loadGenRef.current) return
-      setConversations(withKnownContacts(data.conversations))
-    } catch (err) {
-      console.error('Failed to load conversations:', err)
-      if (gen === loadGenRef.current) setError(errorMessage(err, 'Failed to load conversations'))
-    } finally {
-      if (gen === loadGenRef.current) setLoading(false)
-    }
+    // An awaited refresh follows its replacement, so an SSE refresh cannot
+    // turn successful recovery into a failure just by finishing first.
+    const superseded = (): Promise<ConversationRefreshResult> | ConversationRefreshResult =>
+      token === tokenRef.current && latestRefresh.current ? latestRefresh.current : 'cancelled'
+    const request = (async (): Promise<ConversationRefreshResult> => {
+      try {
+        const data = await api.getConversations(token)
+        if (gen !== loadGenRef.current) return superseded()
+        setConversations(withKnownContacts(data.conversations))
+        return 'refreshed'
+      } catch (err) {
+        if (gen !== loadGenRef.current) return superseded()
+        console.error('Failed to load conversations:', err)
+        setError(errorMessage(err, 'Failed to load conversations'))
+        return 'failed'
+      } finally {
+        if (gen === loadGenRef.current) setLoading(false)
+      }
+    })()
+    latestRefresh.current = request
+    return request
   }, [token])
 
   const setLabel = useCallback((address: string, name: string) => {
@@ -103,6 +123,8 @@ export function useConversations(token: string | null) {
 
   useEffect(() => {
     return () => {
+      loadGenRef.current++
+      latestRefresh.current = null
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
       }

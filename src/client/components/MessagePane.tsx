@@ -11,14 +11,14 @@ import { MessageText } from './MessageText'
 interface MessagePaneProps {
   recipientAddress: string
   messages: (Message & { plaintext: string })[]
+  recovering?: boolean
   loading?: boolean
   error: string | null
   onRetry: () => void
   olderError: string | null
   hasMore?: boolean
   loadingOlder?: boolean
-  fetchOlder?: () => Promise<(Message & { plaintext: string })[]>
-  prependMessages?: (fresh: (Message & { plaintext: string })[]) => void
+  fetchOlder?: () => Promise<void>
   // Incoming messages whose opening was not confirmed stay hidden until retry.
   openingFailed?: boolean
   onRetryOpening?: () => void
@@ -29,7 +29,7 @@ interface MessagePaneProps {
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, prependMessages, openingFailed, onRetryOpening, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   // Resolved per conversation (the pane is keyed by recipient) and again
@@ -47,74 +47,68 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Generation counter for image picks; see handleImageFile.
   const imagePickRef = useRef(0)
-  // State captured before a "load older" fetch, so the view can be
-  // re-anchored once the older messages are prepended. We anchor on the
-  // topmost visible message element rather than container arithmetic, so the
-  // anchor stays put even when the load button itself unmounts on the final
-  // page. Only one fetch is ever in flight (busyRef), so there is exactly
-  // one pending capture and one commit to reason about.
-  const pendingPreserveRef = useRef<{ anchor: Element | null; anchorTop: number } | null>(null)
-  // Set on the commit of a real prepend; consumed by the layout effect.
-  const prependCommittedRef = useRef(false)
   const busyRef = useRef(false)
   const lastNewestIdRef = useRef<string | null>(null)
+
+  const positionRef = useRef<{ id: string; top: number }[]>([])
+  const followingRef = useRef(true)
+  const restoreAfterRecovery = useRef(false)
+  const capturePosition = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const top = el.getBoundingClientRect().top
+    const articles = Array.from(el.querySelectorAll<HTMLElement>('article[data-message-id]'))
+    positionRef.current = articles.map(article => ({ id: article.dataset.messageId!, top: article.getBoundingClientRect().top }))
+      .sort((a, b) => Math.abs(a.top - top) - Math.abs(b.top - top))
+  }
+  const handleScroll = () => {
+    if (recovering) return
+    const el = scrollRef.current
+    if (!el) return
+    followingRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    capturePosition()
+  }
 
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    // Keep the pre-disconnect anchor while changeable content is hidden.
+    if (recovering) { restoreAfterRecovery.current = true; return }
+    if ((restoreAfterRecovery.current || !followingRef.current) && positionRef.current.length) {
+      for (const prior of positionRef.current) {
+        const anchor = el.querySelector(`[data-message-id="${prior.id}"]`)
+        if (!anchor) continue
+        el.scrollTop += anchor.getBoundingClientRect().top - prior.top
+        break
+      }
+      // Recovered incoming messages may appear later, after opening confirms.
+      // Keep this anchor until the next user scroll, including those renders.
+      if (restoreAfterRecovery.current) followingRef.current = false
+      restoreAfterRecovery.current = false
+      lastNewestIdRef.current = messages.at(-1)?.id ?? null
+      capturePosition()
+      return
+    }
+    restoreAfterRecovery.current = false
     if (messages.length === 0) {
-      pendingPreserveRef.current = null
-      prependCommittedRef.current = false
       lastNewestIdRef.current = null
       return
     }
     const newestId = messages[messages.length - 1].id
-    // A real prepend committed: re-anchor on the captured topmost visible
-    // article. When the anchor is gone (nothing visible at capture, or it
-    // expired mid-fetch) no reference point survives, so stay with the
-    // newest content — the same policy as the append path. SSE appends and
-    // expiry removals never consume the pending state.
-    if (prependCommittedRef.current) {
-      prependCommittedRef.current = false
-      const pending = pendingPreserveRef.current
-      pendingPreserveRef.current = null
-      if (pending !== null && pending.anchor !== null && pending.anchor.isConnected) {
-        el.scrollTop += pending.anchor.getBoundingClientRect().top - pending.anchorTop
-      } else {
-        el.scrollTop = el.scrollHeight
-      }
-    } else if (newestId !== lastNewestIdRef.current) {
+    if (newestId !== lastNewestIdRef.current) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     }
     lastNewestIdRef.current = newestId
-  }, [messages])
+    capturePosition()
+  }, [messages, recovering])
 
   const handleLoadOlder = async () => {
-    if (!fetchOlder || !prependMessages || busyRef.current) return
+    if (!fetchOlder || busyRef.current) return
     busyRef.current = true
     try {
-      const el = scrollRef.current
-      let anchor: Element | null = null
-      if (el) {
-        const viewportTop = el.getBoundingClientRect().top
-        for (const article of Array.from(el.querySelectorAll('article'))) {
-          if (article.getBoundingClientRect().bottom > viewportTop) { anchor = article; break }
-        }
-      }
-      pendingPreserveRef.current = {
-        anchor,
-        anchorTop: anchor?.getBoundingClientRect().top ?? 0,
-      }
-      const fresh = await fetchOlder()
-      // The anchor is scroll-UX only — never a gate: the cursor has already
-      // advanced, so the page is always prepended. Preact defers the render,
-      // so the layout effect sees the flag on the prepend commit.
-      if (fresh.length > 0) {
-        prependCommittedRef.current = true
-        prependMessages(fresh)
-      } else {
-        pendingPreserveRef.current = null
-      }
+      capturePosition()
+      followingRef.current = false
+      await fetchOlder()
     } finally {
       busyRef.current = false
     }
@@ -196,7 +190,7 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
         />
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
         {loading
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
           : !error && messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
@@ -217,7 +211,7 @@ export function MessagePane({ recipientAddress, messages, loading, error, onRetr
           const sameMinute = sameSender && fmtTime(prev.created_at) === fmtTime(msg.created_at)
 
           return (
-            <article key={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : 'mt-3 first:mt-0'} group hover:bg-neutral-950/50`}>
+            <article key={msg.id} data-message-id={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : 'mt-3 first:mt-0'} group hover:bg-neutral-950/50`}>
               <time className={`w-10 shrink-0 text-xs text-neutral-700 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible' : ''}`}>
                 {fmtTime(msg.created_at)}
               </time>

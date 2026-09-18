@@ -158,6 +158,11 @@ export class ConversationMessages {
     return ids
   }
 
+  /** A lost connection invalidates requests without turning them into user failures. */
+  cancelOpening(): void {
+    for (const entry of this.entries.values()) if (entry.opening === 'requested') entry.opening = 'pending'
+  }
+
   failOpening(ids: string[]): void {
     for (const id of ids) {
       const entry = this.entries.get(id)
