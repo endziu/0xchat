@@ -30,6 +30,32 @@ export function isMessageAvailable(message: PlainMessage): boolean {
   return performance.now() < message[availabilityDeadline]
 }
 
+function canReceiveExpiryUpdate(message: PlainMessage): boolean {
+  return message.delivery_policy === 'recipient-opening' && message.opened_at === null
+    && performance.now() < message[availabilityDeadline] + message.ttl * 1000
+}
+
+export function shouldRetainMessage(message: PlainMessage): boolean {
+  return isMessageAvailable(message) || canReceiveExpiryUpdate(message)
+}
+
+/** Applies a server-published first-opening lifecycle update to a loaded message. */
+export function applyExpiryUpdate(message: PlainMessage, input: unknown): boolean {
+  const update = parseExpiryUpdate(input)
+  if (!update || update.id !== message.id || update.sender !== message.sender || update.recipient !== message.recipient) return false
+  const lifecycle = parseDeliveryLifecycle(message.ttl, update)
+  if (!lifecycle || lifecycle.created_at !== message.created_at || lifecycle.delivery_policy !== message.delivery_policy) return false
+  // A recipient-opening message can move from its unopened deadline to its
+  // final deadline exactly once. Never let a stale event undo that change.
+  if (message.opened_at !== null && lifecycle.opened_at !== message.opened_at) return false
+  if (lifecycle.opened_at === message.opened_at && lifecycle.expires_at === message.expires_at) return false
+  // Keep the server-time/monotonic mapping established by confirmation.
+  // Repeated events must neither restart a timer nor consult the wall clock.
+  message[availabilityDeadline] += lifecycle.expires_at - message.expires_at
+  Object.assign(message, lifecycle)
+  return true
+}
+
 export function address(value: string): string {
   if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error('Expected an Ethereum address (0x followed by 40 hex digits)')
   return getAddress(value).toLowerCase()
@@ -242,20 +268,6 @@ export class ChatClient {
     const incoming = message.recipient === this.identity.address.toLowerCase()
     const lifecycle = (await this.confirmMessages(partner, [{ raw, message }], incoming ? 'open' : 'state')).get(message.id)
     return lifecycle ? { ...message, ...lifecycle } : null
-  }
-
-  /** Applies a server-published first-opening lifecycle update to a loaded message. */
-  applyExpiryUpdate(message: PlainMessage, input: unknown): boolean {
-    const update = parseExpiryUpdate(input)
-    if (!update || update.id !== message.id || update.sender !== message.sender || update.recipient !== message.recipient) return false
-    const lifecycle = parseDeliveryLifecycle(message.ttl, update)
-    if (!lifecycle) return false
-    // A recipient-opening message can move from its unopened deadline to its
-    // final deadline exactly once. Never let a stale event undo that change.
-    if (message.opened_at !== null && lifecycle.opened_at !== message.opened_at) return false
-    Object.assign(message, lifecycle)
-    message[availabilityDeadline] = performance.now() + Math.max(0, lifecycle.expires_at - Date.now())
-    return true
   }
 
   async *history(partner: string, options: ReadOptions = {}): AsyncGenerator<PlainMessage[]> {

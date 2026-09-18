@@ -4,9 +4,8 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, address, isMessageAvailable, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
-import { UNOPENED_RETENTION_MS } from '../shared/message-envelope'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
 
@@ -75,11 +74,6 @@ function positiveInteger(value: string | undefined, name: string): number | unde
   return number
 }
 
-function canReceiveExpiryUpdate(message: PlainMessage): boolean {
-  return message.delivery_policy === 'recipient-opening' && message.opened_at === null
-    && Date.now() < message.created_at + UNOPENED_RETENTION_MS + message.ttl * 1000
-}
-
 async function follow(
   client: ChatClient,
   partner: string,
@@ -87,25 +81,40 @@ async function follow(
   receive: (message: PlainMessage) => void,
   lifecycle: (message: PlainMessage) => void,
   status: (text: string) => void,
+  unavailable: (id: string) => void = () => {},
 ): Promise<void> {
   const seen = new Map<string, PlainMessage>()
   const deliver = (message: PlainMessage) => {
-    if (seen.has(message.id) || !isMessageAvailable(message)) return
-    seen.set(message.id, message)
-    receive(message)
+    if (signal.aborted || !isMessageAvailable(message)) return
+    const previous = seen.get(message.id)
+    if (previous) {
+      const changed = previous.opened_at !== message.opened_at || previous.expires_at !== message.expires_at
+      // Preserve the object shared with chat while refreshing its monotonic deadline.
+      Object.assign(previous, message)
+      if (changed) lifecycle(previous)
+    } else {
+      seen.set(message.id, message)
+      receive(message)
+    }
   }
   let backoff = 1000
   while (!signal.aborted) {
     try {
       let synced = false
       for await (const event of client.events(signal)) {
+        if (signal.aborted) return
         for (const [id, message] of seen) {
-          if (!isMessageAvailable(message) && !canReceiveExpiryUpdate(message)) seen.delete(id)
+          if (!shouldRetainMessage(message)) seen.delete(id)
         }
         if (!synced) {
           // Subscribe first; messages arriving during history fetch remain buffered.
           const history: PlainMessage[] = []
           for await (const page of client.history(partner)) history.unshift(...page)
+          if (signal.aborted) return
+          const availableIds = new Set(history.filter(isMessageAvailable).map(message => message.id))
+          for (const id of seen.keys()) {
+            if (!availableIds.has(id)) { seen.delete(id); unavailable(id) }
+          }
           history.forEach(deliver)
           synced = true
           backoff = 1000
@@ -126,7 +135,7 @@ async function follow(
             const input: unknown = JSON.parse(event.data)
             if (!input || typeof input !== 'object' || !('id' in input) || typeof input.id !== 'string') continue
             const message = seen.get(input.id)
-            if (message && client.applyExpiryUpdate(message, input)) lifecycle(message)
+            if (!signal.aborted && message && applyExpiryUpdate(message, input)) lifecycle(message)
           } catch { /* Invalid lifecycle events never alter displayed messages. */ }
         }
       }
@@ -145,14 +154,16 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 0 })
   let status = 'Connecting…'
   let sending = false
+  let visible = new Set<PlainMessage>()
   process.stdout.write('\x1b[?1049h')
   const render = () => {
     for (const [id, message] of messages) {
-      if (!isMessageAvailable(message) && !canReceiveExpiryUpdate(message)) messages.delete(id)
+      if (!shouldRetainMessage(message)) messages.delete(id)
     }
     const width = Math.max(10, (process.stdout.columns || 80) - 1)
     const rows = Math.max(1, (process.stdout.rows || 24) - 6)
-    const lines = [...messages.values()].filter(isMessageAvailable).sort((a, b) => a.created_at - b.created_at)
+    visible = new Set([...messages.values()].filter(isMessageAvailable))
+    const lines = [...visible].sort((a, b) => a.created_at - b.created_at)
       .slice(-rows).flatMap(message => Bun.wrapAnsi(displayMessage(message, client.identity.address), width, { hard: true }).split('\n'))
       .slice(-rows)
     process.stdout.write('\x1b[2J\x1b[H' + [
@@ -162,7 +173,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     rl.prompt(true)
   }
   const timer = setInterval(() => {
-    if ([...messages.values()].some(message => !isMessageAvailable(message) && !canReceiveExpiryUpdate(message))) render()
+    if ([...visible].some(message => !isMessageAvailable(message))) render()
   }, 250)
   const onResize = () => render()
   process.stdout.on('resize', onResize)
@@ -193,8 +204,9 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   try {
     await follow(client, partner, controller.signal,
       message => { messages.set(message.id, message); render() },
-      () => render(),
-      text => { status = text; render() })
+      message => { messages.set(message.id, message); render() },
+      text => { status = text; render() },
+      id => { messages.delete(id); render() })
   } finally {
     clearInterval(timer)
     process.stdout.off('resize', onResize)
