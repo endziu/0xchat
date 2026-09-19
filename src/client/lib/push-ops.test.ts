@@ -93,9 +93,9 @@ function unsubscribeDeps(
           return sub
         },
       })),
-    deleteEndpoint: async (endpoint) => {
+    removeSlot: async () => {
       await hooks.beforeDelete?.()
-      state.deletes.push(endpoint)
+      state.deletes.push('ep-sub')
     },
     setSubscribed: (b) => {
       state.subscribed = b
@@ -208,10 +208,10 @@ describe('runUnsubscribeOp', () => {
     expect(state.errors).toEqual([])
   })
 
-  test('no browser subscription: no writes, state cleared', async () => {
+  test('no browser subscription: owned slot still removed, state cleared', async () => {
     const state = makeState()
     await runUnsubscribeOp(unsubscribeDeps(state, { stale: () => false, sub: null }))
-    expect(state.deletes).toEqual([])
+    expect(state.deletes).toEqual(['ep-sub'])
     expect(state.unsubscribed).toBe(0)
     expect(state.subscribed).toBe(false)
   })

@@ -10,7 +10,7 @@ import { ToastProvider } from './Toast'
 function AppContent() {
   const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, prepareIdentity, commitIdentity } = useIdentity()
   const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout, revokeSession, createSession, commitSession } = useSession(identity)
-  const push = usePushSubscription(token)
+  const push = usePushSubscription(token, identity?.address ?? null)
   const [path, setPath] = useState(window.location.pathname)
   const [sseConnected, setSseConnected] = useState(false)
   const [transitioning, setTransitioning] = useState(false)

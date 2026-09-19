@@ -1,5 +1,5 @@
 import webpush from 'web-push';
-import { deletePushSubscription, getPushSubscriptionsForAddress } from './db.ts';
+import { markPushSubscriptionDead, getPushSubscriptionsForAddress } from './db.ts';
 import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, log, warn, error } from './constants.ts';
 
 const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
@@ -30,8 +30,8 @@ export async function pushNotify(address: string, ttlSeconds: number): Promise<v
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number })?.statusCode;
         if (statusCode === 404 || statusCode === 410) {
-          deletePushSubscription(sub.endpoint);
-          warn('[push] pruned dead subscription', address);
+          markPushSubscriptionDead(sub.slot_id, sub.revision);
+          warn('[push] subscription needs repair', address);
         } else {
           error('[push] send failed', address, statusCode ?? err);
         }
