@@ -9,6 +9,7 @@ import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 export function usePushSubscription(token: string | null, address: string | null) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
+  const [removable, setRemovable] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | null>(
     typeof Notification === 'undefined' ? null : Notification.permission,
@@ -20,6 +21,7 @@ export function usePushSubscription(token: string | null, address: string | null
     const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined'
     setSupported(isSupported)
     setSubscribed(false)
+    setRemovable(false)
     if (!isSupported || !token || !address) return
     const activeToken = token
     const activeAddress = address
@@ -32,10 +34,14 @@ export function usePushSubscription(token: string | null, address: string | null
         const sub = await reg.pushManager.getSubscription()
         if (isStale()) return
         const enabled = await checkPushRegistration(activeAddress, activeToken)
-        if (!isStale()) setSubscribed(!!sub && enabled)
+        if (!isStale()) {
+          setSubscribed(!!sub && enabled)
+          setRemovable(true)
+        }
       } catch {
         if (!isStale()) {
           setSubscribed(false)
+          setRemovable(true)
           setError('Could not connect notifications. Try enabling them again.')
         }
       }
@@ -87,5 +93,5 @@ export function usePushSubscription(token: string | null, address: string | null
     )
   }
 
-  return { supported, subscribed, permission, error, subscribe, unsubscribe }
+  return { supported, subscribed, removable, permission, error, subscribe, unsubscribe }
 }

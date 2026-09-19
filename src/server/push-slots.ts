@@ -1,4 +1,5 @@
 import { getDb, getPubkey } from './db.ts';
+import { pushEndpointDestination } from './push-endpoint.ts';
 import type { PushEnableRequest, PushSlotCondition, PushSlotHandle, PushSlotList } from '../shared/push-slot.ts';
 import type { ApiErrorCode } from '../shared/api-error.ts';
 
@@ -35,8 +36,9 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
   address = address.toLowerCase();
   return db.transaction(() => {
     if (!getPubkey(address)) fail('registration_required', 'Register this identity again before enabling notifications.');
-    const { endpoint, keys } = input.subscription;
-    const endpointOwner = db.query('SELECT * FROM push_slots WHERE endpoint = ?').get(endpoint) as Slot | null;
+    const canonical = pushEndpointDestination(input.subscription.endpoint);
+    const { keys } = input.subscription;
+    const endpointOwner = db.query('SELECT * FROM push_slots WHERE endpoint = ?').get(canonical) as Slot | null;
     if (endpointOwner && endpointOwner.address !== address) {
       fail('ownership_conflict', 'Remove this browser subscription from its previous identity before enabling it here.');
     }
@@ -62,7 +64,7 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
       if (input.slot_id !== slot.slot_id || input.expected_revision !== slot.revision) {
         fail('revision_conflict', 'Notification state changed. Refresh before trying again.');
       }
-      if (slot.legacy || slot.state !== 'active' || slot.endpoint !== endpoint || slot.p256dh !== keys.p256dh || slot.auth !== keys.auth) {
+      if (slot.legacy || slot.state !== 'active' || slot.endpoint !== canonical || slot.p256dh !== keys.p256dh || slot.auth !== keys.auth) {
         fail('repair_needed', 'This subscription needs repair. Remove it and explicitly enable notifications again.');
       }
       return handle(slot);
@@ -76,7 +78,7 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
     const result = { slot_id: revoked?.slot_id ?? crypto.randomUUID(), installation_id: input.installation_id,
       revision: revoked ? revoked.revision + 1 : 1 };
     db.query(`INSERT INTO push_slots (slot_id, address, installation_id, revision, endpoint, p256dh, auth, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(result.slot_id, address, result.installation_id, result.revision, endpoint, keys.p256dh, keys.auth, now, now);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(result.slot_id, address, result.installation_id, result.revision, canonical, keys.p256dh, keys.auth, now, now);
     if (revoked) db.query('DELETE FROM push_revocations WHERE slot_id = ?').run(revoked.slot_id);
     return result;
   }).immediate();

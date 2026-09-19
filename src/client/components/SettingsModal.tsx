@@ -10,6 +10,7 @@ interface SettingsModalProps {
   onImport: (keypair: Keypair) => Promise<void>
   pushSupported?: boolean
   pushSubscribed?: boolean
+  pushRemovable?: boolean
   pushPermission?: NotificationPermission | null
   pushError?: string | null
   onPushSubscribe?: () => void
@@ -22,6 +23,7 @@ export function SettingsModal({
   onImport,
   pushSupported,
   pushSubscribed,
+  pushRemovable,
   pushPermission,
   pushError,
   onPushSubscribe,
@@ -61,14 +63,29 @@ export function SettingsModal({
                 <h3>Notifications</h3>
                 {pushPermission === 'denied' ? (
                   <span className="text-sm text-neutral-600">Blocked</span>
-                ) : (
+                ) : pushSubscribed ? (
                   <button
-                    onClick={pushSubscribed ? onPushUnsubscribe : onPushSubscribe}
-                    aria-label={pushSubscribed ? 'Disable notifications' : 'Enable notifications'}
-                    aria-pressed={pushSubscribed}
+                    onClick={onPushUnsubscribe}
+                    aria-label="Disable notifications"
+                    aria-pressed={true}
                   >
-                    {pushSubscribed ? 'On' : 'Off'}
+                    On
                   </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {pushRemovable && (
+                      <button onClick={onPushUnsubscribe} aria-label="Remove notification slot">
+                        Remove
+                      </button>
+                    )}
+                    <button
+                      onClick={onPushSubscribe}
+                      aria-label="Enable notifications"
+                      aria-pressed={false}
+                    >
+                      Off
+                    </button>
+                  </div>
                 )}
               </div>
               {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}

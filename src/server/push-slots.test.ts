@@ -165,6 +165,22 @@ test('concurrent additions cannot exceed five slots, without evicting existing b
   expect((await (await request('subscriptions')).json()).slots).toHaveLength(5);
 });
 
+test('URL destination aliases cannot create a second ownership binding', async () => {
+  const original = enable(crypto.randomUUID(), 'alias-token');
+  expect((await request('subscribe', original)).status).toBe(201);
+  for (const endpoint of [
+    'https://FCM.GOOGLEAPIS.COM:443/fcm/send/alias-token',
+    'https://fcm.googleapis.com/fcm/other/../send/alias-token',
+  ]) {
+    const response = await request('subscribe', { ...enable(), subscription: { endpoint, keys } }, bob);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('ownership_conflict');
+  }
+  for (const endpoint of [original.subscription.endpoint + '#other', 'https://user:pass@fcm.googleapis.com/fcm/send/alias-token']) {
+    expect((await request('subscribe', { ...enable(), subscription: { endpoint, keys } }, bob)).status).toBe(400);
+  }
+});
+
 test('an endpoint cannot transfer across authenticated identities and lists reveal no secrets', async () => {
   const body = enable();
   const created = await request('subscribe', body);

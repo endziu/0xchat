@@ -94,6 +94,7 @@ function AppContent() {
       sseConnected={sseConnected}
       pushSupported={push.supported}
       pushSubscribed={push.subscribed}
+      pushRemovable={push.removable}
       pushPermission={push.permission}
       pushError={push.error}
       onPushSubscribe={push.subscribe}

@@ -59,6 +59,7 @@ export function validatePushSubscription(body: unknown): PushSubscriptionValidat
     return { ok: false, reason: 'shape' };
   }
   if (endpoint.protocol !== 'https:') return { ok: false, reason: 'protocol' };
+  if (endpoint.hash || endpoint.username || endpoint.password) return { ok: false, reason: 'shape' };
   if (!isAllowedPushHost(endpoint.hostname)) {
     return { ok: false, reason: 'host', hostname: endpoint.hostname };
   }
