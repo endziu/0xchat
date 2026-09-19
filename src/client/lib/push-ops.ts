@@ -81,7 +81,9 @@ export async function runSubscribeOp(deps: SubscribeOpDeps): Promise<boolean> {
       deps.setError(
         err instanceof ApiError && err.code === UNSUPPORTED_PUSH_SERVICE_CODE
           ? "This browser's push service is not supported. Try an official Chrome, Firefox, Safari, or Edge build."
-          : 'Could not enable notifications. Please try again.',
+          : err instanceof ApiError && err.code
+            ? err.message
+            : 'Could not enable notifications. Please try again.',
       )
     }
     console.error('Push subscribe failed:', err)
@@ -92,7 +94,7 @@ export async function runSubscribeOp(deps: SubscribeOpDeps): Promise<boolean> {
 export interface UnsubscribeOpDeps {
   isStale: () => boolean
   ready: () => Promise<PushManagerLike>
-  deleteEndpoint: (endpoint: string) => Promise<unknown>
+  removeSlot: () => Promise<unknown>
   setSubscribed: (subscribed: boolean) => void
   setError: (message: string) => void
 }
@@ -101,14 +103,14 @@ export async function runUnsubscribeOp(deps: UnsubscribeOpDeps): Promise<void> {
   try {
     const push = await deps.ready()
     const sub = await push.getSubscription()
-    if (sub) {
-      // Server write only while current (a newer identity already owns the
-      // endpoint); local cleanup always completes — a stale op returning early
-      // here would leave a browser sub the server no longer knows about.
-      if (!deps.isStale()) await deps.deleteEndpoint(sub.endpoint).catch(() => {})
-      await sub.unsubscribe()
+    let removalFailed = false
+    // Even a missing browser subscription can leave an owned server slot.
+    if (!deps.isStale()) await deps.removeSlot().catch(() => { removalFailed = true })
+    if (sub && !(await sub.unsubscribe())) throw new Error('Browser subscription was not removed')
+    if (!deps.isStale()) {
+      deps.setSubscribed(false)
+      if (removalFailed) deps.setError('Notifications are off here, but server cleanup failed. Old alerts may continue. Retry disabling before enabling another identity.')
     }
-    if (!deps.isStale()) deps.setSubscribed(false)
   } catch (err) {
     if (!deps.isStale()) deps.setError('Could not disable notifications. Please try again.')
     console.error('Push unsubscribe failed:', err)

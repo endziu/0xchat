@@ -18,6 +18,7 @@ interface LayoutProps {
   sseConnected?: boolean
   pushSupported?: boolean
   pushSubscribed?: boolean
+  pushRemovable?: boolean
   pushPermission?: NotificationPermission | null
   pushError?: string | null
   onPushSubscribe?: () => void
@@ -34,6 +35,7 @@ export function Layout({
   sseConnected,
   pushSupported,
   pushSubscribed,
+  pushRemovable,
   pushPermission,
   pushError,
   onPushSubscribe,
@@ -167,6 +169,7 @@ export function Layout({
           }}
           pushSupported={pushSupported}
           pushSubscribed={pushSubscribed}
+          pushRemovable={pushRemovable}
           pushPermission={pushPermission}
           pushError={pushError}
           onPushSubscribe={onPushSubscribe}

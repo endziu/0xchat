@@ -166,6 +166,11 @@ and continuation pages; neither operation consumes the sending or opening budget
 See [the recovery API contract](docs/message-recovery-api.md) for pagination and
 lookup request limits.
 
+Push bindings use authenticated, revision-gated notification slots with a five-slot
+limit and durable removal. See [the push-slot API contract](docs/push-slots-api.md).
+Automatic browser repair is disabled pending its coordinator; enabling remains
+explicit. Existing legacy bindings are preserved, including identities above the limit.
+
 Public-key registrations are pruned after 30 days without a new session or a sent
 or received message. Initial registration starts the retention window;
 re-registering an existing key alone does not extend it. Existing databases get

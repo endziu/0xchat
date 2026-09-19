@@ -118,6 +118,7 @@ describe('api errors', () => {
 
     const error = await api.subscribePush(
       { endpoint: 'https://jmt17.google.com/fcm/send/token', keys: {} },
+      { installation_id: crypto.randomUUID(), expected_revision: 0 },
       'token-a',
     ).then(() => null, (caught: unknown) => caught)
 

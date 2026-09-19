@@ -5,6 +5,8 @@ import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import { buildSessionChallenge } from '../../shared/session-challenge'
 import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-envelope'
 
+import type { PushSlotCondition, PushSlotHandle, PushSlotList } from '../../shared/push-slot'
+
 export type Message = DeliveredMessage
 
 export class ApiError extends Error {
@@ -170,17 +172,19 @@ export const api = {
   deleteAddress: (address: string, token: string) =>
     request(`/api/addresses/${address}`, { method: 'DELETE' }, token),
 
-  subscribePush: (subscription: PushSubscriptionJSON, token: string) =>
+  listPushSlots: (token: string): Promise<PushSlotList> => request('/api/push/subscriptions', {}, token),
+
+  subscribePush: (subscription: PushSubscriptionJSON, condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
     request('/api/push/subscribe', {
       method: 'POST',
-      body: JSON.stringify(subscription),
+      body: JSON.stringify({ ...condition, subscription }),
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  unsubscribePush: (endpoint: string, token: string) =>
+  unsubscribePush: (condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
     request('/api/push/unsubscribe', {
       method: 'POST',
-      body: JSON.stringify({ endpoint }),
+      body: JSON.stringify(condition),
       headers: { 'Content-Type': 'application/json' },
     }, token),
 }

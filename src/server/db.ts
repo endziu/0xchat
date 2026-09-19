@@ -55,16 +55,42 @@ export function initDb(path = 'chat.db'): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_expires
       ON sessions(expires_at);
 
-    CREATE TABLE IF NOT EXISTS push_subscriptions (
-      endpoint   TEXT PRIMARY KEY,
-      address    TEXT NOT NULL,
-      p256dh     TEXT NOT NULL,
-      auth       TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+    CREATE TABLE IF NOT EXISTS push_slots (
+      slot_id TEXT PRIMARY KEY,
+      address TEXT NOT NULL,
+      installation_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      state TEXT NOT NULL DEFAULT 'active',
+      endpoint TEXT UNIQUE,
+      p256dh TEXT,
+      auth TEXT,
+      legacy INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(address, installation_id)
     );
-    CREATE INDEX IF NOT EXISTS idx_push_address
-      ON push_subscriptions(address);
+    CREATE TABLE IF NOT EXISTS push_revocations (
+      slot_id TEXT PRIMARY KEY,
+      address TEXT NOT NULL,
+      installation_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      UNIQUE(address, installation_id)
+    );
   `);
+
+  db.transaction(() => {
+    if (db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'push_subscriptions'").get()) {
+      const rows = db.query('SELECT * FROM push_subscriptions').all() as Array<{
+        address: string; endpoint: string; p256dh: string; auth: string; created_at: number;
+      }>;
+      const insert = db.query(`INSERT INTO push_slots
+        (slot_id, address, installation_id, revision, endpoint, p256dh, auth, legacy, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?, ?, 1, ?, ?)`);
+      for (const row of rows) insert.run(crypto.randomUUID(), row.address.toLowerCase(), crypto.randomUUID(),
+        row.endpoint, row.p256dh, row.auth, row.created_at, row.created_at);
+      db.run('DROP TABLE push_subscriptions');
+    }
+  }).immediate();
 
   const messageColumns = tableColumns('messages');
   const requiredMessageColumns = [
@@ -156,7 +182,11 @@ export function getPubkey(address: string): string | null {
 }
 
 export function deleteInactivePubkeys(cutoff: number): number {
-  return db.query('DELETE FROM pubkeys WHERE last_active_at < ?').run(cutoff).changes;
+  return db.transaction(() => {
+    db.query('DELETE FROM push_slots WHERE address IN (SELECT address FROM pubkeys WHERE last_active_at < ?)').run(cutoff);
+    db.query('DELETE FROM push_revocations WHERE address IN (SELECT address FROM pubkeys WHERE last_active_at < ?)').run(cutoff);
+    return db.query('DELETE FROM pubkeys WHERE last_active_at < ?').run(cutoff).changes;
+  }).immediate();
 }
 
 export function createSession(
@@ -358,36 +388,35 @@ export function deleteAddressConversations(address: string): void {
 
 export function deleteAddress(address: string): void {
   const normalized = address.toLowerCase();
-  db.query('DELETE FROM pubkeys WHERE address = ?').run(normalized);
+  db.transaction(() => {
+    deletePushSubscriptionsForAddress(normalized);
+    db.query('DELETE FROM pubkeys WHERE address = ?').run(normalized);
+  }).immediate();
 }
 
-export function upsertPushSubscription(
-  address: string,
-  endpoint: string,
-  p256dh: string,
-  auth: string,
-): void {
+export function deleteRegistration(address: string): void {
+  db.transaction(() => {
+    deleteAddressSessions(address);
+    deleteAddressConversations(address);
+    deleteAddress(address);
+  }).immediate();
+}
+
+function deletePushSubscriptionsForAddress(address: string): void {
   const normalized = address.toLowerCase();
-  db.query(
-    'INSERT OR REPLACE INTO push_subscriptions (endpoint, address, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(endpoint, normalized, p256dh, auth, Date.now());
+  db.query('DELETE FROM push_slots WHERE address = ?').run(normalized);
+  db.query('DELETE FROM push_revocations WHERE address = ?').run(normalized);
 }
 
-export function deletePushSubscription(endpoint: string): void {
-  db.query('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
-}
-
-export function deletePushSubscriptionForAddress(address: string, endpoint: string): void {
-  const normalized = address.toLowerCase();
-  db.query('DELETE FROM push_subscriptions WHERE endpoint = ? AND address = ?').run(endpoint, normalized);
-}
-
-export function deletePushSubscriptionsForAddress(address: string): void {
-  const normalized = address.toLowerCase();
-  db.query('DELETE FROM push_subscriptions WHERE address = ?').run(normalized);
+export function markPushSubscriptionDead(slotId: string, revision: number): void {
+  db.query(`UPDATE push_slots SET state = 'repair_needed', endpoint = NULL, p256dh = NULL,
+    auth = NULL, revision = revision + 1, updated_at = ? WHERE slot_id = ? AND revision = ?`)
+    .run(Date.now(), slotId, revision);
 }
 
 export interface PushSubscriptionRow {
+  slot_id: string;
+  revision: number;
   endpoint: string;
   p256dh: string;
   auth: string;
@@ -396,7 +425,7 @@ export interface PushSubscriptionRow {
 export function getPushSubscriptionsForAddress(address: string): PushSubscriptionRow[] {
   const normalized = address.toLowerCase();
   return db
-    .query('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE address = ?')
+    .query("SELECT slot_id, revision, endpoint, p256dh, auth FROM push_slots WHERE address = ? AND state = 'active'")
     .all(normalized) as PushSubscriptionRow[];
 }
 
