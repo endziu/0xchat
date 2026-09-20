@@ -25,8 +25,8 @@ export const registerChallengeLimiter = new RateLimiter({ max: 10, windowMs: MIN
 /** Registration, per ip. */
 export const registerLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
-/** Push subscribe, per ip+address. */
-export const pushSubscribeLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+/** All push mutations (including removal), per ip+address. */
+export const pushMutationLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
 /** SSE token, per ip. A live client re-mints only on reconnect. */
 export const sseTokenLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });

@@ -1,4 +1,4 @@
-import { deleteAddress, deleteAddressConversations, deleteAddressSessions, deletePushSubscriptionsForAddress, getConversationPartners } from '../db.ts';
+import { deleteRegistration, getConversationPartners } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
 import { notify } from '../sse.ts';
 import { isValidAddress } from '../validation.ts';
@@ -22,10 +22,7 @@ export async function handleDeleteAddress({ req, path, ip }: Context): Promise<R
   }
 
   const partners = getConversationPartners(address);
-  deleteAddressSessions(address);
-  deleteAddressConversations(address);
-  deletePushSubscriptionsForAddress(address);
-  deleteAddress(address);
+  deleteRegistration(address);
 
   for (const partner of partners) {
     notify(partner, 'user:disconnected', { address });

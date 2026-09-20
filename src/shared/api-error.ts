@@ -1,7 +1,11 @@
 export const UNSUPPORTED_PUSH_SERVICE_CODE = 'unsupported_push_service';
 
-export type ApiErrorCode = typeof UNSUPPORTED_PUSH_SERVICE_CODE;
+const API_ERROR_CODES = [UNSUPPORTED_PUSH_SERVICE_CODE, 'ownership_conflict', 'slot_cap',
+  'revoked', 'revision_conflict', 'repair_needed', 'registration_required', 'invalid_request',
+  'unauthorized', 'rate_limited', 'payload_too_large'] as const;
+
+export type ApiErrorCode = typeof API_ERROR_CODES[number];
 
 export function isApiErrorCode(value: unknown): value is ApiErrorCode {
-  return value === UNSUPPORTED_PUSH_SERVICE_CODE;
+  return typeof value === 'string' && API_ERROR_CODES.some(code => code === value);
 }
