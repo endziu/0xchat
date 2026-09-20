@@ -53,8 +53,12 @@ export class SseConnection {
 
   private es: EventSource | null = null
   private timer: unknown = null // pending reconnect delay, or null
+  private opened = false
   private minting = false // token request in flight
   private backoffMs = INITIAL_BACKOFF_MS
+  private retryAt = 0
+  private suspended = false
+  private generation = 0
   private closed = false
 
   constructor(options: SseConnectionOptions) {
@@ -72,12 +76,14 @@ export class SseConnection {
 
   /** Start (or restart) a connect cycle. No-op once close()d or while minting. */
   connect(): void {
-    if (this.closed || this.minting) return
+    if (this.closed || this.suspended || this.minting) return
+    const generation = this.generation
     this.minting = true
     this.getSseToken()
       .then((sseToken) => {
         this.minting = false
-        if (this.closed) return
+        if (this.closed || this.suspended) return
+        if (generation !== this.generation) { this.connect(); return }
         this.openEventSource(this.buildUrl(sseToken))
       })
       .catch((err) => {
@@ -87,6 +93,28 @@ export class SseConnection {
         console.error('SSE: failed to mint token:', err)
         this.scheduleReconnect()
       })
+  }
+
+  /** Pause on attention loss, retaining the failure backoff across focus changes. */
+  setActive(active: boolean): void {
+    if (this.closed || this.suspended === !active) return
+    this.suspended = !active
+    if (active) {
+      const remaining = this.retryAt - performance.now()
+      if (remaining > 0) {
+        this.timer = this.setTimer(() => { this.timer = null; this.connect() }, remaining)
+        return
+      }
+      this.connect()
+      return
+    }
+    this.generation++
+    if (this.timer !== null) this.clearTimer(this.timer)
+    this.timer = null
+    this.es?.close()
+    this.es = null
+    if (this.opened) this.onDisconnect?.()
+    this.opened = false
   }
 
   /** Tear down. Idempotent; no reconnect is scheduled after this. */
@@ -104,11 +132,13 @@ export class SseConnection {
   private openEventSource(url: string): void {
     const es = this.createEventSource(url)
     this.es = es
-    let opened = false
+    this.opened = false
 
     es.addEventListener('open', () => {
-      opened = true
+      if (this.es !== es || this.closed || this.suspended) return
+      this.opened = true
       this.backoffMs = INITIAL_BACKOFF_MS
+      this.retryAt = 0
       if (this.timer !== null) {
         this.clearTimer(this.timer)
         this.timer = null
@@ -117,6 +147,7 @@ export class SseConnection {
     })
 
     es.addEventListener('message', (e: MessageEvent) => {
+      if (this.es !== es || this.closed || this.suspended) return
       try {
         this.onMessage?.(JSON.parse(e.data))
       } catch (err) {
@@ -125,6 +156,7 @@ export class SseConnection {
     })
 
     es.addEventListener('expiry-update', (e: MessageEvent) => {
+      if (this.es !== es || this.closed || this.suspended) return
       try {
         this.onExpiryUpdate?.(JSON.parse(e.data))
       } catch (err) {
@@ -133,6 +165,7 @@ export class SseConnection {
     })
 
     es.addEventListener('user:disconnected', (e: MessageEvent) => {
+      if (this.es !== es || this.closed || this.suspended) return
       try {
         this.onUserDisconnected?.((JSON.parse(e.data) as { address: string }).address)
       } catch (err) {
@@ -145,7 +178,8 @@ export class SseConnection {
       if (this.es !== es) return
       es.close()
       this.es = null
-      if (opened) this.onDisconnect?.()
+      if (this.opened) this.onDisconnect?.()
+      this.opened = false
       this.scheduleReconnect()
     }
   }
@@ -154,7 +188,8 @@ export class SseConnection {
     // One pending delay at a time: repeated error events (the browser can
     // fire 'error' more than once while CONNECTING) must not stack retries.
     if (this.closed || this.timer !== null) return
-    this.timer = this.setTimer(() => {
+    this.retryAt = performance.now() + this.backoffMs
+    if (!this.suspended) this.timer = this.setTimer(() => {
       this.timer = null
       this.connect()
     }, this.backoffMs)

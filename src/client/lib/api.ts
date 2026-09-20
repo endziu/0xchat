@@ -14,9 +14,17 @@ export class ApiError extends Error {
   }
 }
 
-export interface MessagePage {
+export interface RecoveryPage {
   messages: unknown[]
-  // Server-issued cursor for the next older page; null when exhausted.
+  exhausted: boolean
+  next_cursor: string | null
+  recovery_cursor: string | null
+}
+
+export interface MessagePage {
+  recovery_cursor: string
+  messages: unknown[]
+  // Server-issued cursor at the oldest returned message; null for an empty page.
   next_before: number | null
   next_before_rowid: number | null
 }
@@ -141,6 +149,9 @@ export const api = {
     const query = params.toString()
     return request(`/api/messages/${address}${query ? `?${query}` : ''}`, {}, token)
   },
+
+  recoverMessages: (address: string, token: string, cursor: { after: string } | { cursor: string }): Promise<RecoveryPage> =>
+    request(`/api/messages/${address}/recover?${new URLSearchParams(cursor)}`, {}, token),
 
   // Opening starts recipient-opening lifetimes; state lookup never does. Both
   // responses are server input and are validated by the caller.

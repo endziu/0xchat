@@ -43,8 +43,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     }
   })
 
-  const { connected } = useSSE(token, handleSSE, handleDisconnect, handleExpiryUpdate)
-  const { messages, sendMessage, addMessage, applyExpiryUpdate, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, prependMessages, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected)
+  const { connected, connection } = useSSE(token, handleSSE, handleDisconnect, handleExpiryUpdate)
+  const { messages, recovering, sendMessage, addMessage, applyExpiryUpdate, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
 
@@ -132,6 +132,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             key={recipientAddress}
             recipientAddress={recipientAddress}
             messages={messages}
+            recovering={recovering}
             loading={messagesLoading}
             error={messagesError}
             onRetry={refreshMessages}
@@ -139,7 +140,6 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             hasMore={hasMore}
             loadingOlder={loadingOlder}
             fetchOlder={fetchOlder}
-            prependMessages={prependMessages}
             openingFailed={openingFailed}
             onRetryOpening={retryOpening}
             onSendMessage={sendMessage}

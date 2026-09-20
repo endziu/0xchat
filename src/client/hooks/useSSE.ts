@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useState, useRef } from 'preact/hooks'
+import { isWindowAttentive } from './useWindowAttention'
 import { api } from '../lib/api'
 import { SseConnection } from '../lib/sse-connection'
+
+// Epochs are opaque identities: only equality has meaning to consumers.
+export type ConnectionEpoch = symbol
+export interface LiveConnection { current: ConnectionEpoch | null }
 
 export function useSSE(
   token: string | null,
@@ -8,11 +13,13 @@ export function useSSE(
   onDisconnect?: (address: string) => void,
   onExpiryUpdate?: (data: unknown) => void,
 ) {
-  const [connected, setConnected] = useState(false)
+  const [connected, setConnected] = useState<ConnectionEpoch | null>(null)
+  // Updated synchronously at the transport boundary, before Preact renders.
+  const connection = useRef<ConnectionEpoch | null>(null)
 
   useEffect(() => {
     if (!token) {
-      setConnected(false)
+      setConnected(null)
       return
     }
     const activeToken: string = token
@@ -24,19 +31,28 @@ export function useSSE(
     const conn = new SseConnection({
       getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
       buildUrl: (sseToken) => `/api/events?token=${sseToken}`,
-      onOpen: () => setConnected(true),
-      onDisconnect: () => setConnected(false),
+      onOpen: () => { connection.current = Symbol('SSE connection'); setConnected(connection.current) },
+      onDisconnect: () => { connection.current = null; setConnected(null) },
       onMessage,
       onExpiryUpdate,
       onUserDisconnected: onDisconnect,
     })
-    conn.connect()
+    const update = () => conn.setActive(isWindowAttentive())
+    document.addEventListener('visibilitychange', update)
+    window.addEventListener('focus', update)
+    window.addEventListener('blur', update)
+    update()
+    if (isWindowAttentive()) conn.connect()
 
     return () => {
+      document.removeEventListener('visibilitychange', update)
+      window.removeEventListener('focus', update)
+      window.removeEventListener('blur', update)
+      connection.current = null
       conn.close()
-      setConnected(false)
+      setConnected(null)
     }
   }, [token, onMessage, onDisconnect, onExpiryUpdate])
 
-  return { connected }
+  return { connected: connected !== null, connection }
 }
