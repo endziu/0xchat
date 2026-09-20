@@ -6,10 +6,6 @@ export function pushEndpointDestination(endpoint: string): string {
   url.hash = '';
   url.username = '';
   url.password = '';
-  // Remove default ports so :443 and no port match the same destination.
-  if ((url.protocol === 'https:' && url.port === '443')
-    || (url.protocol === 'https:' && !url.port)) {
-    url.port = '';
-  }
+  // URL already normalizes host casing, dot segments, and default ports.
   return url.href;
 }

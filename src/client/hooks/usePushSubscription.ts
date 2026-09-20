@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
-import { checkPushRegistration, enablePushRegistration, rememberPushDisabled, removePushRegistration } from '../lib/push-registration'
+import { checkPushSlot, enablePushSlot, rememberPushDisabled, removePushSlot } from '../lib/push-slots'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 
@@ -33,7 +33,7 @@ export function usePushSubscription(token: string | null, address: string | null
         if (isStale()) return
         const sub = await reg.pushManager.getSubscription()
         if (isStale()) return
-        const enabled = await checkPushRegistration(activeAddress, activeToken)
+        const enabled = await checkPushSlot(activeAddress, activeToken)
         if (!isStale()) {
           setSubscribed(!!sub && enabled)
           setRemovable(true)
@@ -62,7 +62,7 @@ export function usePushSubscription(token: string | null, address: string | null
         ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
         requestPermission: () => Notification.requestPermission(),
         getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
-        upload: (sub) => enablePushRegistration(address, activeToken, sub, isStale),
+        upload: (sub) => enablePushSlot(address, activeToken, sub, isStale),
         setPermission,
         setSubscribed,
         setError,
@@ -86,7 +86,7 @@ export function usePushSubscription(token: string | null, address: string | null
       runUnsubscribeOp({
         isStale,
         ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
-        removeSlot: () => removePushRegistration(address, activeToken, isStale),
+        removeSlot: () => removePushSlot(address, activeToken, isStale),
         setSubscribed,
         setError,
       }),

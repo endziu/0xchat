@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { render } from 'preact'
-import { createSession, getDb, initDb, registerPubkey } from '../../server/db'
+import { createSession, getDb, initDb, markPushSubscriptionDead, registerPubkey } from '../../server/db'
+import { SettingsModal } from '../components/SettingsModal'
+import { ToastProvider } from '../components/Toast'
 import { createFetch } from '../../server/router'
 import * as limiters from '../../server/rate-limiters'
 
@@ -18,6 +20,7 @@ let current: ReturnType<typeof usePushSubscription>
 let container: HTMLElement
 let browserSub: PushSubscription | null
 let failRemoval = false
+let pendingAction: Promise<unknown> | undefined
 const keys = { p256dh: Buffer.alloc(65, 1).toString('base64url'), auth: Buffer.alloc(16, 2).toString('base64url') }
 
 beforeAll(async () => {
@@ -70,9 +73,17 @@ afterEach(() => {
   getDb().close()
   for (const limiter of Object.values(limiters)) limiter.reset()
 })
-function mount(address = alice) {
+function mount(address = alice, showModal = false) {
   function Settings() {
     current = usePushSubscription(address.toLowerCase(), address)
+    if (showModal) return <ToastProvider><SettingsModal
+      identity={{ address, publicKey: 'test-key', privateKey: '1'.repeat(64) }}
+      onClose={() => {}} onImport={async () => {}}
+      pushSupported={current.supported} pushSubscribed={current.subscribed}
+      pushRemovable={current.removable} pushPermission={current.permission} pushError={current.error}
+      onPushSubscribe={() => { pendingAction = current.subscribe() }}
+      onPushUnsubscribe={() => { pendingAction = current.unsubscribe() }}
+    /></ToastProvider>
     return <span>{current.subscribed ? 'on' : 'off'} {current.error}</span>
   }
   render(<Settings />, container)
@@ -83,6 +94,70 @@ async function list(address = alice) {
     headers: { Authorization: `Bearer ${address}` },
   })).json()
 }
+
+async function clickNotification(label: string) {
+  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  expect(button).not.toBeNull()
+  pendingAction = undefined
+  button!.click()
+  expect(pendingAction).toBeDefined()
+  await pendingAction
+  await settle()
+}
+
+test('settings show actionable cap rejection without eviction and allow enabling once a slot is freed', async () => {
+  for (let i = 0; i < 5; i++) {
+    const response = await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',
+      headers: { Authorization: `Bearer ${alice}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ installation_id: crypto.randomUUID(), expected_revision: 0,
+        subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/other-${i}`, keys } }),
+    })
+    expect(response.status).toBe(201)
+  }
+  const before = await list()
+  mount(alice, true)
+  await settle()
+  await clickNotification('Enable notifications')
+  expect(container.textContent).toContain('Five notification slots are in use. Remove an old subscription')
+  expect(container.querySelector('[aria-label="Enable notifications"]')?.getAttribute('aria-pressed')).toBe('false')
+  expect(await list()).toEqual(before)
+  const slot = before.slots[0]
+  expect((await originalFetch(new URL('/api/push/unsubscribe', server.url), { method: 'POST',
+    headers: { Authorization: `Bearer ${alice}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slot_id: slot.slot_id, installation_id: slot.installation_id, expected_revision: slot.revision }),
+  })).status).toBe(200)
+  await clickNotification('Enable notifications')
+  expect(container.textContent).not.toContain('Five notification slots')
+  expect(container.querySelector('[aria-label="Disable notifications"]')?.getAttribute('aria-pressed')).toBe('true')
+  expect((await list()).slots).toHaveLength(5)
+})
+
+test('settings keep dead slots off and expose explicit removal before enabling again', async () => {
+  mount(alice, true)
+  await settle()
+  await clickNotification('Enable notifications')
+  const slot = (await list()).slots[0]
+  // The production transition used for provider 404/410, not a fabricated browser response.
+  markPushSubscriptionDead(slot.slot_id, slot.revision)
+  const dead = await list()
+  expect(dead.slots[0].state).toBe('repair_needed')
+  render(null, container)
+  mount(alice, true)
+  await settle()
+  expect(await list()).toEqual(dead)
+  expect(container.querySelector('[aria-label="Enable notifications"]')?.getAttribute('aria-pressed')).toBe('false')
+  await clickNotification('Enable notifications')
+  expect(container.textContent).toContain('Remove it and explicitly enable notifications again')
+  expect(await list()).toEqual(dead)
+  await clickNotification('Remove notification slot')
+  const removed = await list()
+  expect(removed.slots).toEqual([])
+  expect(removed.revocations[0]).toMatchObject({ slot_id: slot.slot_id, revision: dead.slots[0].revision + 1 })
+  expect(container.textContent).not.toContain('needs repair')
+  await clickNotification('Enable notifications')
+  expect(container.querySelector('[aria-label="Disable notifications"]')?.getAttribute('aria-pressed')).toBe('true')
+  expect((await list()).slots[0]).toMatchObject({ slot_id: slot.slot_id, state: 'active', revision: removed.revocations[0].revision + 1 })
+})
 
 test('new identity never auto-uploads a surviving subscription and ownership conflict gives an action', async () => {
   mount()

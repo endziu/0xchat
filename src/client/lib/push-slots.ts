@@ -35,7 +35,7 @@ export function rememberPushDisabled(address: string): void {
 }
 
 /** Read-only server confirmation. Never upload, adopt legacy bindings, or repair on a visit. */
-export async function checkPushRegistration(address: string, token: string): Promise<boolean> {
+export async function checkPushSlot(address: string, token: string): Promise<boolean> {
   const installation = installationId()
   const listed = await api.listPushSlots(token)
   const current = preference(address)
@@ -46,7 +46,7 @@ export async function checkPushRegistration(address: string, token: string): Pro
 }
 
 /** Called only by an explicit enable gesture. Refresh once; never retry a stale write. */
-export async function enablePushRegistration(address: string, token: string, subscription: PushSubscriptionJSON,
+export async function enablePushSlot(address: string, token: string, subscription: PushSubscriptionJSON,
   isStale: () => boolean): Promise<void> {
   const installation = installationId()
   const listed = await api.listPushSlots(token)
@@ -58,7 +58,7 @@ export async function enablePushRegistration(address: string, token: string, sub
 }
 
 /** Removal is independent of the browser subscription surviving locally. */
-export async function removePushRegistration(address: string, token: string, isStale: () => boolean): Promise<void> {
+export async function removePushSlot(address: string, token: string, isStale: () => boolean): Promise<void> {
   const installation = installationId()
   const listed = await api.listPushSlots(token)
   if (isStale()) return

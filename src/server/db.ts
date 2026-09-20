@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
+import { pushEndpointDestination } from './push-endpoint.ts';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type DeliveryPolicy, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 // Session tokens are stored as sha256 hex digests so a copy of the database
@@ -61,7 +62,7 @@ export function initDb(path = 'chat.db'): void {
       installation_id TEXT NOT NULL,
       revision INTEGER NOT NULL,
       state TEXT NOT NULL DEFAULT 'active',
-      endpoint TEXT UNIQUE,
+      endpoint TEXT,
       p256dh TEXT,
       auth TEXT,
       legacy INTEGER NOT NULL DEFAULT 0,
@@ -69,6 +70,8 @@ export function initDb(path = 'chat.db'): void {
       updated_at INTEGER NOT NULL,
       UNIQUE(address, installation_id)
     );
+    CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_slots(endpoint);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_push_active_endpoint ON push_slots(endpoint) WHERE state = 'active';
     CREATE TABLE IF NOT EXISTS push_revocations (
       slot_id TEXT PRIMARY KEY,
       address TEXT NOT NULL,
@@ -80,14 +83,24 @@ export function initDb(path = 'chat.db'): void {
 
   db.transaction(() => {
     if (db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'push_subscriptions'").get()) {
-      const rows = db.query('SELECT * FROM push_subscriptions').all() as Array<{
+      // Older pruning removed registrations without their subscriptions. Do not
+      // resurrect those reservations: there is no registered owner to retain.
+      const rows = (db.query(`SELECT s.* FROM push_subscriptions s
+        JOIN pubkeys p ON p.address = lower(s.address)`).all() as Array<{
         address: string; endpoint: string; p256dh: string; auth: string; created_at: number;
-      }>;
+      }>).map(row => ({ ...row, endpoint: pushEndpointDestination(row.endpoint) }));
+      const destinations = new Map<string, number>();
+      for (const row of rows) destinations.set(row.endpoint, (destinations.get(row.endpoint) ?? 0) + 1);
       const insert = db.query(`INSERT INTO push_slots
-        (slot_id, address, installation_id, revision, endpoint, p256dh, auth, legacy, created_at, updated_at)
-        VALUES (?, ?, ?, 1, ?, ?, ?, 1, ?, ?)`);
-      for (const row of rows) insert.run(crypto.randomUUID(), row.address.toLowerCase(), crypto.randomUUID(),
-        row.endpoint, row.p256dh, row.auth, row.created_at, row.created_at);
+        (slot_id, address, installation_id, revision, endpoint, p256dh, auth, legacy, state, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?, ?, 1, ?, ?, ?)`);
+      for (const row of rows) {
+        // Preserve every conflicting legacy slot without selecting a winner or
+        // sending with ambiguous keys. All reservations must be removed before reuse.
+        const state = destinations.get(row.endpoint)! > 1 ? 'repair_needed' : 'active';
+        insert.run(crypto.randomUUID(), row.address.toLowerCase(), crypto.randomUUID(),
+          row.endpoint, row.p256dh, row.auth, state, row.created_at, row.created_at);
+      }
       db.run('DROP TABLE push_subscriptions');
     }
   }).immediate();

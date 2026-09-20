@@ -28,10 +28,28 @@ increments its revision. Unchanged confirmations do not increment it. Provider
 completion is conditional on the attempted ID/revision. All retained slots,
 including repair-needed slots, count toward five. Legacy excess is preserved.
 
-Migration assigns IDs and placeholder installation IDs to legacy rows without
-changing their endpoint/keys/timestamps. An authenticated explicit enable with
-matching endpoint can adopt an unclaimed legacy slot into its installation at
-revision 0, even above the cap. Other identities cannot adopt it. Once claimed,
+Migration discards legacy subscriptions whose registration was already removed.
+For retained registrations, it assigns IDs and placeholder installation IDs,
+preserves keys/timestamps and canonicalizes endpoint destinations (host casing,
+default ports, dot segments, and ignored userinfo/fragments). Ownership checks
+and provider delivery use that same canonical URL. New requests still reject
+userinfo/fragments; the supported-provider allowlist is unchanged.
+
+If several legacy URLs resolve to one destination, every affected slot is
+preserved as `repair_needed`, including its endpoint reservation and keys. None
+is delivered or adopted, even when all belong to the same identity. No owner is
+chosen implicitly. Every reservation must be explicitly removed before that
+destination can be enabled again. Removal uses each owner's authenticated
+list/unsubscribe API; full management UI remains in #83. These quarantined
+reservations count toward the cap and survive restart. Unlike confirmed-dead
+endpoints, their destination remains reserved until removal or registration
+cleanup. Active destinations have a unique index; conditional enable checks all
+reservations, including quarantined ones, inside its immediate transaction.
+
+An authenticated explicit enable with a matching canonical endpoint can adopt
+an unclaimed, active legacy slot into its installation at expected revision 0,
+even above the cap. Adoption persists the submitted validated keys and increments
+the slot revision atomically. Other identities cannot adopt it. Once claimed,
 normal ID/revision rules apply. Re-running migration is harmless.
 
 ## Errors and limits
