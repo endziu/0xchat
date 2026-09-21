@@ -73,7 +73,33 @@ cleanup; failed cleanup is reported and its handle retained for retry. Session
 start only reads status, never uploads or repairs. Legacy clients must update
 before enabling; endpoint-only removal is rejected, not treated as authority.
 
-Registration pruning/deletion clears both slots and revocations transactionally.
-Session expiry/revocation leaves both intact. No retry scheduler exists yet;
-#88 must add retry cleanup to these same transactions. #83 provides same-slot replacement and management UI; #84 owns cross-tab
-coordination. Automatic repair stays disabled until its coordinator lands.
+## Durable wake-up dispatch
+
+Message acceptance stores one content-free wake-up per active slot in the same
+transaction as the message. Work records contain only slot/revision ownership,
+a generation, the legacy message deadline, attempt count, due time, and optional
+provider not-before time. They contain no message ID, ciphertext, conversation
+hint, session token, endpoint, or push key. Multiple accepted messages coalesce
+per slot while preserving newer in-flight generations and the latest applicable
+deadline.
+
+The dispatcher sends an empty payload with the remaining lifetime floored to
+whole seconds. Work with less than one second remaining is discarded. Delivery
+has bounded concurrency, one in-flight attempt per slot, and a finite provider
+wait. A leased SQLite claim serializes attempts across server processes; the
+provider receives the same finite request timeout, and a non-conforming adapter
+that outlives it retains local ownership until it actually settles. Any live SSE
+stream for the identity suppresses and consumes the observed generation. The
+service worker retains its generic `0xchat-message` notification tag.
+
+Pending work survives restart and respects stored due/provider times. Provider
+acceptance followed by a crash before local completion can therefore deliver
+again: dispatch is intentionally at-least-once for ambiguous outcomes, not
+exactly-once. This slice makes one bounded attempt during normal operation;
+#89 adds durable retry/backoff policy and #90 adds paused failure states.
+
+Registration pruning/deletion and slot removal clear associated work
+transactionally. Session expiry/revocation leaves slots and work intact. Same-slot
+replacement transfers still-valid work to the new revision and fences stale
+completion. #84 owns cross-tab coordination. Automatic repair stays disabled
+until its coordinator lands.

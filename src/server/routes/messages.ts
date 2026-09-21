@@ -3,8 +3,8 @@ import { createMessage, getMessageStates, recoverMessages, openMessages, getConv
 import { json, getSessionAddress } from '../http.ts';
 import { recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
-import { pushNotify } from '../push.ts';
-import { log, warn, error, VALID_TTLS } from '../constants.ts';
+import { requestPushDispatch } from '../push.ts';
+import { log, warn, VALID_TTLS } from '../constants.ts';
 import {
   MESSAGE_ENVELOPE_VERSION,
   parseMessageEnvelope,
@@ -93,7 +93,7 @@ export async function handleSendMessage({ req, ip, testDeliveryPolicy }: Context
   const event = delivered(envelope, stored);
   notify(envelope.recipient, 'message', event);
   notify(envelope.sender, 'message', event);
-  pushNotify(envelope.recipient, envelope.ttl).catch((err) => error('[push] notify failed', envelope.recipient, err));
+  requestPushDispatch();
 
   log('[msg]', envelope.id, envelope.sender, '→', envelope.recipient, `ttl=${envelope.ttl}s`,
     `ct_r=${(envelope.ct_recipient.length - 2) / 2}B`, `ct_s=${(envelope.ct_sender.length - 2) / 2}B`);
