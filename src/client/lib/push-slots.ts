@@ -45,10 +45,6 @@ export async function getPushSlotState(address: string, token: string): Promise<
   return { enabled: !!(current.enabled && slot?.state === 'active'), slots: listed.slots }
 }
 
-export async function checkPushSlot(address: string, token: string): Promise<boolean> {
-  return (await getPushSlotState(address, token)).enabled
-}
-
 /** Called only by an explicit enable gesture. Refresh once; never retry a stale write. */
 export async function enablePushSlot(address: string, token: string, subscription: PushSubscriptionJSON,
   isStale: () => boolean): Promise<PushSlotHandle | undefined> {
@@ -78,7 +74,9 @@ export async function removePushSlot(address: string, token: string, isStale: ()
 }
 
 /** Remote removal deliberately leaves the local browser subscription untouched. */
-export async function removeRemotePushSlot(address: string, token: string, slot: PushSlotHandle): Promise<void> {
+export async function removeRemotePushSlot(address: string, token: string, slot: PushSlotHandle): Promise<boolean> {
+  const removesCurrentInstallation = slot.installation_id === installationId()
   const handle = await api.unsubscribePush(condition(slot.installation_id, slot), token)
-  if (slot.installation_id === installationId()) save(address, { enabled: false, handle })
+  if (removesCurrentInstallation) save(address, { enabled: false, handle })
+  return removesCurrentInstallation
 }

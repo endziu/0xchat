@@ -5,9 +5,9 @@ import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
+import type { PushSettings } from './SettingsModal'
 import { useToast } from './Toast'
 import { version } from '../../../package.json'
-import type { PushSlotSummary } from '../../shared/push-slot'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -17,15 +17,7 @@ interface LayoutProps {
   navigate?: (to: string) => void
   error?: string | null
   sseConnected?: boolean
-  pushSupported?: boolean
-  pushSubscribed?: boolean
-  pushRemovable?: boolean
-  pushSlots?: PushSlotSummary[]
-  pushPermission?: NotificationPermission | null
-  pushError?: string | null
-  onPushSubscribe?: () => void
-  onPushUnsubscribe?: () => void
-  onPushRemoveSlot?: (slot: PushSlotSummary) => void
+  push?: PushSettings
 }
 
 export function Layout({
@@ -36,15 +28,7 @@ export function Layout({
   navigate,
   error,
   sseConnected,
-  pushSupported,
-  pushSubscribed,
-  pushRemovable,
-  pushSlots,
-  pushPermission,
-  pushError,
-  onPushSubscribe,
-  onPushUnsubscribe,
-  onPushRemoveSlot,
+  push,
 }: LayoutProps) {
   const { toast } = useToast()
   const [showSettings, setShowSettings] = useState(false)
@@ -172,15 +156,7 @@ export function Layout({
             await onImport?.(keypair)
             setShowSettings(false)
           }}
-          pushSupported={pushSupported}
-          pushSubscribed={pushSubscribed}
-          pushRemovable={pushRemovable}
-          pushSlots={pushSlots}
-          pushPermission={pushPermission}
-          pushError={pushError}
-          onPushSubscribe={onPushSubscribe}
-          onPushUnsubscribe={onPushUnsubscribe}
-          onPushRemoveSlot={onPushRemoveSlot}
+          push={push}
         />
       )}
       {showQR && identity && (

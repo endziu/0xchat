@@ -21,7 +21,14 @@ let container: HTMLElement
 let browserSub: PushSubscription | null
 let failRemoval = false
 let pendingAction: Promise<unknown> | undefined
+const listBarriers = new Map<string, Promise<void>>()
 const keys = { p256dh: Buffer.alloc(65, 1).toString('base64url'), auth: Buffer.alloc(16, 2).toString('base64url') }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 beforeAll(async () => {
   GlobalRegistrator.register({ url: 'http://localhost' })
@@ -40,6 +47,7 @@ beforeEach(() => {
   localStorage.clear()
   browserSub = null
   failRemoval = false
+  listBarriers.clear()
   Object.defineProperty(globalThis, 'Notification', { configurable: true, value: { permission: 'granted', requestPermission: async () => 'granted' } })
   Object.defineProperty(window, 'PushManager', { configurable: true, value: class {} })
   Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
@@ -60,6 +68,10 @@ beforeEach(() => {
     const path = String(input)
     if (path.endsWith('/vapid-public-key')) return Response.json({ publicKey: 'A'.repeat(44) })
     if (failRemoval && path.endsWith('/unsubscribe')) throw new Error('offline')
+    if (path.endsWith('/subscriptions')) {
+      const token = new Headers(options?.headers).get('Authorization')?.replace('Bearer ', '')
+      if (token) await listBarriers.get(token)
+    }
     return originalFetch(new URL(path, server.url), options)
   }, { preconnect: originalFetch.preconnect })
   container = document.createElement('div')
@@ -73,21 +85,21 @@ afterEach(() => {
   getDb().close()
   for (const limiter of Object.values(limiters)) limiter.reset()
 })
+function SettingsHarness({ address, showModal }: { address: string; showModal: boolean }) {
+  current = usePushSubscription(address.toLowerCase(), address)
+  if (showModal) return <ToastProvider><SettingsModal
+    identity={{ address, publicKey: 'test-key', privateKey: '1'.repeat(64) }}
+    onClose={() => {}} onImport={async () => {}}
+    push={{ ...current,
+      subscribe: () => { pendingAction = current.subscribe() },
+      unsubscribe: () => { pendingAction = current.unsubscribe() },
+      removeSlot: (slot) => { pendingAction = current.removeSlot(slot) },
+    }}
+  /></ToastProvider>
+  return <span>{current.subscribed ? 'on' : 'off'} {current.error}</span>
+}
 function mount(address = alice, showModal = false) {
-  function Settings() {
-    current = usePushSubscription(address.toLowerCase(), address)
-    if (showModal) return <ToastProvider><SettingsModal
-      identity={{ address, publicKey: 'test-key', privateKey: '1'.repeat(64) }}
-      onClose={() => {}} onImport={async () => {}}
-      pushSupported={current.supported} pushSubscribed={current.subscribed}
-      pushRemovable={current.removable} pushSlots={current.slots} pushPermission={current.permission} pushError={current.error}
-      onPushSubscribe={() => { pendingAction = current.subscribe() }}
-      onPushUnsubscribe={() => { pendingAction = current.unsubscribe() }}
-      onPushRemoveSlot={(slot) => { pendingAction = current.removeSlot(slot) }}
-    /></ToastProvider>
-    return <span>{current.subscribed ? 'on' : 'off'} {current.error}</span>
-  }
-  render(<Settings />, container)
+  render(<SettingsHarness address={address} showModal={showModal} />, container)
 }
 async function settle() { await Bun.sleep(60) }
 async function list(address = alice) {
@@ -150,6 +162,58 @@ test('settings list safe remote notification slots and remove an old browser', a
   expect(container.textContent).not.toContain('https://')
   await clickNotification(`Remove notification slot ${oldSlots[0].slot_id}`)
   expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: oldSlots[1].slot_id })])
+})
+
+test('settings manage remote slots when local push APIs are unavailable', async () => {
+  const slot = await (await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',
+    headers: { Authorization: `Bearer ${alice}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ installation_id: crypto.randomUUID(), expected_revision: 0,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/unsupported-browser', keys } }),
+  })).json()
+  Object.defineProperty(window, 'PushManager', { configurable: true, value: undefined })
+
+  mount(alice, true)
+  await settle()
+  expect(container.textContent).toContain('Unavailable here')
+  expect(container.textContent).toContain(slot.slot_id)
+  await clickNotification(`Remove notification slot ${slot.slot_id}`)
+  expect((await list()).slots).toEqual([])
+})
+
+test('identity changes reject stale slot refreshes and queued removals', async () => {
+  const slot = await (await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',
+    headers: { Authorization: `Bearer ${alice}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ installation_id: crypto.randomUUID(), expected_revision: 0,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/stale-operation', keys } }),
+  })).json()
+  const aliceList = deferred<void>()
+  const bobList = deferred<void>()
+  listBarriers.set(alice, aliceList.promise)
+  listBarriers.set(bob, bobList.promise)
+
+  mount(alice, true)
+  await Bun.sleep(10)
+  mount(bob, true)
+  aliceList.resolve()
+  await Bun.sleep(10)
+  expect(container.textContent).not.toContain(slot.slot_id)
+  bobList.resolve()
+  await settle()
+
+  listBarriers.clear()
+  mount(alice, true)
+  await settle()
+  const registration = await navigator.serviceWorker.ready
+  const ready = deferred<ServiceWorkerRegistration>()
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { ready: ready.promise } })
+  const blockingOperation = current.unsubscribe()
+  const staleRemoval = current.removeSlot(slot)
+  Object.defineProperty(globalThis, 'Notification', { configurable: true,
+    value: { permission: 'denied', requestPermission: async () => 'denied' } })
+  const supersedingOperation = current.subscribe()
+  ready.resolve(registration)
+  await Promise.all([blockingOperation, staleRemoval, supersedingOperation])
+  expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: slot.slot_id })])
 })
 
 test('settings explicitly repair a dead slot without consuming another slot', async () => {
