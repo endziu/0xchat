@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
-import { checkPushSlot, enablePushSlot, rememberPushDisabled, removePushSlot } from '../lib/push-slots'
+import { enablePushSlot, getPushSlotState, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
+import type { PushSlotSummary } from '../../shared/push-slot'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 
@@ -10,6 +11,7 @@ export function usePushSubscription(token: string | null, address: string | null
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
   const [removable, setRemovable] = useState(false)
+  const [slots, setSlots] = useState<PushSlotSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | null>(
     typeof Notification === 'undefined' ? null : Notification.permission,
@@ -22,6 +24,7 @@ export function usePushSubscription(token: string | null, address: string | null
     setSupported(isSupported)
     setSubscribed(false)
     setRemovable(false)
+    setSlots([])
     if (!isSupported || !token || !address) return
     const activeToken = token
     const activeAddress = address
@@ -33,14 +36,16 @@ export function usePushSubscription(token: string | null, address: string | null
         if (isStale()) return
         const sub = await reg.pushManager.getSubscription()
         if (isStale()) return
-        const enabled = await checkPushSlot(activeAddress, activeToken)
+        const state = await getPushSlotState(activeAddress, activeToken)
         if (!isStale()) {
-          setSubscribed(!!sub && enabled)
+          setSubscribed(!!sub && state.enabled)
+          setSlots(state.slots)
           setRemovable(true)
         }
       } catch {
         if (!isStale()) {
           setSubscribed(false)
+          setSlots([])
           setRemovable(true)
           setError('Could not connect notifications. Try enabling them again.')
         }
@@ -56,8 +61,8 @@ export function usePushSubscription(token: string | null, address: string | null
     const isStale = claimGeneration(generationRef)
     const activeToken = token
 
-    return queueRef.current.enqueue(() =>
-      runSubscribeOp({
+    return queueRef.current.enqueue(async () => {
+      const enabled = await runSubscribeOp({
         isStale,
         ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
         requestPermission: () => Notification.requestPermission(),
@@ -66,8 +71,28 @@ export function usePushSubscription(token: string | null, address: string | null
         setPermission,
         setSubscribed,
         setError,
-      }),
-    )
+      })
+      if (enabled && !isStale()) setSlots((await getPushSlotState(address, activeToken)).slots)
+      return enabled
+    })
+  }
+
+  const removeSlot = async (slot: PushSlotSummary): Promise<void> => {
+    if (!token || !address) return
+    setError(null)
+    const isStale = claimGeneration(generationRef)
+    const activeToken = token
+    return queueRef.current.enqueue(async () => {
+      try {
+        await removeRemotePushSlot(address, activeToken, slot)
+        if (!isStale()) {
+          setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
+          if (slot.installation_id === localStorage.getItem('0xchat.push.installation')) setSubscribed(false)
+        }
+      } catch {
+        if (!isStale()) setError('Could not remove this notification slot. Refresh and try again.')
+      }
+    })
   }
 
   const unsubscribe = async (): Promise<void> => {
@@ -82,16 +107,17 @@ export function usePushSubscription(token: string | null, address: string | null
     const isStale = claimGeneration(generationRef)
     const activeToken = token
 
-    return queueRef.current.enqueue(() =>
-      runUnsubscribeOp({
+    return queueRef.current.enqueue(async () => {
+      await runUnsubscribeOp({
         isStale,
         ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
         removeSlot: () => removePushSlot(address, activeToken, isStale),
         setSubscribed,
         setError,
-      }),
-    )
+      })
+      if (!isStale()) setSlots((await getPushSlotState(address, activeToken)).slots)
+    })
   }
 
-  return { supported, subscribed, removable, permission, error, subscribe, unsubscribe }
+  return { supported, subscribed, removable, slots, permission, error, subscribe, unsubscribe, removeSlot }
 }

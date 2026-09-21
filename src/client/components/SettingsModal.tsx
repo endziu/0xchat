@@ -3,6 +3,7 @@ import type { Keypair } from '../lib/burner'
 import { X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
+import type { PushSlotSummary } from '../../shared/push-slot'
 
 interface SettingsModalProps {
   identity: Keypair
@@ -11,10 +12,12 @@ interface SettingsModalProps {
   pushSupported?: boolean
   pushSubscribed?: boolean
   pushRemovable?: boolean
+  pushSlots?: PushSlotSummary[]
   pushPermission?: NotificationPermission | null
   pushError?: string | null
   onPushSubscribe?: () => void
   onPushUnsubscribe?: () => void
+  onPushRemoveSlot?: (slot: PushSlotSummary) => void
 }
 
 export function SettingsModal({
@@ -24,10 +27,12 @@ export function SettingsModal({
   pushSupported,
   pushSubscribed,
   pushRemovable,
+  pushSlots,
   pushPermission,
   pushError,
   onPushSubscribe,
   onPushUnsubscribe,
+  onPushRemoveSlot,
 }: SettingsModalProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -88,6 +93,24 @@ export function SettingsModal({
                   </div>
                 )}
               </div>
+              {pushSlots && pushSlots.length > 0 && (
+                <div className="mt-3 border-t border-neutral-800 pt-3">
+                  <h4 className="text-sm">Notification subscriptions</h4>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {pushSlots.map(slot => (
+                      <li key={slot.slot_id} className="flex items-center justify-between gap-2">
+                        <div>
+                          <div>{slot.label} · {slot.state === 'active' ? 'Active' : 'Needs repair'}</div>
+                          <div className="text-xs text-neutral-600">Slot {slot.slot_id} · updated {new Date(slot.updated_at).toLocaleString()}</div>
+                        </div>
+                        <button onClick={() => onPushRemoveSlot?.(slot)} aria-label={`Remove notification slot ${slot.slot_id}`}>
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}
             </section>
           )}

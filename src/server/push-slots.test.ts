@@ -292,6 +292,23 @@ test('URL destination aliases cannot create a second ownership binding', async (
   }
 });
 
+test('conditional reconciliation replaces an owned endpoint in its existing slot', async () => {
+  const first = enable();
+  const created = await (await request('subscribe', first)).json();
+  const replacement = enable(first.installation_id, 'replacement');
+  const response = await request('reconcile', { ...replacement, ...condition(created) });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ ...created, revision: 2 });
+  expect((await (await request('subscriptions')).json()).slots).toMatchObject([
+    { ...created, revision: 2, state: 'active' },
+  ]);
+  expect((await request('subscribe', { ...enable(), subscription: first.subscription }, bob)).status).toBe(201);
+  // A removal that began from the old revision cannot revoke the replacement.
+  expect((await request('unsubscribe', condition(created))).status).toBe(409);
+  expect((await request('reconcile', { ...replacement, ...condition(created) })).status).toBe(409);
+});
+
 test('an endpoint cannot transfer across authenticated identities and lists reveal no secrets', async () => {
   const body = enable();
   const created = await request('subscribe', body);

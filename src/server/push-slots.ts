@@ -71,8 +71,19 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
       if (input.slot_id !== slot.slot_id || input.expected_revision !== slot.revision) {
         fail('revision_conflict', 'Notification state changed. Refresh before trying again.');
       }
-      if (slot.legacy || slot.state !== 'active' || slot.endpoint !== canonical || slot.p256dh !== keys.p256dh || slot.auth !== keys.auth) {
+      const replacingEndpoint = reconcile && slot.endpoint !== canonical;
+      if (!replacingEndpoint && (slot.legacy || slot.state !== 'active' || slot.endpoint !== canonical || slot.p256dh !== keys.p256dh || slot.auth !== keys.auth)) {
         fail('repair_needed', 'This subscription needs repair. Remove it and explicitly enable notifications again.');
+      }
+      if (replacingEndpoint && endpointOwners.some(owner => owner.slot_id !== slot.slot_id)) {
+        fail('ownership_conflict', 'This endpoint already belongs to another browser slot. Remove that binding first.');
+      }
+      if (replacingEndpoint) {
+        const revision = slot.revision + 1;
+        db.query(`UPDATE push_slots SET endpoint = ?, p256dh = ?, auth = ?, legacy = 0, state = 'active',
+          revision = ?, updated_at = ? WHERE slot_id = ? AND revision = ?`)
+          .run(canonical, keys.p256dh, keys.auth, revision, Date.now(), slot.slot_id, slot.revision);
+        return { ...toHandle(slot), revision };
       }
       return toHandle(slot);
     }

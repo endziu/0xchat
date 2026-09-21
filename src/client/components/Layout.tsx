@@ -7,6 +7,7 @@ import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
 import { useToast } from './Toast'
 import { version } from '../../../package.json'
+import type { PushSlotSummary } from '../../shared/push-slot'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -19,10 +20,12 @@ interface LayoutProps {
   pushSupported?: boolean
   pushSubscribed?: boolean
   pushRemovable?: boolean
+  pushSlots?: PushSlotSummary[]
   pushPermission?: NotificationPermission | null
   pushError?: string | null
   onPushSubscribe?: () => void
   onPushUnsubscribe?: () => void
+  onPushRemoveSlot?: (slot: PushSlotSummary) => void
 }
 
 export function Layout({
@@ -36,10 +39,12 @@ export function Layout({
   pushSupported,
   pushSubscribed,
   pushRemovable,
+  pushSlots,
   pushPermission,
   pushError,
   onPushSubscribe,
   onPushUnsubscribe,
+  onPushRemoveSlot,
 }: LayoutProps) {
   const { toast } = useToast()
   const [showSettings, setShowSettings] = useState(false)
@@ -170,10 +175,12 @@ export function Layout({
           pushSupported={pushSupported}
           pushSubscribed={pushSubscribed}
           pushRemovable={pushRemovable}
+          pushSlots={pushSlots}
           pushPermission={pushPermission}
           pushError={pushError}
           onPushSubscribe={onPushSubscribe}
           onPushUnsubscribe={onPushUnsubscribe}
+          onPushRemoveSlot={onPushRemoveSlot}
         />
       )}
       {showQR && identity && (

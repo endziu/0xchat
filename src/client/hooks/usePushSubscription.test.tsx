@@ -80,9 +80,10 @@ function mount(address = alice, showModal = false) {
       identity={{ address, publicKey: 'test-key', privateKey: '1'.repeat(64) }}
       onClose={() => {}} onImport={async () => {}}
       pushSupported={current.supported} pushSubscribed={current.subscribed}
-      pushRemovable={current.removable} pushPermission={current.permission} pushError={current.error}
+      pushRemovable={current.removable} pushSlots={current.slots} pushPermission={current.permission} pushError={current.error}
       onPushSubscribe={() => { pendingAction = current.subscribe() }}
       onPushUnsubscribe={() => { pendingAction = current.unsubscribe() }}
+      onPushRemoveSlot={(slot) => { pendingAction = current.removeSlot(slot) }}
     /></ToastProvider>
     return <span>{current.subscribed ? 'on' : 'off'} {current.error}</span>
   }
@@ -130,6 +131,25 @@ test('settings show actionable cap rejection without eviction and allow enabling
   expect(container.textContent).not.toContain('Five notification slots')
   expect(container.querySelector('[aria-label="Disable notifications"]')?.getAttribute('aria-pressed')).toBe('true')
   expect((await list()).slots).toHaveLength(5)
+})
+
+test('settings list safe remote notification slots and remove an old browser', async () => {
+  const oldSlots = []
+  for (let i = 0; i < 2; i++) {
+    oldSlots.push(await (await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',
+      headers: { Authorization: `Bearer ${alice}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ installation_id: crypto.randomUUID(), expected_revision: 0,
+        subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/old-${i}`, keys } }),
+    })).json())
+  }
+
+  mount(alice, true)
+  await settle()
+  expect(container.textContent).toContain(oldSlots[0].slot_id)
+  expect(container.textContent).toContain('Active')
+  expect(container.textContent).not.toContain('https://')
+  await clickNotification(`Remove notification slot ${oldSlots[0].slot_id}`)
+  expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: oldSlots[1].slot_id })])
 })
 
 test('settings keep dead slots off and expose explicit removal before enabling again', async () => {
