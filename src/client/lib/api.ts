@@ -192,6 +192,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
+  reconcilePush: (subscription: PushSubscriptionJSON, condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
+    request('/api/push/reconcile', {
+      method: 'POST',
+      body: JSON.stringify({ ...condition, subscription }),
+      headers: { 'Content-Type': 'application/json' },
+    }, token),
+
   unsubscribePush: (condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
     request('/api/push/unsubscribe', {
       method: 'POST',

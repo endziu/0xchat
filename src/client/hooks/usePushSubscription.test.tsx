@@ -152,7 +152,7 @@ test('settings list safe remote notification slots and remove an old browser', a
   expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: oldSlots[1].slot_id })])
 })
 
-test('settings keep dead slots off and expose explicit removal before enabling again', async () => {
+test('settings explicitly repair a dead slot without consuming another slot', async () => {
   mount(alice, true)
   await settle()
   await clickNotification('Enable notifications')
@@ -167,16 +167,10 @@ test('settings keep dead slots off and expose explicit removal before enabling a
   expect(await list()).toEqual(dead)
   expect(container.querySelector('[aria-label="Enable notifications"]')?.getAttribute('aria-pressed')).toBe('false')
   await clickNotification('Enable notifications')
-  expect(container.textContent).toContain('Remove it and explicitly enable notifications again')
-  expect(await list()).toEqual(dead)
-  await clickNotification('Remove notification slot')
-  const removed = await list()
-  expect(removed.slots).toEqual([])
-  expect(removed.revocations[0]).toMatchObject({ slot_id: slot.slot_id, revision: dead.slots[0].revision + 1 })
-  expect(container.textContent).not.toContain('needs repair')
-  await clickNotification('Enable notifications')
   expect(container.querySelector('[aria-label="Disable notifications"]')?.getAttribute('aria-pressed')).toBe('true')
-  expect((await list()).slots[0]).toMatchObject({ slot_id: slot.slot_id, state: 'active', revision: removed.revocations[0].revision + 1 })
+  expect((await list()).slots).toEqual([expect.objectContaining({
+    slot_id: slot.slot_id, state: 'active', revision: dead.slots[0].revision + 1,
+  })])
 })
 
 test('new identity never auto-uploads a surviving subscription and ownership conflict gives an action', async () => {

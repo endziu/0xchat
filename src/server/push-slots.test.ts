@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSession, deleteExpiredSessions, deleteInactivePubkeys, getDb, initDb, registerPubkey } from './db.ts';
+import { createSession, deleteExpiredSessions, deleteInactivePubkeys, getDb, initDb, markPushSubscriptionDead, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
 import * as limiters from './rate-limiters.ts';
 import { Database } from 'bun:sqlite';
@@ -307,6 +307,42 @@ test('conditional reconciliation replaces an owned endpoint in its existing slot
   // A removal that began from the old revision cannot revoke the replacement.
   expect((await request('unsubscribe', condition(created))).status).toBe(409);
   expect((await request('reconcile', { ...replacement, ...condition(created) })).status).toBe(409);
+});
+
+test('replacement repairs slots at the cap and above it after legacy migration', async () => {
+  for (let i = 0; i < 5; i++) expect((await request('subscribe', enable())).status).toBe(201);
+  const capped = (await (await request('subscriptions')).json()).slots[0];
+  markPushSubscriptionDead(capped.slot_id, capped.revision);
+  const dead = (await (await request('subscriptions')).json()).slots[0];
+  expect((await request('reconcile', { ...enable(dead.installation_id, 'capped-repair'), ...condition(dead) })).status).toBe(200);
+  expect((await (await request('subscriptions')).json()).slots).toHaveLength(5);
+
+  const path = migrateLegacy(Array.from({ length: 6 }, (_, i) => ({
+    address: alice, endpoint: enable('unused', `over-cap-${i}`).subscription.endpoint,
+  })));
+  const legacy = (await (await request('subscriptions')).json()).slots[0];
+  expect((await request('reconcile', { ...enable(legacy.installation_id, 'over-cap-repair'), ...condition(legacy) })).status).toBe(200);
+  expect((await (await request('subscriptions')).json()).slots).toHaveLength(6);
+  getDb().close();
+  initDb(path);
+});
+
+test('replacement refuses another owned slot and races safely with removal', async () => {
+  const firstRequest = enable();
+  const first = await (await request('subscribe', firstRequest)).json();
+  const secondRequest = enable();
+  await request('subscribe', secondRequest);
+  const conflict = await request('reconcile', {
+    ...enable(firstRequest.installation_id), subscription: secondRequest.subscription, ...condition(first),
+  });
+  expect(conflict.status).toBe(409);
+  expect((await conflict.json()).code).toBe('ownership_conflict');
+
+  const slot = (await (await request('subscriptions')).json()).slots
+    .find((candidate: PushSlotHandle) => candidate.slot_id === first.slot_id);
+  const replacement = { ...enable(slot.installation_id, 'racing-replacement'), ...condition(slot) };
+  const results = await Promise.all([request('reconcile', replacement), request('unsubscribe', condition(slot))]);
+  expect(results.map(result => result.status).sort()).toEqual([200, 409]);
 });
 
 test('an endpoint cannot transfer across authenticated identities and lists reveal no secrets', async () => {

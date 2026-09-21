@@ -55,8 +55,12 @@ export async function enablePushSlot(address: string, token: string, subscriptio
   const installation = installationId()
   const listed = await api.listPushSlots(token)
   if (isStale()) return
-  const current = [...listed.slots, ...listed.revocations].find(slot => slot.installation_id === installation)
-  const handle = await api.subscribePush(subscription, condition(installation, current), token)
+  const slot = listed.slots.find(slot => slot.installation_id === installation)
+  const revocation = listed.revocations.find(slot => slot.installation_id === installation)
+  const current = slot ?? revocation
+  const handle = slot
+    ? await api.reconcilePush(subscription, condition(installation, slot), token)
+    : await api.subscribePush(subscription, condition(installation, current), token)
   // Keep the accepted handle for cleanup even if the UI generation was superseded.
   save(address, { enabled: !isStale(), handle })
   return handle
