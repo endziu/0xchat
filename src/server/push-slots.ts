@@ -1,4 +1,4 @@
-import { getDb, getPubkey } from './db.ts';
+import { getDb, getPubkey, transferPushWorkRevision } from './db.ts';
 import { pushEndpointDestination } from './push-endpoint.ts';
 import type { PushEnableRequest, PushSlotCondition, PushSlotHandle, PushSlotList } from '../shared/push-slot.ts';
 import type { ApiErrorCode } from '../shared/api-error.ts';
@@ -62,14 +62,19 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
         fail('repair_needed', 'Conflicting legacy subscriptions need removal before enabling notifications again.');
       }
       slot = endpointOwner;
+      const revision = slot.revision + 1;
       db.query(`UPDATE push_slots SET installation_id = ?, p256dh = ?, auth = ?, legacy = 0,
-        revision = revision + 1, updated_at = ? WHERE slot_id = ?`)
-        .run(input.installation_id, keys.p256dh, keys.auth, Date.now(), slot.slot_id);
-      return { slot_id: slot.slot_id, installation_id: input.installation_id, revision: slot.revision + 1 };
+        revision = ?, updated_at = ? WHERE slot_id = ?`)
+        .run(input.installation_id, keys.p256dh, keys.auth, revision, Date.now(), slot.slot_id);
+      transferPushWorkRevision(slot.slot_id, slot.revision, revision);
+      return { slot_id: slot.slot_id, installation_id: input.installation_id, revision };
     }
     if (slot) {
       if (input.slot_id !== slot.slot_id || input.expected_revision !== slot.revision) {
         fail('revision_conflict', 'Notification state changed. Refresh before trying again.');
+      }
+      if (slot.legacy && slot.state === 'repair_needed' && slot.endpoint !== null) {
+        fail('repair_needed', 'Conflicting legacy subscriptions need removal before enabling notifications again.');
       }
       const replacingEndpoint = reconcile && slot.endpoint !== canonical;
       if (!replacingEndpoint && (slot.legacy || slot.state !== 'active' || slot.endpoint !== canonical || slot.p256dh !== keys.p256dh || slot.auth !== keys.auth)) {
@@ -83,6 +88,7 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
         db.query(`UPDATE push_slots SET endpoint = ?, p256dh = ?, auth = ?, legacy = 0, state = 'active',
           revision = ?, updated_at = ? WHERE slot_id = ? AND revision = ?`)
           .run(canonical, keys.p256dh, keys.auth, revision, Date.now(), slot.slot_id, slot.revision);
+        transferPushWorkRevision(slot.slot_id, slot.revision, revision);
         return { ...toHandle(slot), revision };
       }
       return toHandle(slot);

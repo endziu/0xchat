@@ -2,8 +2,10 @@ import { initDb, deleteExpiredMessages, deleteExpiredSessions, deleteInactivePub
 import { PORT, PUBKEY_RETENTION_MS, error } from './src/server/constants.ts';
 import { json } from './src/server/http.ts';
 import { createFetch, regStore, authStore, cleanupSseTokens } from './src/server/router.ts';
+import { startPushDispatcher } from './src/server/push.ts';
 
 initDb();
+startPushDispatcher();
 
 setInterval(() => {
   deleteExpiredMessages();

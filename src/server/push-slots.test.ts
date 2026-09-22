@@ -122,25 +122,32 @@ function migrateLegacy(rows: Array<{ address: string; endpoint: string }>, regis
   return path;
 }
 
-// A separate Bun process keeps VAPID configuration and the fake outbound provider
-// isolated from other tests. Exercise production delivery against the migrated DB.
+// Exercise migrated bindings through the same durable dispatcher as message acceptance.
 async function deliveredSubscriptions(path: string, addresses = [alice, bob]): Promise<Array<{ endpoint: string; keys: typeof keys }>> {
   const proc = Bun.spawn([process.execPath, '--eval', `
-    import webpush from 'web-push';
-    const vapid = webpush.generateVAPIDKeys();
-    process.env.VAPID_PUBLIC_KEY = vapid.publicKey;
-    process.env.VAPID_PRIVATE_KEY = vapid.privateKey;
-    process.env.VAPID_SUBJECT = 'mailto:test@example.com';
-    const sent = [];
-    webpush.sendNotification = async subscription => {
-      sent.push(subscription);
-      return { statusCode: 201, body: '', headers: {} };
-    };
-    const { initDb, getDb } = await import('./db.ts');
-    const { pushNotify } = await import('./push.ts');
+    import { initDb, getDb, createMessage } from './db.ts';
+    import { startPushDispatcher, stopPushDispatcher } from './push.ts';
+    import { listPushSlots } from './push-slots.ts';
+    import { MESSAGE_ENVELOPE_VERSION } from '../shared/message-envelope.ts';
     initDb(${JSON.stringify(path)});
-    for (const address of ${JSON.stringify(addresses)}) await pushNotify(address, 60);
+    const sent = [];
+    let expected = 0;
+    for (const address of ${JSON.stringify(addresses)}) {
+      expected += listPushSlots(address).slots.filter(slot => slot.state === 'active').length;
+      // Envelope verification is covered by HTTP tests; here exercise migrated routing.
+      createMessage({ version: MESSAGE_ENVELOPE_VERSION, id: crypto.randomUUID(),
+        sender: address, recipient: address, ttl: 60, signature: 'fixture',
+        ct_recipient: 'fixture', ephemeral_pub_recipient: 'fixture', iv_recipient: 'fixture',
+        ct_sender: 'fixture', ephemeral_pub_sender: 'fixture', iv_sender: 'fixture' });
+    }
+    startPushDispatcher({ pollIntervalMs: 5, send: async subscription => { sent.push(subscription); } });
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await Bun.sleep(5);
+      if (sent.length >= expected) break;
+    }
+    stopPushDispatcher();
     getDb().close();
+    if (sent.length !== expected) throw new Error('Migrated delivery did not complete');
     console.log(JSON.stringify(sent));
   `], { cwd: import.meta.dir, env: { ...process.env, DEBUG: '0' }, stdout: 'pipe', stderr: 'pipe' });
   const [stdout, stderr, code] = await Promise.all([
@@ -242,6 +249,13 @@ test.each([alice, bob])('legacy alias collisions retain slots but block adoption
   expect((await (await request('subscribe', claim)).json()).code)
     .toBe(secondOwner === alice ? 'repair_needed' : 'ownership_conflict');
   expect((await (await request('subscribe', claim, bob)).json()).code).toBe('ownership_conflict');
+  // Replacing a quarantined slot must not release its reserved destination either.
+  const replacement = await request('reconcile', {
+    ...enable(listed.slots[0].installation_id, 'new-destination'), ...condition(listed.slots[0]),
+  });
+  expect(replacement.status).toBe(409);
+  expect((await replacement.json()).code).toBe('repair_needed');
+  expect(await (await request('subscriptions')).json()).toEqual(listed);
   // Removing one alias cannot release another identity's reservation or activate a quarantined slot.
   expect((await request('unsubscribe', condition(listed.slots[0]))).status).toBe(200);
   const remaining = (await (await request('subscriptions', undefined, secondOwner)).json()).slots;

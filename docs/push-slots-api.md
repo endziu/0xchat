@@ -19,7 +19,8 @@ IDs are opaque identifiers, not credentials. Endpoint URLs never authorize a tra
   an owned slot's endpoint and keys when its expected revision matches. Replacement
   retains the slot ID, increments its revision, restores it to `active`, and is
   allowed at or above the five-slot cap. A destination owned by another slot fails
-  with `ownership_conflict`.
+  with `ownership_conflict`. Quarantined legacy reservations cannot be replaced;
+  remove them explicitly before enabling again.
 - `POST /api/push/unsubscribe`: `{slot_id, installation_id, expected_revision}`.
   Deletes endpoint/key data and records revision + 1 atomically. Returns the
   revocation handle. Repeating the accepted removal is idempotent; older writes fail.
@@ -73,7 +74,36 @@ cleanup; failed cleanup is reported and its handle retained for retry. Session
 start only reads status, never uploads or repairs. Legacy clients must update
 before enabling; endpoint-only removal is rejected, not treated as authority.
 
-Registration pruning/deletion clears both slots and revocations transactionally.
-Session expiry/revocation leaves both intact. No retry scheduler exists yet;
-#88 must add retry cleanup to these same transactions. #83 provides same-slot replacement and management UI; #84 owns cross-tab
-coordination. Automatic repair stays disabled until its coordinator lands.
+## Durable wake-up dispatch
+
+Message acceptance stores one content-free wake-up per active slot in the same
+transaction as the message. Work records contain only slot/revision ownership,
+a generation, the legacy message deadline, attempt count, due time, and optional
+provider not-before time. They contain no message ID, ciphertext, conversation
+hint, session token, endpoint, or push key. Multiple accepted messages coalesce
+per slot while preserving newer in-flight generations and the latest applicable
+deadline.
+
+The dispatcher sends an empty payload with the remaining lifetime floored to
+whole seconds. Work with less than one second remaining is discarded. Delivery
+has bounded concurrency, one in-flight attempt per slot, and a finite provider
+wait. A leased SQLite claim serializes attempts across server processes; the
+transport is aborted at an absolute deadline, not merely on socket inactivity.
+Provider response bodies are discarded after reading the status. Injected adapters
+must honor the abort signal and settle after cancellation; a non-conforming adapter
+retains local ownership rather than permitting overlapping attempts. Any live SSE
+stream for the identity suppresses and consumes the observed generation, reclaiming
+an expired lease first when recovering work after restart. The
+service worker retains its generic `0xchat-message` notification tag.
+
+Pending work survives restart and respects stored due/provider times. Provider
+acceptance followed by a crash before local completion can therefore deliver
+again: dispatch is intentionally at-least-once for ambiguous outcomes, not
+exactly-once. This slice makes one bounded attempt during normal operation;
+#89 adds durable retry/backoff policy and #90 adds paused failure states.
+
+Registration pruning/deletion and slot removal clear associated work
+transactionally. Session expiry/revocation leaves slots and work intact. Same-slot
+replacement transfers still-valid work to the new revision and fences stale
+completion. #84 owns cross-tab coordination. Automatic repair stays disabled
+until its coordinator lands.
