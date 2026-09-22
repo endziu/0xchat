@@ -119,8 +119,11 @@ while the document is visible, even if the window loses focus. Reconnect when
 visible again, and refetch on reconnection. Preserve the existing token,
 backoff, and connection-cap model. Browser streams report focus separately so
 only an attentive stream suppresses push; terminal streams continue to suppress
-push while live. Refocusing also refreshes browser message state before revealing
-changeable content.
+push while live. Browsers report only settled focus changes, plus a heartbeat
+while attentive. Refocusing on the stream that was synchronized before blur
+applies the live events buffered meanwhile before revealing changeable content;
+any other refocus refreshes browser message state first. Focus flips constantly
+on focus-follows-pointer desktops, so refocusing must not cost a refresh.
 
 Reason: on focus-follows-pointer desktops, leaving the browser window otherwise
 disconnects live delivery. A background browser connection must not indefinitely

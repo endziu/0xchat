@@ -109,6 +109,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     loadGenRef.current++
     loadedRef.current = false
     synchronizedRef.current = false
+    synchronizedConnection.current = null
     recoveryCursor.current = null
     finalVisibleIds.current.clear()
     buffered.current = []
@@ -202,6 +203,34 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     return queued
   }, [recipientAddress, token, rerender])
 
+  // Applies buffered live events in arrival order, including events arriving
+  // during decryption. False when the work was superseded partway.
+  const drainBuffered = useCallback(async (current: () => boolean): Promise<boolean> => {
+    if (!recipientAddress || !identity || !token) return false
+    const store = storeRef.current
+    while (buffered.current.length || (!store.hasServerTime() && store.ids().length)) {
+      const events = buffered.current.splice(0)
+      for (const event of events) {
+        if (event.type === 'message') {
+          const message = await decryptMessage(event.data)
+          if (!current()) return false
+          if (message) store.add([message])
+        } else {
+          const update = parseExpiryUpdate(event.data)
+          if (update && isEnvelopeParticipant(update, identity.address, recipientAddress)) store.applyLifecycle(update.id, update)
+        }
+      }
+      if (!store.hasServerTime() && store.ids().length) {
+        const ids = store.ids().slice(0, ID_BATCH)
+        const started = performance.now()
+        const response = await api.getMessageStates(recipientAddress, ids, token)
+        if (!current()) return false
+        if (!store.applyStates(ids, response, started)) throw new Error('Invalid message state response')
+      }
+    }
+    return current()
+  }, [recipientAddress, identity, token, decryptMessage])
+
   // Refreshes every loaded message's lifecycle once the stream is open. Only
   // a complete refresh on the current connection restores content whose
   // deadline could have changed meanwhile, such as an unopened sender copy.
@@ -263,28 +292,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
         for (const id of ids) refreshed.add(id)
       }
       if (store.ids().some(id => !refreshed.has(id))) throw new Error('Messages changed during refresh; retry to synchronize')
-      // Drain in arrival order, including events arriving during decryption.
-      while (buffered.current.length || (!store.hasServerTime() && store.ids().length)) {
-        const events = buffered.current.splice(0)
-        for (const event of events) {
-          if (event.type === 'message') {
-            const message = await decryptMessage(event.data)
-            if (!current()) return
-            if (message) store.add([message])
-          } else {
-            const update = parseExpiryUpdate(event.data)
-            if (update && isEnvelopeParticipant(update, identity.address, recipientAddress)) store.applyLifecycle(update.id, update)
-          }
-        }
-        if (!store.hasServerTime() && store.ids().length) {
-          const ids = store.ids().slice(0, ID_BATCH)
-          const started = performance.now()
-          const response = await api.getMessageStates(recipientAddress, ids, token)
-          if (!current()) return
-          if (!store.applyStates(ids, response, started)) throw new Error('Invalid message state response')
-        }
-      }
-      if (!current()) return
+      if (!await drainBuffered(current)) return
       recoveryCursor.current = completed
       store.unstage()
       synchronizedConnection.current = attempt.connectionEpoch
@@ -300,7 +308,37 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
       if (syncingRef.current === attempt) syncingRef.current = null
       if (current()) setLoading(false)
     }
-  }, [recipientAddress, identity, token, decryptAll, decryptMessage, refreshConversations, openPending, rerender])
+  }, [recipientAddress, identity, token, decryptAll, drainBuffered, refreshConversations, openPending, rerender])
+
+  // Regaining focus on the stream that was synchronized before blur needs no
+  // refresh: it stayed live, so every change since is in the buffer. Focus
+  // flips constantly on focus-follows-pointer desktops, so this path must not
+  // cost a request. Any interruption falls back to a full synchronize.
+  const resume = useCallback(async (): Promise<void> => {
+    if (!connection.current || synchronizedConnection.current !== connection.current) return synchronize()
+    if (isSynchronized()) return
+    const attempt = captureWork()
+    if (sameWork(syncingRef.current, attempt)) return
+    syncingRef.current = attempt
+    const current = () => isCurrentWork(attempt) && isWindowAttentive()
+    try {
+      if (!await drainBuffered(current)) {
+        // Events taken from the buffer may be lost; only recovery restores them.
+        synchronizedConnection.current = null
+        return
+      }
+      synchronizedRef.current = true
+      storeRef.current.sweep(storeRef.current.now(), { synchronized: true })
+      rerender()
+      void openPending()
+    } catch (err) {
+      console.error('Failed to resume messages:', err)
+      synchronizedConnection.current = null
+      if (current()) void synchronize()
+    } finally {
+      if (syncingRef.current === attempt) syncingRef.current = null
+    }
+  }, [drainBuffered, synchronize, openPending, rerender])
 
   const loadMessages = useCallback(async () => {
     if (!recipientAddress || !identity || !token) {
@@ -391,8 +429,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     if (!attentive) return
     storeRef.current.sweep(storeRef.current.now(), { synchronized: isSynchronized() })
     rerender()
-    void synchronize()
-  }, [attentive, synchronize, rerender])
+    void resume()
+  }, [attentive, resume, rerender])
 
   // One timer for the earliest upcoming deadline, recomputed after every
   // render so changed deadlines replace it. Capture it during render: the
