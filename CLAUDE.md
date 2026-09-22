@@ -9,8 +9,8 @@ Commands, source layout, architecture, crypto scheme, and the API table are in t
 - Bun only — never `node` / `npm` / `npx`.
 - `bun run typecheck` and `bun run lint` before calling anything done. `bun run test` clears the db
   and builds first, so it is slow but is the real check.
-- Three tsconfigs: `tsconfig.client.json`, `tsconfig.server.json`, `tsconfig.json`. Client code is
-  Preact, not React.
+- Four tsconfigs: `tsconfig.client.json`, `tsconfig.server.json`, `tsconfig.cli.json`, and the root
+  `tsconfig.json`. `bun run typecheck` covers the first three. Client code is Preact, not React.
 
 ## Agent skills
 
