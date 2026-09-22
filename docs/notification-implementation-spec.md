@@ -3,8 +3,8 @@
 Status: synthesized implementation spec. Synthesized on 2026-09-09 from the
 accepted implementation decisions Q1–Q20 and the agreed domain behavior, with
 the current implementation checked at commit `1c961ad` plus the working-tree
-decision documents. Dependent implementation tickets require a separate
-breakdown review before publication.
+decision documents. The dependent implementation tickets were reviewed and
+published as issues #75–#94.
 
 Published as [GitHub issue #73](https://github.com/endziu/0xchat/issues/73).
 

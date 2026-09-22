@@ -1,8 +1,9 @@
 # Notification implementation decisions
 
-Working record for the implementation interview. The implementation spec and
-GitHub issue drafts follow once the open decisions are resolved. Publishing
-requires the user's review of the proposed breakdown.
+Working record for the implementation interview. The decisions below are
+settled. They were synthesized into `notification-implementation-spec.md` and
+published as [GitHub issue #73](https://github.com/endziu/0xchat/issues/73),
+with the dependent implementation tickets as issues #75–#94.
 
 ## Settled foundation
 
