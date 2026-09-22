@@ -3,32 +3,45 @@ import type { Keypair } from '../lib/burner'
 import { X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
+import type { PushSlotSummary } from '../../shared/push-slot'
+
+export interface PushSettings {
+  supported?: boolean
+  subscribed?: boolean
+  removable?: boolean
+  slots?: PushSlotSummary[]
+  permission?: NotificationPermission | null
+  error?: string | null
+  subscribe?: () => void
+  unsubscribe?: () => void
+  removeSlot?: (slot: PushSlotSummary) => void
+}
 
 interface SettingsModalProps {
   identity: Keypair
   onClose: () => void
   onImport: (keypair: Keypair) => Promise<void>
-  pushSupported?: boolean
-  pushSubscribed?: boolean
-  pushRemovable?: boolean
-  pushPermission?: NotificationPermission | null
-  pushError?: string | null
-  onPushSubscribe?: () => void
-  onPushUnsubscribe?: () => void
+  push?: PushSettings
 }
 
 export function SettingsModal({
   identity,
   onClose,
   onImport,
-  pushSupported,
-  pushSubscribed,
-  pushRemovable,
-  pushPermission,
-  pushError,
-  onPushSubscribe,
-  onPushUnsubscribe,
+  push,
 }: SettingsModalProps) {
+  const {
+    supported: pushSupported,
+    subscribed: pushSubscribed,
+    removable: pushRemovable,
+    slots: pushSlots,
+    permission: pushPermission,
+    error: pushError,
+    subscribe: onPushSubscribe,
+    unsubscribe: onPushUnsubscribe,
+    removeSlot: onPushRemoveSlot,
+  } = push ?? {}
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -57,11 +70,13 @@ export function SettingsModal({
           <KeyManagement identity={identity} onImport={onImport} />
           <MessageLifetimeSettings />
 
-          {pushSupported && (
+          {(pushSupported || (pushSlots?.length ?? 0) > 0) && (
             <section className="border-t border-neutral-800 p-3">
               <div className="flex items-center justify-between gap-3">
                 <h3>Notifications</h3>
-                {pushPermission === 'denied' ? (
+                {!pushSupported ? (
+                  <span className="text-sm text-neutral-600">Unavailable here</span>
+                ) : pushPermission === 'denied' ? (
                   <span className="text-sm text-neutral-600">Blocked</span>
                 ) : pushSubscribed ? (
                   <button
@@ -88,6 +103,24 @@ export function SettingsModal({
                   </div>
                 )}
               </div>
+              {pushSlots && pushSlots.length > 0 && (
+                <div className="mt-3 border-t border-neutral-800 pt-3">
+                  <h4 className="text-sm">Notification subscriptions</h4>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {pushSlots.map(slot => (
+                      <li key={slot.slot_id} className="flex items-center justify-between gap-2">
+                        <div>
+                          <div>{slot.label} · {slot.state === 'active' ? 'Active' : 'Needs repair'}</div>
+                          <div className="text-xs text-neutral-600">Slot {slot.slot_id} · updated {new Date(slot.updated_at).toLocaleString()}</div>
+                        </div>
+                        <button onClick={() => onPushRemoveSlot?.(slot)} aria-label={`Remove notification slot ${slot.slot_id}`}>
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}
             </section>
           )}

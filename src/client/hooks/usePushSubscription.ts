@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
-import { checkPushSlot, enablePushSlot, rememberPushDisabled, removePushSlot } from '../lib/push-slots'
+import { enablePushSlot, getPushSlotState, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
+import type { PushSlotSummary } from '../../shared/push-slot'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 
@@ -10,6 +11,7 @@ export function usePushSubscription(token: string | null, address: string | null
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
   const [removable, setRemovable] = useState(false)
+  const [slots, setSlots] = useState<PushSlotSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | null>(
     typeof Notification === 'undefined' ? null : Notification.permission,
@@ -18,29 +20,35 @@ export function usePushSubscription(token: string | null, address: string | null
   const queueRef = useRef(createSerialQueue())
 
   useEffect(() => {
-    const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined'
+    const isSupported = 'serviceWorker' in navigator && typeof window.PushManager !== 'undefined' && typeof Notification !== 'undefined'
     setSupported(isSupported)
     setSubscribed(false)
     setRemovable(false)
-    if (!isSupported || !token || !address) return
+    setSlots([])
+    if (!token || !address) return
     const activeToken = token
     const activeAddress = address
     const isStale = claimGeneration(generationRef)
 
     queueRef.current.enqueue(async () => {
       try {
-        const reg = await navigator.serviceWorker.ready
-        if (isStale()) return
-        const sub = await reg.pushManager.getSubscription()
-        if (isStale()) return
-        const enabled = await checkPushSlot(activeAddress, activeToken)
+        let sub: PushSubscription | null = null
+        if (isSupported) {
+          const reg = await navigator.serviceWorker.ready
+          if (isStale()) return
+          sub = await reg.pushManager.getSubscription()
+          if (isStale()) return
+        }
+        const state = await getPushSlotState(activeAddress, activeToken)
         if (!isStale()) {
-          setSubscribed(!!sub && enabled)
-          setRemovable(true)
+          setSubscribed(!!sub && state.enabled)
+          setSlots(state.slots)
+          setRemovable(isSupported)
         }
       } catch {
         if (!isStale()) {
           setSubscribed(false)
+          setSlots([])
           setRemovable(true)
           setError('Could not connect notifications. Try enabling them again.')
         }
@@ -56,8 +64,8 @@ export function usePushSubscription(token: string | null, address: string | null
     const isStale = claimGeneration(generationRef)
     const activeToken = token
 
-    return queueRef.current.enqueue(() =>
-      runSubscribeOp({
+    return queueRef.current.enqueue(async () => {
+      const enabled = await runSubscribeOp({
         isStale,
         ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
         requestPermission: () => Notification.requestPermission(),
@@ -66,8 +74,32 @@ export function usePushSubscription(token: string | null, address: string | null
         setPermission,
         setSubscribed,
         setError,
-      }),
-    )
+      })
+      if (enabled && !isStale()) {
+        const state = await getPushSlotState(address, activeToken)
+        if (!isStale()) setSlots(state.slots)
+      }
+      return enabled
+    })
+  }
+
+  const removeSlot = async (slot: PushSlotSummary): Promise<void> => {
+    if (!token || !address) return
+    setError(null)
+    const isStale = claimGeneration(generationRef)
+    const activeToken = token
+    return queueRef.current.enqueue(async () => {
+      try {
+        if (isStale()) return
+        const removedCurrentInstallation = await removeRemotePushSlot(address, activeToken, slot)
+        if (!isStale()) {
+          setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
+          if (removedCurrentInstallation) setSubscribed(false)
+        }
+      } catch {
+        if (!isStale()) setError('Could not remove this notification slot. Refresh and try again.')
+      }
+    })
   }
 
   const unsubscribe = async (): Promise<void> => {
@@ -82,16 +114,20 @@ export function usePushSubscription(token: string | null, address: string | null
     const isStale = claimGeneration(generationRef)
     const activeToken = token
 
-    return queueRef.current.enqueue(() =>
-      runUnsubscribeOp({
+    return queueRef.current.enqueue(async () => {
+      await runUnsubscribeOp({
         isStale,
         ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
         removeSlot: () => removePushSlot(address, activeToken, isStale),
         setSubscribed,
         setError,
-      }),
-    )
+      })
+      if (!isStale()) {
+        const state = await getPushSlotState(address, activeToken)
+        if (!isStale()) setSlots(state.slots)
+      }
+    })
   }
 
-  return { supported, subscribed, removable, permission, error, subscribe, unsubscribe }
+  return { supported, subscribed, removable, slots, permission, error, subscribe, unsubscribe, removeSlot }
 }

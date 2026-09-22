@@ -92,13 +92,7 @@ function AppContent() {
       navigate={navigate}
       error={idError}
       sseConnected={sseConnected}
-      pushSupported={push.supported}
-      pushSubscribed={push.subscribed}
-      pushRemovable={push.removable}
-      pushPermission={push.permission}
-      pushError={push.error}
-      onPushSubscribe={push.subscribe}
-      onPushUnsubscribe={push.unsubscribe}
+      push={push}
     >
       <ChatView
         recipientAddress={path.startsWith('/chat/') ? path.slice(6) : null}

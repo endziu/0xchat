@@ -15,14 +15,16 @@ IDs are opaque identifiers, not credentials. Endpoint URLs never authorize a tra
   send its ID and latest revision. Returns `{slot_id, installation_id, revision}`.
   Only a fresh explicit enable with the current revocation revision supersedes it.
 - `POST /api/push/reconcile`: same body, slot ID required. Never creates or
-  supersedes revocation. Confirms an unchanged live binding; endpoint/key changes
-  and dead slots return `repair_needed` (replacement is #83).
+  supersedes revocation. Confirms an unchanged live binding, or atomically replaces
+  an owned slot's endpoint and keys when its expected revision matches. Replacement
+  retains the slot ID, increments its revision, restores it to `active`, and is
+  allowed at or above the five-slot cap. A destination owned by another slot fails
+  with `ownership_conflict`.
 - `POST /api/push/unsubscribe`: `{slot_id, installation_id, expected_revision}`.
   Deletes endpoint/key data and records revision + 1 atomically. Returns the
   revocation handle. Repeating the accepted removal is idempotent; older writes fail.
 
-Every creation, adoption, removal and future replacement is serialized by an
-SQLite immediate transaction. New slots start at revision 1. Legacy adoption
+Every creation, adoption, removal and replacement is serialized by an SQLite immediate transaction. New slots start at revision 1. Legacy adoption
 increments its revision. Unchanged confirmations do not increment it. Provider
 404/410 clears endpoint/key data, retains the slot, and increments its revision;
 completion is conditional on the attempted ID/revision. All retained slots,
@@ -73,6 +75,5 @@ before enabling; endpoint-only removal is rejected, not treated as authority.
 
 Registration pruning/deletion clears both slots and revocations transactionally.
 Session expiry/revocation leaves both intact. No retry scheduler exists yet;
-#88 must add retry cleanup to these same transactions. #83 owns same-slot
-replacement and management UI; #84 owns cross-tab coordination. Automatic repair
-stays disabled until its coordinator lands.
+#88 must add retry cleanup to these same transactions. #83 provides same-slot replacement and management UI; #84 owns cross-tab
+coordination. Automatic repair stays disabled until its coordinator lands.

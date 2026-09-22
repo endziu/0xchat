@@ -5,6 +5,7 @@ import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
+import type { PushSettings } from './SettingsModal'
 import { useToast } from './Toast'
 import { version } from '../../../package.json'
 
@@ -16,13 +17,7 @@ interface LayoutProps {
   navigate?: (to: string) => void
   error?: string | null
   sseConnected?: boolean
-  pushSupported?: boolean
-  pushSubscribed?: boolean
-  pushRemovable?: boolean
-  pushPermission?: NotificationPermission | null
-  pushError?: string | null
-  onPushSubscribe?: () => void
-  onPushUnsubscribe?: () => void
+  push?: PushSettings
 }
 
 export function Layout({
@@ -33,13 +28,7 @@ export function Layout({
   navigate,
   error,
   sseConnected,
-  pushSupported,
-  pushSubscribed,
-  pushRemovable,
-  pushPermission,
-  pushError,
-  onPushSubscribe,
-  onPushUnsubscribe,
+  push,
 }: LayoutProps) {
   const { toast } = useToast()
   const [showSettings, setShowSettings] = useState(false)
@@ -167,13 +156,7 @@ export function Layout({
             await onImport?.(keypair)
             setShowSettings(false)
           }}
-          pushSupported={pushSupported}
-          pushSubscribed={pushSubscribed}
-          pushRemovable={pushRemovable}
-          pushPermission={pushPermission}
-          pushError={pushError}
-          onPushSubscribe={onPushSubscribe}
-          onPushUnsubscribe={onPushUnsubscribe}
+          push={push}
         />
       )}
       {showQR && identity && (
