@@ -122,8 +122,10 @@ authorization, state limits, and read-only deadline refresh. Run the full
 The browser closes SSE when hidden, cancels reconnect timers, and ignores late
 token responses. A visible but unfocused window keeps its live stream and
 reports that it no longer suppresses push. Becoming visible resumes with a
-fresh token and retains any remaining failure backoff. Refocusing refreshes
-message state. An open transport does not imply synchronization.
+fresh token and retains any remaining failure backoff. Refocusing on the stream
+that was synchronized before blur applies the live events buffered meanwhile
+without a request; otherwise it refreshes message state. An open transport does
+not imply synchronization.
 
 For the selected conversation, the browser buffers live messages and lifecycle
 updates while loading the initial page or draining every page of a bounded

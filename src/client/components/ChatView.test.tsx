@@ -817,6 +817,45 @@ test('a visible window keeps live delivery after blur without opening unattended
   expect(await lifecycle(sent.id)).toMatchObject({ status: 'available', opened_at: null })
 })
 
+test('refocusing on an unchanged stream opens what arrived without refreshing', async () => {
+  await alice.send(bobAddress, 'synchronized before blur', 300)
+  const view = mount()
+  await waitFor(() => streamReady() && view.text().includes('synchronized before blur'))
+  const stream = latestStream()
+  setFocused(false)
+  const sent = await alice.send(bobAddress, 'arrived before refocus', 300)
+  await waitFor(() => stream.frames.some(frame => frame.data.includes(sent.id)))
+  // Let the conversation list's debounced refresh for this delivery pass.
+  await Bun.sleep(400)
+  const paths: string[] = []
+  intercept = (request, next) => { paths.push(new URL(request.url).pathname); return next() }
+
+  setFocused(true)
+  await waitFor(() => view.text().includes('arrived before refocus'))
+  expect(stream.live).toBe(true)
+  expect(paths.filter(path => path !== '/api/events/attention')).toEqual([`/api/messages/${aliceAddress}/open`])
+})
+
+test('focus flips report attention once settled, not per event', async () => {
+  const view = mount()
+  await waitFor(() => streamReady() && view.text().includes('No messages yet'))
+  const reports: boolean[] = []
+  intercept = async (request, next) => {
+    if (new URL(request.url).pathname === '/api/events/attention') reports.push((await request.clone().json()).attentive)
+    return next()
+  }
+  for (let flip = 0; flip < 10; flip++) setFocused(flip % 2 === 1)
+  setFocused(false)
+  await Bun.sleep(500)
+  expect(reports).toEqual([false])
+
+  for (let flip = 0; flip < 10; flip++) setFocused(flip % 2 === 0)
+  setFocused(false)
+  await Bun.sleep(500)
+  expect(reports).toEqual([false])
+  expect(openRequests).toEqual([])
+})
+
 test('hiding the document closes delivery immediately and a late token cannot reopen it', async () => {
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('No messages yet'))
@@ -840,15 +879,16 @@ test('focused recovery drains more than 100 missed messages before merging live 
   const copy = await sender.send(aliceAddress, 'copy opened during recovery', 5)
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('copy opened during recovery'))
-  setFocused(false)
-  expect(latestStream().live).toBe(true)
+  const stream = latestStream()
+  setVisible(false)
+  await waitFor(() => !stream.live)
   for (let index = 0; index < 105; index++) {
     // Sending budget is unrelated to the recovery interval exercised here.
     for (const limiter of Object.values(limiters)) limiter.reset()
     await alice.send(bobAddress, `gap message [${index}]`, 300)
   }
   const recovery = gate(request => new URL(request.url).pathname.endsWith('/recover'), 'after')
-  setFocused(true)
+  setVisible(true)
   await waitFor(() => recovery.seen())
   await alice.send(bobAddress, 'interleaved delivery', 300)
   await openAs(aliceToken, bobAddress, copy.id)
@@ -869,7 +909,9 @@ test('failed continuation retries the complete gap and ignores a response from a
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('recovery baseline'))
   openRequests = []
-  setFocused(false)
+  const stream = latestStream()
+  setVisible(false)
+  await waitFor(() => !stream.live)
   for (let index = 0; index < 103; index++) await alice.send(bobAddress, `retry gap [${index}]`, 300)
   let fail = true
   intercept = async (request, next) => {
@@ -880,7 +922,7 @@ test('failed continuation retries the complete gap and ignores a response from a
     }
     return next()
   }
-  setFocused(true)
+  setVisible(true)
   await waitFor(() => notice('Failed to load messages') !== undefined)
   expect(openRequests).toEqual([])
   expect(view.text()).not.toContain('retry gap [0]')

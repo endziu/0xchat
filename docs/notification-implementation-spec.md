@@ -220,7 +220,9 @@ a distinguishable metadata-only expiry event, never another plaintext copy.
 
 Close browser SSE on hidden-document events, including during token minting or
 reconnect backoff. Reconnect while visible, regardless of focus. Report focus
-changes separately for push suppression, and refresh message state on refocus.
+changes separately for push suppression, reporting only settled changes plus a
+heartbeat while attentive. On refocus, apply the events buffered on an unchanged
+synchronized stream, or refresh message state otherwise.
 An open transport alone is not synchronized state: recovery must finish on the
 current connection before changeable-deadline content can reappear. Disconnect,
 recovery failure, identity change, or conversation change invalidates unfinished

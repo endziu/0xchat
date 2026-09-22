@@ -7,6 +7,10 @@ import { SseConnection } from '../lib/sse-connection'
 export type ConnectionEpoch = symbol
 export interface LiveConnection { current: ConnectionEpoch | null }
 
+// Push suppression lapses 45 s after the last report of an attentive stream.
+const ATTENTION_HEARTBEAT_MS = 20_000
+const ATTENTION_SETTLE_MS = 300
+
 export function useSSE(
   token: string | null,
   onMessage: (data: unknown) => void,
@@ -24,26 +28,49 @@ export function useSSE(
     }
     const activeToken: string = token
 
+    // The server only needs attention changes, plus a heartbeat while
+    // attentive to outlive its TTL. Focus flips constantly on
+    // focus-follows-pointer desktops, so changes are reported once settled.
+    let streamToken: string | null = null
+    let attentionSequence = 0
+    let reported: boolean | null = null
+    let dialedAttention = false
+    let settle: ReturnType<typeof setTimeout> | undefined
+    const sendAttention = (attentive: boolean) => {
+      if (!streamToken) return
+      const stream = streamToken
+      reported = attentive
+      void api.setSseAttention(activeToken, stream, attentive, ++attentionSequence).catch(() => {
+        // Unknown to the server now; the next change or heartbeat resends.
+        if (streamToken === stream && reported === attentive) reported = null
+      })
+    }
+    const reportAttention = () => {
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        const attentive = isWindowAttentive()
+        if (attentive !== reported) sendAttention(attentive)
+      }, ATTENTION_SETTLE_MS)
+    }
     // EventSource alone cannot recover: a non-2xx response (cap 429, stale
     // token 401) ends it permanently, and its automatic retry of a dropped
     // stream re-dials a single-use token that now 401s. SseConnection drives
     // recovery with a fresh token and backoff on every failure.
-    let streamToken: string | null = null
-    let attentionSequence = 0
-    const reportAttention = () => {
-      if (!streamToken) return
-      void api.setSseAttention(activeToken, streamToken, isWindowAttentive(), ++attentionSequence).catch(() => {})
-    }
     const conn = new SseConnection({
       getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
-      buildUrl: (sseToken) => `/api/events?token=${sseToken}&attentive=${isWindowAttentive()}`,
+      buildUrl: (sseToken) => {
+        dialedAttention = isWindowAttentive()
+        return `/api/events?token=${sseToken}&attentive=${dialedAttention}`
+      },
       onOpen: (sseToken) => {
         streamToken = sseToken
         attentionSequence = 0
+        // The URL already told the server; report only a change since dialing.
+        reported = dialedAttention
         reportAttention()
         connection.current = Symbol('SSE connection'); setConnected(connection.current)
       },
-      onDisconnect: () => { streamToken = null; connection.current = null; setConnected(null) },
+      onDisconnect: () => { streamToken = null; reported = null; connection.current = null; setConnected(null) },
       onMessage,
       onExpiryUpdate,
       onUserDisconnected: onDisconnect,
@@ -57,13 +84,17 @@ export function useSSE(
     window.addEventListener('blur', update)
     update()
     if (document.visibilityState === 'visible') conn.connect()
-    const heartbeat = setInterval(reportAttention, 20_000)
+    const heartbeat = setInterval(() => {
+      const attentive = isWindowAttentive()
+      if (attentive || attentive !== reported) sendAttention(attentive)
+    }, ATTENTION_HEARTBEAT_MS)
 
     return () => {
       document.removeEventListener('visibilitychange', update)
       window.removeEventListener('focus', update)
       window.removeEventListener('blur', update)
       clearInterval(heartbeat)
+      clearTimeout(settle)
       streamToken = null
       connection.current = null
       conn.close()
