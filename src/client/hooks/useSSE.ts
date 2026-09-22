@@ -28,26 +28,43 @@ export function useSSE(
     // token 401) ends it permanently, and its automatic retry of a dropped
     // stream re-dials a single-use token that now 401s. SseConnection drives
     // recovery with a fresh token and backoff on every failure.
+    let streamToken: string | null = null
+    let attentionSequence = 0
+    const reportAttention = () => {
+      if (!streamToken) return
+      void api.setSseAttention(activeToken, streamToken, isWindowAttentive(), ++attentionSequence).catch(() => {})
+    }
     const conn = new SseConnection({
       getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
-      buildUrl: (sseToken) => `/api/events?token=${sseToken}`,
-      onOpen: () => { connection.current = Symbol('SSE connection'); setConnected(connection.current) },
-      onDisconnect: () => { connection.current = null; setConnected(null) },
+      buildUrl: (sseToken) => `/api/events?token=${sseToken}&attentive=${isWindowAttentive()}`,
+      onOpen: (sseToken) => {
+        streamToken = sseToken
+        attentionSequence = 0
+        reportAttention()
+        connection.current = Symbol('SSE connection'); setConnected(connection.current)
+      },
+      onDisconnect: () => { streamToken = null; connection.current = null; setConnected(null) },
       onMessage,
       onExpiryUpdate,
       onUserDisconnected: onDisconnect,
     })
-    const update = () => conn.setActive(isWindowAttentive())
+    const update = () => {
+      conn.setActive(document.visibilityState === 'visible')
+      reportAttention()
+    }
     document.addEventListener('visibilitychange', update)
     window.addEventListener('focus', update)
     window.addEventListener('blur', update)
     update()
-    if (isWindowAttentive()) conn.connect()
+    if (document.visibilityState === 'visible') conn.connect()
+    const heartbeat = setInterval(reportAttention, 20_000)
 
     return () => {
       document.removeEventListener('visibilitychange', update)
       window.removeEventListener('focus', update)
       window.removeEventListener('blur', update)
+      clearInterval(heartbeat)
+      streamToken = null
       connection.current = null
       conn.close()
       setConnected(null)

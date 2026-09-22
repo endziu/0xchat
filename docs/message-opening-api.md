@@ -125,7 +125,7 @@ stream is down, unopened recipient-opening messages, including sender copies,
 are hidden but retained, even past their old unopened deadline. After the
 stream reopens, a complete `state` lookup of the loaded IDs on that connection
 restores them; an open transport alone does not. #80 replaces this refresh
-with interval recovery and adds focus-driven stream closure.
+with interval recovery and focus-driven message reconciliation.
 
 Initial loaded state also receives a lifecycle lookup to establish server time.
 Expiry uses that time plus elapsed monotonic time, conservatively including

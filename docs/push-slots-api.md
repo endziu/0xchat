@@ -91,8 +91,9 @@ wait. A leased SQLite claim serializes attempts across server processes; the
 transport is aborted at an absolute deadline, not merely on socket inactivity.
 Provider response bodies are discarded after reading the status. Injected adapters
 must honor the abort signal and settle after cancellation; a non-conforming adapter
-retains local ownership rather than permitting overlapping attempts. Any live SSE
-stream for the identity suppresses and consumes the observed generation, reclaiming
+retains local ownership rather than permitting overlapping attempts. Any live
+terminal stream or attentive browser stream for the identity suppresses and
+consumes the observed generation, reclaiming
 an expired lease first when recovering work after restart. The
 service worker retains its generic `0xchat-message` notification tag.
 

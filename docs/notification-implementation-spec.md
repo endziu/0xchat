@@ -37,9 +37,9 @@ is confirmed. Existing messages retain their original deadlines.
 
 A browser opens messages only in a selected conversation in a visible, focused
 window. The terminal's consuming commands explicitly open their messages.
-Browser reconnection restores missed messages and authoritative expiry state
-without discarding loaded history. A live SSE connection anywhere for the
-recipient suppresses new push attempts for that identity.
+Browser reconnection and refocusing restore missed messages and authoritative
+expiry state without discarding loaded history. A live terminal stream or an
+attentive browser stream suppresses new push attempts for that identity.
 
 Notification opt-in remains explicit for a new identity and survives reloads for
 the same identity. Recovery respects ownership, deliberate disabling, and remote
@@ -67,8 +67,8 @@ subscriptions within a five-subscription limit.
 16. As a terminal participant, I want expiry updates without duplicate message output, so that live conversations and scripts remain understandable.
 17. As a participant with an older client, I want a clear update-required error, so that I can recover from a protocol transition.
 18. As an offline recipient, I want notification delivery to use the remaining unopened retention window, so that a short lifetime can still generate an alert hours later.
-19. As a recipient using live delivery, I want push attempts suppressed across my identity while an SSE connection is live, so that foreground activity avoids unnecessary OS alerts.
-20. As a browser participant, I want SSE to reconnect when my window becomes visible and focused, so that background connections do not indefinitely suppress push.
+19. As a recipient using live delivery, I want push attempts suppressed across my identity while a terminal stream or attentive browser stream is live, so that foreground activity avoids unnecessary OS alerts.
+20. As a browser participant, I want SSE to stay connected while my page is visible even after window blur, and reconnect when it becomes visible again, so that live delivery does not depend on pointer position.
 21. As a browser participant, I want all still-available missed messages recovered, even beyond 50 messages, so that reconnecting does not silently omit a gap.
 22. As a browser participant, I want loaded history and scroll position preserved during recovery, so that reconnecting does not disrupt what I was reading.
 23. As a browser participant, I want incoming messages during recovery merged without loss or duplication, so that live delivery and recovery cooperate.
@@ -218,8 +218,9 @@ a distinguishable metadata-only expiry event, never another plaintext copy.
   verification, and acknowledgement rules. Unloaded history outside recovery
   remains unopened.
 
-Close browser SSE on hidden-document or focus-loss events, including during
-token minting or reconnect backoff. Reconnect only while visible and focused.
+Close browser SSE on hidden-document events, including during token minting or
+reconnect backoff. Reconnect while visible, regardless of focus. Report focus
+changes separately for push suppression, and refresh message state on refocus.
 An open transport alone is not synchronized state: recovery must finish on the
 current connection before changeable-deadline content can reappear. Disconnect,
 recovery failure, identity change, or conversation change invalidates unfinished
@@ -364,10 +365,11 @@ Every attempt uses only the remaining time to that deadline, never a new
 and discard work with less than one second remaining rather than sending
 beyond its deadline.
 
-Check identity-wide live SSE presence before initial delivery and every retry.
-A live browser or terminal connection suppresses delivery to all the identity's
-endpoints, even when it is viewing a different conversation. The browser focus
-gate limits background suppression; background terminal consumers remain live.
+Check identity-wide attentive browser or live terminal SSE presence before
+initial delivery and every retry. An attentive browser or live terminal
+connection suppresses delivery to all the identity's endpoints, even when it is
+viewing a different conversation. A browser stream stays live while visible but
+does not suppress push when unfocused; background terminal consumers remain live.
 
 **Synthesis choices for durable scheduling:**
 

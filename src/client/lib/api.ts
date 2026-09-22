@@ -177,6 +177,14 @@ export const api = {
   getSseToken: (token: string): Promise<{ sse_token: string }> =>
     request('/api/events/token', { method: 'POST' }, token),
 
+  setSseAttention: (token: string, stream: string, attentive: boolean, sequence: number): Promise<unknown> =>
+    request('/api/events/attention', {
+      method: 'POST',
+      body: JSON.stringify({ stream, attentive, sequence }),
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+    }, token),
+
   deleteSession: (token: string) =>
     request('/api/session', { method: 'DELETE' }, token),
 

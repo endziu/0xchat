@@ -1,6 +1,6 @@
 import { advertisesDeliveryCapability } from '../../shared/message-envelope.ts';
 import { randomBytes } from 'node:crypto';
-import { addClient, connectionCount, removeClient } from '../sse.ts';
+import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
 import { json, getSessionAddress } from '../http.ts';
 import { sseTokenLimiter } from '../rate-limiters.ts';
 import { MAX_SSE_CONNECTIONS_PER_ADDRESS, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
@@ -70,6 +70,7 @@ export class SseTokenStore {
 }
 
 const sseTokenStore = new SseTokenStore(SSE_TOKEN_TTL_MS);
+const liveStreams = new Map<string, { address: string; controller: ReadableStreamDefaultController }>();
 
 export function cleanupSseTokens(): void {
   sseTokenStore.prune();
@@ -111,6 +112,8 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
 
   const supportsOpening = sseTokenStore.supportsOpening(sseToken);
   sseTokenStore.consume(sseToken); // single-use
+  // Older clients and the CLI keep the existing push-suppression behavior.
+  const suppressPush = url.searchParams.get('attentive') !== 'false';
 
   const ping = new TextEncoder().encode(`event: ping\ndata: {}\n\n`);
   let controller: ReadableStreamDefaultController;
@@ -122,13 +125,15 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
     cleanedUp = true;
     if (interval !== undefined) clearInterval(interval);
     removeClient(address, controller);
+    liveStreams.delete(sseToken);
     log('[sse]', address, 'disconnected');
   };
 
   const stream = new ReadableStream({
     start(streamController) {
       controller = streamController;
-      addClient(address, controller, supportsOpening);
+      addClient(address, controller, supportsOpening, suppressPush, url.searchParams.has('attentive'));
+      liveStreams.set(sseToken, { address, controller });
       log('[sse]', address, 'connected');
 
       controller.enqueue(ping);
@@ -155,4 +160,20 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
       ...SECURITY_HEADERS,
     },
   });
+}
+
+export async function handleSSEAttention({ req }: Context): Promise<Response> {
+  const address = getSessionAddress(req);
+  if (!address) return json({ error: 'Unauthorized' }, 401);
+  const body: unknown = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Invalid attention update' }, 400);
+  const { stream, attentive, sequence } = body as Record<string, unknown>;
+  if (typeof stream !== 'string' || typeof attentive !== 'boolean'
+    || !Number.isSafeInteger(sequence) || (sequence as number) < 1) {
+    return json({ error: 'Invalid attention update' }, 400);
+  }
+  const live = liveStreams.get(stream);
+  if (!live || live.address !== address) return json({ error: 'Stream not found' }, 404);
+  updateClientAttention(address, live.controller, attentive, sequence as number);
+  return new Response(null, { status: 204, headers: SECURITY_HEADERS });
 }

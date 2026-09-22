@@ -112,16 +112,23 @@ offline recipient who returns hours later. The accepted trade-off is that an
 already-queued, content-free alert may arrive after the message was opened and
 expired on another device. Existing messages retain the Q7 expiry policy.
 
-### Q9: Gate browser SSE on visibility and focus
+### Q9: Gate browser SSE on visibility
 
-Close the browser SSE connection when the document becomes hidden or the window
-loses focus. Reconnect when visible and focused again, and refetch on
-reconnection. Preserve the existing token, backoff, and connection-cap model.
+Close the browser SSE connection when the document becomes hidden. Keep it live
+while the document is visible, even if the window loses focus. Reconnect when
+visible again, and refetch on reconnection. Preserve the existing token,
+backoff, and connection-cap model. Browser streams report focus separately so
+only an attentive stream suppresses push; terminal streams continue to suppress
+push while live. Refocusing also refreshes browser message state before revealing
+changeable content.
 
-Reason: a background browser connection must not indefinitely suppress push.
-The server-side suppression selected in #68 remains identity-wide: another live
-browser or terminal SSE connection still suppresses push to that identity's
-devices. A terminal stream remains live under the Q3 background-command policy.
+Reason: on focus-follows-pointer desktops, leaving the browser window otherwise
+disconnects live delivery. A background browser connection must not indefinitely
+suppress push.
+The server-side suppression selected in #68 remains identity-wide: another
+attentive browser or live terminal SSE connection suppresses push to that
+identity's devices. A terminal stream remains live under the Q3
+background-command policy.
 
 ### Q10: Recover the full missed-message gap without resetting history
 
@@ -251,8 +258,8 @@ existing messages and their deadlines as required by Q7.
 
 While browser synchronization is unavailable, hide messages whose expiry can
 still change until reconnection and authoritative refresh confirm their state.
-This applies both to intentional SSE disconnection on focus/visibility loss
-and to accidental disconnection. Messages with an already-confirmed final
+This applies to focus loss, intentional SSE disconnection on visibility loss,
+and accidental disconnection. Messages with an already-confirmed final
 deadline can remain visible until that deadline.
 
 Reason: another device can open a message and change its deadline while this
