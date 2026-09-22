@@ -1,13 +1,31 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
-import { enablePushSlot, getPushSlotState, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
+import { enablePushSlot, getPushSlotState, releaseSupersededSlot, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
 import type { PushSlotSummary } from '../../shared/push-slot'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
+import { pushCoordinator, type PushCoordinator, type PushMutationOutcome } from '../lib/push-coordinator'
 
-// Keep the per-hook queue/generation contract. Session start only reads owned
-// state; automatic uploads/repair remain disabled until the cross-tab coordinator.
-export function usePushSubscription(token: string | null, address: string | null) {
+function pushApisAvailable(): boolean {
+  return 'serviceWorker' in navigator && typeof window.PushManager !== 'undefined' && typeof Notification !== 'undefined'
+}
+
+// What one attempt — a mutation, or the session-start read — may still commit.
+interface PushAttempt {
+  address: string
+  token: string
+  supported: boolean
+  isStale: () => boolean
+  // Set once the operation has explained a failure in its own words, so the
+  // generic conflict message does not talk over it.
+  reported: boolean
+}
+
+// Keep the per-hook queue/generation contract, and run every mutation through
+// the origin's coordinator so other tabs cannot own the same subscription at
+// the same time. Session start only reads owned state; automatic uploads and
+// repair remain disabled until #85 lands bounded waiting.
+export function usePushSubscription(token: string | null, address: string | null, coordinator?: PushCoordinator) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
   const [removable, setRemovable] = useState(false)
@@ -18,9 +36,54 @@ export function usePushSubscription(token: string | null, address: string | null
   )
   const generationRef = useRef(0)
   const queueRef = useRef(createSerialQueue())
+  const tabs = coordinator ?? pushCoordinator()
+
+  // Re-read what the browser and the server actually hold. This is the only
+  // path that decides `subscribed`, so a change made in another tab converges
+  // here instead of being inferred from this tab's last action.
+  const readState = async (attempt: PushAttempt) => {
+    try {
+      let sub: PushSubscription | null = null
+      if (attempt.supported) {
+        const reg = await navigator.serviceWorker.ready
+        if (attempt.isStale()) return
+        sub = await reg.pushManager.getSubscription()
+        if (attempt.isStale()) return
+      }
+      const state = await getPushSlotState(attempt.address, attempt.token)
+      if (attempt.isStale()) return
+      setSubscribed(!!sub && state.enabled)
+      setSlots(state.slots)
+      setRemovable(attempt.supported)
+    } catch {
+      if (attempt.isStale()) return
+      setSubscribed(false)
+      setSlots([])
+      setRemovable(true)
+      setError('Could not connect notifications. Try enabling them again.')
+    }
+  }
+
+  // Claim this tab's next mutation generation. The coordinator adds the shared
+  // one; both must be current for the attempt to commit anything.
+  const beginAttempt = (activeAddress: string, activeToken: string): PushAttempt =>
+    ({ address: activeAddress, token: activeToken, supported, isStale: claimGeneration(generationRef), reported: false })
+
+  // Apply a coordinated mutation's outcome: converge on authoritative state,
+  // then surface a conflict the operation itself did not explain. A conflict is
+  // reported, never resolved by guessing, and never marks notifications on.
+  const finish = async (attempt: PushAttempt, outcome: PushMutationOutcome<unknown>) => {
+    if (attempt.isStale()) return
+    if (outcome.status === 'blocked') {
+      setError(outcome.message)
+      return
+    }
+    await readState(attempt)
+    if (outcome.status === 'superseded' && !attempt.reported && !attempt.isStale()) setError(outcome.message)
+  }
 
   useEffect(() => {
-    const isSupported = 'serviceWorker' in navigator && typeof window.PushManager !== 'undefined' && typeof Notification !== 'undefined'
+    const isSupported = pushApisAvailable()
     setSupported(isSupported)
     setSubscribed(false)
     setRemovable(false)
@@ -28,77 +91,74 @@ export function usePushSubscription(token: string | null, address: string | null
     if (!token || !address) return
     const activeToken = token
     const activeAddress = address
-    const isStale = claimGeneration(generationRef)
+    // Reads are invalidated by this identity going away, not by this tab's own
+    // mutations: the queue already orders them, and a mutation must not make
+    // the tab deaf to the next change another tab broadcasts.
+    let active = true
+    const attempt: PushAttempt = { address: activeAddress, token: activeToken, supported: isSupported,
+      isStale: () => !active, reported: false }
+    const refresh = () => queueRef.current.enqueue(() => readState(attempt))
+    refresh()
+    const stopListening = tabs.onChange(() => { if (active) refresh() })
 
-    queueRef.current.enqueue(async () => {
-      try {
-        let sub: PushSubscription | null = null
-        if (isSupported) {
-          const reg = await navigator.serviceWorker.ready
-          if (isStale()) return
-          sub = await reg.pushManager.getSubscription()
-          if (isStale()) return
-        }
-        const state = await getPushSlotState(activeAddress, activeToken)
-        if (!isStale()) {
-          setSubscribed(!!sub && state.enabled)
-          setSlots(state.slots)
-          setRemovable(isSupported)
-        }
-      } catch {
-        if (!isStale()) {
-          setSubscribed(false)
-          setSlots([])
-          setRemovable(true)
-          setError('Could not connect notifications. Try enabling them again.')
-        }
-      }
-    })
-
-    return () => { generationRef.current++ }
+    return () => {
+      active = false
+      generationRef.current++
+      stopListening()
+    }
   }, [token, address])
 
   const subscribe = async (): Promise<boolean> => {
     if (!supported || !token || !address) return false
     setError(null)
-    const isStale = claimGeneration(generationRef)
-    const activeToken = token
+    const attempt = beginAttempt(address, token)
 
     return queueRef.current.enqueue(async () => {
-      const enabled = await runSubscribeOp({
-        isStale,
-        ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
-        requestPermission: () => Notification.requestPermission(),
-        getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
-        upload: (sub) => enablePushSlot(address, activeToken, sub, isStale),
-        setPermission,
-        setSubscribed,
-        setError,
+      const outcome = await tabs.mutate({
+        kind: 'explicit',
+        run: (claim) => {
+          const stale = () => attempt.isStale() || claim.isSuperseded()
+          return runSubscribeOp({
+            isStale: stale,
+            ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+            requestPermission: () => Notification.requestPermission(),
+            getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
+            upload: (sub) => enablePushSlot(attempt.address, attempt.token, sub, stale),
+            releaseIfOwned: (written) => releaseSupersededSlot(attempt.address, attempt.token, written, claim.serialized),
+            setPermission,
+            setSubscribed,
+            setError: (message) => { attempt.reported = true; setError(message) },
+          })
+        },
       })
-      if (enabled && !isStale()) {
-        const state = await getPushSlotState(address, activeToken)
-        if (!isStale()) setSlots(state.slots)
-      }
-      return enabled
+      await finish(attempt, outcome)
+      return outcome.status === 'ran' && outcome.value
     })
   }
 
   const removeSlot = async (slot: PushSlotSummary): Promise<void> => {
     if (!token || !address) return
     setError(null)
-    const isStale = claimGeneration(generationRef)
-    const activeToken = token
+    const attempt = beginAttempt(address, token)
     return queueRef.current.enqueue(async () => {
-      try {
-        if (isStale()) return
-        const removedCurrentInstallation = await removeRemotePushSlot(address, activeToken, slot)
-        if (!isStale()) {
-          setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
-          if (removedCurrentInstallation) setSubscribed(false)
-        }
-      } catch {
-        if (!isStale()) setError('Could not remove this notification slot. Refresh and try again.')
-      }
+      const outcome = await tabs.mutate({
+        kind: 'explicit',
+        run: async (claim) => {
+          const stale = () => attempt.isStale() || claim.isSuperseded()
+          if (stale()) return
+          try {
+            const removedCurrentInstallation = await removeRemotePushSlot(attempt.address, attempt.token, slot)
+            if (stale()) return
+            setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
+            if (removedCurrentInstallation) setSubscribed(false)
+          } catch {
+            if (stale()) return
+            attempt.reported = true
+            setError('Could not remove this notification slot. Refresh and try again.')
+          }
+        },
+      })
+      await finish(attempt, outcome)
     })
   }
 
@@ -111,21 +171,23 @@ export function usePushSubscription(token: string | null, address: string | null
       setError('Could not remember notifications are off. Check browser storage and retry disabling.')
     }
     setSubscribed(false)
-    const isStale = claimGeneration(generationRef)
-    const activeToken = token
+    const attempt = beginAttempt(address, token)
 
     return queueRef.current.enqueue(async () => {
-      await runUnsubscribeOp({
-        isStale,
-        ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
-        removeSlot: () => removePushSlot(address, activeToken, isStale),
-        setSubscribed,
-        setError,
+      const outcome = await tabs.mutate({
+        kind: 'explicit',
+        run: (claim) => {
+          const stale = () => attempt.isStale() || claim.isSuperseded()
+          return runUnsubscribeOp({
+            isStale: stale,
+            ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+            removeSlot: () => removePushSlot(attempt.address, attempt.token, stale),
+            setSubscribed,
+            setError: (message) => { attempt.reported = true; setError(message) },
+          })
+        },
       })
-      if (!isStale()) {
-        const state = await getPushSlotState(address, activeToken)
-        if (!isStale()) setSlots(state.slots)
-      }
+      await finish(attempt, outcome)
     })
   }
 

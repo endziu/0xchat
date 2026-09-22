@@ -105,5 +105,39 @@ exactly-once. This slice makes one bounded attempt during normal operation;
 Registration pruning/deletion and slot removal clear associated work
 transactionally. Session expiry/revocation leaves slots and work intact. Same-slot
 replacement transfers still-valid work to the new revision and fences stale
-completion. #84 owns cross-tab coordination. Automatic repair stays disabled
-until its coordinator lands.
+completion.
+
+## Cross-tab coordination (#84)
+
+Every tab of the origin shares one browser subscription and one installation ID,
+so subscription mutations are routed through an origin-wide coordinator on top of
+the existing per-hook queue and generation.
+
+- Each mutation claims a shared generation in `localStorage` when it is requested,
+  before any lock is awaited, and runs its side effects while holding one
+  exclusive Web Lock. Concurrent tabs therefore take turns; the newest claim
+  supersedes older operations wherever they are queued or already running.
+- A completed mutation is broadcast on a `BroadcastChannel`. Other tabs answer it
+  by re-reading actual browser and server state; `subscribed` is only ever derived
+  from that read, never from the tab's own last action.
+- The reads that gate a conditional write — the slot listing behind every
+  enable, removal and superseded cleanup — now run inside the lock, so they
+  reflect state no concurrent tab can still be rewriting.
+- A superseded operation may not upload, mark enabled, or delete state it no
+  longer owns. It re-lists slots and compares the authoritative revision: it
+  removes only the slot revision it wrote itself. When its own write never
+  landed, it leaves any active slot for this installation — and the browser
+  subscription behind it — untouched, and it drops that browser subscription
+  only under an exclusive lock, since absent server state proves nobody owns it
+  only while no other tab can still be about to claim it. A local generation
+  alone never rejects a server request already in flight.
+- Explicit actions surface a conflict (`COORDINATION_CONFLICT`) without marking
+  notifications enabled; authoritative state converges through the re-read.
+- Automatic mutation is refused with actionable recovery when the browser has no
+  Web Locks or no shared storage, so competing owners cannot arise. Explicit
+  actions still run there, serialized within the tab and fenced by the server's
+  conditional writes.
+
+Waiting for the lock is unbounded in this slice, and an unresolved native
+browser operation is not persisted across reload: #85 adds bounded waiting and
+that persistence, and automatic repair stays disabled until then.

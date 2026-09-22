@@ -168,8 +168,11 @@ lookup request limits.
 
 Push bindings use authenticated, revision-gated notification slots with a five-slot
 limit and durable removal. See [the push-slot API contract](docs/push-slots-api.md).
-Automatic browser repair is disabled pending its coordinator; enabling remains
-explicit. Existing legacy bindings are preserved, including identities above the limit.
+Subscription mutations are serialized across the origin's tabs by a shared
+generation and an exclusive browser lock, and superseded operations can only
+remove what they still own. Automatic browser repair remains disabled pending
+bounded waiting; enabling remains explicit. Existing legacy bindings are
+preserved, including identities above the limit.
 
 Public-key registrations are pruned after 30 days without a new session or a sent
 or received message. Initial registration starts the retention window;

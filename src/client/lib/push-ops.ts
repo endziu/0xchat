@@ -14,6 +14,11 @@ import { requestPushPermission } from './push-permission'
 // cleanup is harmless, but skipping it leaks a browser subscription the
 // server no longer knows about (or that the next identity would silently
 // re-upload under a different token).
+//
+// One exception outranks that (#84): a superseded subscribe only cleans up
+// while it still owns the registration. `releaseIfOwned` re-reads server state
+// and answers from the authoritative revision, so late completion cannot
+// unsubscribe the endpoint a newer operation has just taken over.
 
 export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -29,18 +34,30 @@ export interface PushManagerLike {
   getSubscription(): Promise<PushSubscription | null>
 }
 
-export interface SubscribeOpDeps {
+// `Written` is whatever the upload hands back to identify what reached the
+// server — the op keeps it opaque and only passes it to the release.
+export interface SubscribeOpDeps<Written = unknown> {
   isStale: () => boolean
   ready: () => Promise<PushManagerLike>
   requestPermission: () => Promise<NotificationPermission>
   getVapidPublicKey: () => Promise<string>
-  upload: (sub: PushSubscriptionJSON) => Promise<unknown>
+  upload: (sub: PushSubscriptionJSON) => Promise<Written>
+  // Release the server slot this op wrote, if it is still the owned one, and
+  // report whether the browser subscription is also this op's to remove.
+  releaseIfOwned: (written: Written | undefined) => Promise<boolean>
   setPermission: (permission: NotificationPermission) => void
   setSubscribed: (subscribed: boolean) => void
   setError: (message: string) => void
 }
 
-export async function runSubscribeOp(deps: SubscribeOpDeps): Promise<boolean> {
+async function abandonSubscribeOp<Written>(deps: SubscribeOpDeps<Written>, sub: PushSubscription,
+  written: Written | undefined): Promise<false> {
+  const owned = await deps.releaseIfOwned(written).catch(() => false)
+  if (owned) await sub.unsubscribe().catch(() => {})
+  return false
+}
+
+export async function runSubscribeOp<Written>(deps: SubscribeOpDeps<Written>): Promise<boolean> {
   try {
     const perm = await requestPushPermission({ requestPermission: deps.requestPermission, isStale: deps.isStale })
     if (perm.superseded) return false
@@ -60,19 +77,13 @@ export async function runSubscribeOp(deps: SubscribeOpDeps): Promise<boolean> {
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     })
     // From here the browser subscription exists. Every supersession path from
-    // this point down must remove it — it was never uploaded (or is no longer
-    // ours), and leaving it lets the next identity's re-upload push it under a
-    // different token.
-    if (deps.isStale()) {
-      await sub.unsubscribe().catch(() => {})
-      return false
-    }
+    // this point down must remove it once it is confirmed still ours — it was
+    // never uploaded (or is no longer owned here), and leaving it lets the next
+    // identity's re-upload push it under a different token.
+    if (deps.isStale()) return await abandonSubscribeOp(deps, sub, undefined)
 
-    await deps.upload(sub.toJSON() as PushSubscriptionJSON)
-    if (deps.isStale()) {
-      await sub.unsubscribe().catch(() => {})
-      return false
-    }
+    const written = await deps.upload(sub.toJSON() as PushSubscriptionJSON)
+    if (deps.isStale()) return await abandonSubscribeOp(deps, sub, written)
 
     deps.setSubscribed(true)
     return true

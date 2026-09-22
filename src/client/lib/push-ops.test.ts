@@ -9,10 +9,14 @@ interface State {
   uploads: PushSubscriptionJSON[]
   deletes: string[]
   unsubscribed: number
+  releases: number
+  // What the authoritative server state says a superseded op still owns.
+  ownsArtifacts: boolean
 }
 
 function makeState(): State {
-  return { permission: null, subscribed: false, errors: [], uploads: [], deletes: [], unsubscribed: 0 }
+  return { permission: null, subscribed: false, errors: [], uploads: [], deletes: [], unsubscribed: 0,
+    releases: 0, ownsArtifacts: true }
 }
 
 function makeSub(state: State, endpoint = 'ep-sub'): PushSubscription {
@@ -59,6 +63,10 @@ function subscribeDeps(
     upload: async (s) => {
       state.uploads.push(s)
       await hooks.duringUpload?.()
+    },
+    releaseIfOwned: async () => {
+      state.releases++
+      return state.ownsArtifacts
     },
     setPermission: (p) => {
       state.permission = p
@@ -159,6 +167,19 @@ describe('runSubscribeOp', () => {
     expect(state.uploads).toHaveLength(1)
     expect(state.subscribed).toBe(false)
     expect(state.unsubscribed).toBe(1)
+  })
+
+  test('superseded completion leaves a registration a newer operation owns', async () => {
+    const state = makeState()
+    const gen = makeStale()
+    // Another tab took the installation's slot over while this op ran, so the
+    // authoritative revision no longer matches what this op wrote.
+    state.ownsArtifacts = false
+    const ok = await runSubscribeOp(subscribeDeps(state, { stale: gen.stale, duringUpload: gen.go }))
+    expect(ok).toBe(false)
+    expect(state.releases).toBe(1)
+    expect(state.unsubscribed).toBe(0)
+    expect(state.subscribed).toBe(false)
   })
 
   test('permission denied: error set, no subscription created', async () => {

@@ -62,6 +62,28 @@ export async function enablePushSlot(address: string, token: string, subscriptio
   return handle
 }
 
+/**
+ * Cleanup for a superseded operation (#84). It may drop only what it still
+ * demonstrably owns: the slot revision it wrote itself, or — when its own
+ * write never landed — the browser subscription, and then only while no active
+ * slot holds this installation and serialization guarantees no other tab is
+ * mid-flight. Returns whether the browser subscription is also the caller's to
+ * remove, so late completion can never delete a newer registration.
+ */
+export async function releaseSupersededSlot(address: string, token: string,
+  written: PushSlotHandle | undefined, serialized: boolean): Promise<boolean> {
+  const installation = installationId()
+  const listed = await api.listPushSlots(token)
+  const active = listed.slots.find(slot => slot.installation_id === installation)
+  // Absent server state only proves nobody owns this browser subscription while
+  // no concurrent mutation could still be about to claim it.
+  if (!written) return serialized && !active
+  if (active?.slot_id !== written.slot_id || active.revision !== written.revision) return false
+  const handle = await api.unsubscribePush(condition(installation, written), token)
+  save(address, { enabled: false, handle })
+  return true
+}
+
 /** Removal is independent of the browser subscription surviving locally. */
 export async function removePushSlot(address: string, token: string, isStale: () => boolean): Promise<void> {
   const installation = installationId()
