@@ -119,9 +119,11 @@ authorization, state limits, and read-only deadline refresh. Run the full
 
 ## Browser recovery
 
-The browser closes SSE when hidden or unfocused, cancels reconnect timers, and
-ignores late token responses. Refocusing resumes with a fresh token and retains
-any remaining failure backoff. An open transport does not imply synchronization.
+The browser closes SSE when hidden, cancels reconnect timers, and ignores late
+token responses. A visible but unfocused window keeps its live stream and
+reports that it no longer suppresses push. Becoming visible resumes with a
+fresh token and retains any remaining failure backoff. Refocusing refreshes
+message state. An open transport does not imply synchronization.
 
 For the selected conversation, the browser buffers live messages and lifecycle
 updates while loading the initial page or draining every page of a bounded

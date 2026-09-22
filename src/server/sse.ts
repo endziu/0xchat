@@ -1,19 +1,46 @@
 const clients = new Map<
   string,
-  Map<ReadableStreamDefaultController, boolean>
+  Map<ReadableStreamDefaultController, { supportsOpening: boolean; suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
 >();
+
+const ATTENTION_TTL_MS = 45_000;
 
 export function addClient(
   address: string,
   ctrl: ReadableStreamDefaultController,
   supportsOpening = false,
+  suppressPush = true,
+  tracksAttention = false,
 ): void {
   let set = clients.get(address);
   if (!set) {
     set = new Map();
     clients.set(address, set);
   }
-  set.set(ctrl, supportsOpening);
+  set.set(ctrl, { supportsOpening, suppressPush, tracksAttention, attentionAt: Date.now(), sequence: 0 });
+}
+
+/** Only an attentive browser or a live terminal stream suppresses push. */
+export function pushSuppressingConnectionCount(address: string): number {
+  const now = Date.now();
+  return [...(clients.get(address)?.values() ?? [])].filter(client =>
+    client.suppressPush && (!client.tracksAttention || now - client.attentionAt < ATTENTION_TTL_MS)
+  ).length;
+}
+
+export function updateClientAttention(
+  address: string,
+  ctrl: ReadableStreamDefaultController,
+  attentive: boolean,
+  sequence: number,
+): boolean {
+  const client = clients.get(address)?.get(ctrl);
+  if (!client) return false;
+  if (sequence <= client.sequence) return true;
+  client.sequence = sequence;
+  client.suppressPush = attentive;
+  client.attentionAt = Date.now();
+  return true;
 }
 
 /** Number of live SSE streams currently registered for an address. */
@@ -54,5 +81,5 @@ export function notify(
 
 /** Dormant rollout detection; admission and delivery remain unenforced. */
 export function openingConnectionCount(address: string): number {
-  return [...(clients.get(address)?.values() ?? [])].filter(Boolean).length;
+  return [...(clients.get(address)?.values() ?? [])].filter(client => client.supportsOpening).length;
 }

@@ -286,6 +286,34 @@ test('a live identity-wide SSE stream suppresses and discards its observed wake-
   expect(deliveries).toBe(1);
 });
 
+test('an unfocused browser stream stays live while push delivery follows attention', async () => {
+  await subscribe('background-live');
+  let deliveries = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => { deliveries++; } });
+
+  const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}` },
+  });
+  const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
+  const stream = await fetch(new URL(`/api/events?token=${token}&attentive=false`, server.url));
+  const reader = stream.body!.getReader();
+  await reader.read();
+
+  await sendMessage();
+  await waitFor(() => deliveries === 1);
+  expect((await request('/api/events/attention', bob.address,
+    { stream: token, attentive: true, sequence: 1 })).status).toBe(204);
+  await sendMessage();
+  await Bun.sleep(25);
+  expect(deliveries).toBe(1);
+
+  expect((await request('/api/events/attention', bob.address,
+    { stream: token, attentive: false, sequence: 2 })).status).toBe(204);
+  await sendMessage();
+  await waitFor(() => deliveries === 2);
+  await reader.cancel();
+});
+
 test('replacement transfers pending work while fencing the old in-flight completion', async () => {
   const installationId = crypto.randomUUID();
   const createdResponse = await request('/api/push/subscribe', bob.address, {

@@ -4,8 +4,8 @@ import { MAX_SSE_CONNECTIONS_PER_ADDRESS } from '../constants.ts'
 import { sseTokenLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { createFetch } from '../router.ts'
-import { connectionCount, notify } from '../sse.ts'
-import { handleGetSSEToken, handleSSE, SseTokenStore } from './events.ts'
+import { connectionCount, notify, pushSuppressingConnectionCount } from '../sse.ts'
+import { handleGetSSEToken, handleSSE, handleSSEAttention, SseTokenStore } from './events.ts'
 import type { Context } from '../http.ts'
 
 const address = `0x${'b'.repeat(40)}`
@@ -65,6 +65,31 @@ async function openSse(ip: string, sseToken: string) {
 }
 
 describe('SSE route', () => {
+  test('a live blurred browser allows push while an attentive one suppresses it', async () => {
+    const ip = `sse-attention-${Math.random()}`
+    const stream = await mintSseToken(ip)
+    const response = await handleSSE(makeContext(`/api/events?token=${stream}&attentive=false`, ip))
+    const reader = response.body!.getReader()
+    await readEventText(reader)
+    expect(connectionCount(address)).toBe(1)
+    expect(pushSuppressingConnectionCount(address)).toBe(0)
+
+    const update = (attentive: boolean, sequence: number, auth = sessionToken) =>
+      handleSSEAttention(makeContext('/api/events/attention', ip, {
+        method: 'POST', body: JSON.stringify({ stream, attentive, sequence }),
+      }, auth))
+    expect((await update(true, 1, otherSessionToken)).status).toBe(404)
+    expect(pushSuppressingConnectionCount(address)).toBe(0)
+    expect((await update(true, 1)).status).toBe(204)
+    expect(pushSuppressingConnectionCount(address)).toBe(1)
+    expect((await update(false, 2)).status).toBe(204)
+    expect((await update(true, 1)).status).toBe(204)
+    expect(pushSuppressingConnectionCount(address)).toBe(0)
+
+    await reader.cancel()
+    expect((await update(true, 3)).status).toBe(404)
+  })
+
   test('client disconnect removes the client immediately', async () => {
     const ip = `sse-test-${Math.random()}`
     const sseToken = await mintSseToken(ip)

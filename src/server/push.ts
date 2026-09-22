@@ -9,7 +9,7 @@ import {
   type PendingPushWork,
 } from './db.ts';
 import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, log, warn, error } from './constants.ts';
-import { connectionCount } from './sse.ts';
+import { pushSuppressingConnectionCount } from './sse.ts';
 import { sendPushNotification, type SendPush } from './push-provider.ts';
 
 const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
@@ -59,7 +59,7 @@ async function deliver(work: PendingPushWork, activeEpoch: number): Promise<void
     // Reclaim expired leases before consuming work, including suppressed work.
     claimToken = claimPushWork(observed, now, sendTimeoutMs + 1_000);
     if (!claimToken) return;
-    if (ttl < 1 || connectionCount(work.address) > 0) {
+    if (ttl < 1 || pushSuppressingConnectionCount(work.address) > 0) {
       if (activeEpoch === epoch) completePushWork(observed, claimToken);
       return;
     }

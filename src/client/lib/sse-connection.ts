@@ -26,7 +26,7 @@ export interface SseConnectionOptions {
   /** Build the EventSource URL for a token. */
   buildUrl: (sseToken: string) => string
   /** The socket is open (a 2xx text/event-stream response arrived). */
-  onOpen?: () => void
+  onOpen?: (sseToken: string) => void
   onMessage?: (data: unknown) => void
   /** A message's authoritative lifecycle changed (its first opening). */
   onExpiryUpdate?: (data: unknown) => void
@@ -42,7 +42,7 @@ export interface SseConnectionOptions {
 export class SseConnection {
   private readonly getSseToken: () => Promise<string>
   private readonly buildUrl: (sseToken: string) => string
-  private readonly onOpen: (() => void) | undefined
+  private readonly onOpen: ((sseToken: string) => void) | undefined
   private readonly onMessage: ((data: unknown) => void) | undefined
   private readonly onExpiryUpdate: ((data: unknown) => void) | undefined
   private readonly onUserDisconnected: ((address: string) => void) | undefined
@@ -84,7 +84,7 @@ export class SseConnection {
         this.minting = false
         if (this.closed || this.suspended) return
         if (generation !== this.generation) { this.connect(); return }
-        this.openEventSource(this.buildUrl(sseToken))
+        this.openEventSource(this.buildUrl(sseToken), sseToken)
       })
       .catch((err) => {
         this.minting = false
@@ -129,7 +129,7 @@ export class SseConnection {
     this.es = null
   }
 
-  private openEventSource(url: string): void {
+  private openEventSource(url: string, sseToken: string): void {
     const es = this.createEventSource(url)
     this.es = es
     this.opened = false
@@ -143,7 +143,7 @@ export class SseConnection {
         this.clearTimer(this.timer)
         this.timer = null
       }
-      this.onOpen?.()
+      this.onOpen?.(sseToken)
     })
 
     es.addEventListener('message', (e: MessageEvent) => {

@@ -34,10 +34,12 @@ function batches<T>(items: T[], size: number): T[][] {
 interface MessageWork {
   generation: number
   connectionEpoch: ConnectionEpoch | null
+  attentionEpoch: number
 }
 
 function sameWork(left: MessageWork | null, right: MessageWork): boolean {
   return left?.generation === right.generation && left.connectionEpoch === right.connectionEpoch
+    && left.attentionEpoch === right.attentionEpoch
 }
 
 /** Drain a bounded recovery interval, checking validity at each async boundary. */
@@ -90,6 +92,15 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const recoveryCursor = useRef<string | null>(null)
   const finalVisibleIds = useRef(new Set<string>())
   const buffered = useRef<Array<{ type: 'message' | 'expiry'; data: unknown }>>([])
+  const attentive = useWindowAttention()
+  const previousAttention = useRef(attentive)
+  const attentionEpoch = useRef(0)
+  if (previousAttention.current !== attentive) {
+    previousAttention.current = attentive
+    attentionEpoch.current++
+    synchronizedRef.current = false
+    storeRef.current.cancelOpening()
+  }
   const isSynchronized = () => synchronizedRef.current && connection.current !== null
     && synchronizedConnection.current === connection.current && isWindowAttentive()
   if (scopeRef.current !== scope) {
@@ -115,7 +126,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // ties) — and it stays valid after the page's messages expire.
   const cursorRef = useRef<{ before: number; rowid: number | null } | null>(null)
 
-  const captureWork = (): MessageWork => ({ generation: loadGenRef.current, connectionEpoch: connection.current })
+  const captureWork = (): MessageWork => ({ generation: loadGenRef.current, connectionEpoch: connection.current, attentionEpoch: attentionEpoch.current })
   const isCurrentWork = (work: MessageWork) => sameWork(work, captureWork())
   const bufferUntilSynchronized = (type: 'message' | 'expiry', data: unknown): boolean => {
     if (isSynchronized()) return false
@@ -376,13 +387,12 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
   // Regaining attention re-checks expiry (background timers can run late),
   // reveals confirmations that landed meanwhile and opens what arrived.
-  const attentive = useWindowAttention()
   useEffect(() => {
     if (!attentive) return
     storeRef.current.sweep(storeRef.current.now(), { synchronized: isSynchronized() })
     rerender()
-    void openPending()
-  }, [attentive, openPending, rerender])
+    void synchronize()
+  }, [attentive, synchronize, rerender])
 
   // One timer for the earliest upcoming deadline, recomputed after every
   // render so changed deadlines replace it. Capture it during render: the

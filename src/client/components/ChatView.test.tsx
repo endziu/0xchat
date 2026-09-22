@@ -475,7 +475,7 @@ test('messages received while unfocused open in batches of at most 100 once focu
   const view = mount()
   await waitFor(() => view.text().includes('No messages yet') && streamReady())
   setFocused(false)
-  await waitFor(() => !latestStream().live)
+  expect(latestStream().live).toBe(true)
   for (let index = 0; index < 101; index++) await alice.send(bobKey.address, `burst ${index}`, 300)
   await Bun.sleep(500)
   expect(openRequests).toEqual([])
@@ -803,14 +803,28 @@ test('switching identity discards in-flight opening results', async () => {
   await carol.close()
 })
 
-test('blur closes delivery immediately and a late token cannot reopen it', async () => {
+test('a visible window keeps live delivery after blur without opening unattended messages', async () => {
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('No messages yet'))
   const stream = latestStream()
   setFocused(false)
+  await Bun.sleep(50)
+  expect(stream.live).toBe(true)
+
+  const sent = await alice.send(bobAddress, 'arrived while unfocused', 300)
+  await waitFor(() => stream.frames.some(frame => frame.data.includes(sent.id)))
+  expect(openRequests).toEqual([])
+  expect(await lifecycle(sent.id)).toMatchObject({ status: 'available', opened_at: null })
+})
+
+test('hiding the document closes delivery immediately and a late token cannot reopen it', async () => {
+  const view = mount()
+  await waitFor(() => streamReady() && view.text().includes('No messages yet'))
+  const stream = latestStream()
+  setVisible(false)
   await waitFor(() => !stream.live)
   const mint = gate(request => new URL(request.url).pathname === '/api/events/token')
-  setFocused(true)
+  setVisible(true)
   await waitFor(() => mint.seen())
   setVisible(false)
   const count = TestEventSource.instances.length
@@ -827,7 +841,7 @@ test('focused recovery drains more than 100 missed messages before merging live 
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('copy opened during recovery'))
   setFocused(false)
-  await waitFor(() => !latestStream().live)
+  expect(latestStream().live).toBe(true)
   for (let index = 0; index < 105; index++) {
     // Sending budget is unrelated to the recovery interval exercised here.
     for (const limiter of Object.values(limiters)) limiter.reset()
@@ -992,7 +1006,7 @@ test('short initial history does not offer another older page', async () => {
 test.each([false, true])('a live conversation refresh cannot abort awaited recovery (stale failure: %s)', async staleFailure => {
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('No messages yet'))
-  setFocused(false)
+  setVisible(false)
   await waitFor(() => !latestStream().live)
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
@@ -1005,7 +1019,7 @@ test.each([false, true])('a live conversation refresh cannot abort awaited recov
     }
     return next()
   }
-  setFocused(true)
+  setVisible(true)
   await waitFor(() => streamReady() && requests === 1)
   await alice.send(bobAddress, 'arrived during conversation refresh', 300)
   await Bun.sleep(450)
@@ -1032,7 +1046,7 @@ test('recovery preserves the pre-disconnect position even at the bottom', async 
     pane.scrollTop = 60
     pane.dispatchEvent(new Event('scroll'))
     setFocused(false)
-    await waitFor(() => !latestStream().live)
+    expect(latestStream().live).toBe(true)
     await alice.send(bobAddress, 'new bottom message', 300)
     setFocused(true)
     await waitFor(() => view.text().includes('new bottom message'))
