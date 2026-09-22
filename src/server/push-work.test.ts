@@ -8,6 +8,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { createSession, deleteInactivePubkeys, getDb, initDb, registerPubkey } from './db.ts';
 import { startPushDispatcher, stopPushDispatcher } from './push.ts';
+import { sendPushNotification } from './push-provider.ts';
 import { createFetch } from './router.ts';
 import * as limiters from './rate-limiters.ts';
 
@@ -135,6 +136,111 @@ test('ambiguous delivery remains durable across a database and dispatcher restar
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { restartedCalls++; } });
   await waitFor(() => restartedCalls === 1);
   expect(restartedCalls).toBe(1);
+});
+
+test.each(['SSE', 'subsecond'])('restart discards expired-claim work under %s suppression without blocking the event loop', async reason => {
+  await subscribe('restart-suppressed');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let started = false;
+  let release!: () => void;
+  startPushDispatcher({ sendTimeoutMs: 10, send: () => {
+    started = true;
+    return new Promise<void>(resolve => { release = resolve; });
+  } });
+  await sendMessage(5);
+  await waitFor(() => started);
+  stopPushDispatcher();
+  release();
+  await Bun.sleep(5);
+
+  // A separate process gives the regression a watchdog even if dispatch starves timers.
+  const proc = Bun.spawn([process.execPath, '--eval', `
+    import { initDb, getDb } from './db.ts';
+    import { startPushDispatcher, stopPushDispatcher } from './push.ts';
+    import { addClient, removeClient } from './sse.ts';
+    initDb(${JSON.stringify(join(directory, 'chat.db'))});
+    Date.now = () => ${base + (reason === 'SSE' ? 2_000 : 4_001)};
+    let controller;
+    if (${reason === 'SSE'}) new ReadableStream({ start(ctrl) {
+      controller = ctrl;
+      addClient(${JSON.stringify(bob.address)}, ctrl);
+    } });
+    let deliveries = 0;
+    startPushDispatcher({ pollIntervalMs: 5, send: async () => { deliveries++; } });
+    await Bun.sleep(30);
+    if (controller) removeClient(${JSON.stringify(bob.address)}, controller);
+    Date.now = () => ${base + 2_000};
+    await Bun.sleep(30);
+    stopPushDispatcher();
+    getDb().close();
+    console.log(JSON.stringify({ deliveries }));
+  `], { cwd: import.meta.dir, stdout: 'pipe', stderr: 'pipe' });
+  const watchdog = setTimeout(() => proc.kill(), 2_000);
+  try {
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+    ]);
+    expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
+    expect(JSON.parse(stdout)).toEqual({ deliveries: 0 });
+  } finally {
+    clearTimeout(watchdog);
+    proc.kill();
+  }
+});
+
+test('absolute cancellation frees every occupied delivery slot', async () => {
+  for (let index = 0; index < 5; index++) await subscribe(`cancel-${index}`);
+  let attempts = 0;
+  let active = 0;
+  let cancelled = 0;
+  startPushDispatcher({ pollIntervalMs: 5, sendTimeoutMs: 20, send: async (_sub, _payload, options) => {
+    attempts++;
+    active++;
+    try {
+      if (attempts <= 4) await new Promise<void>((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          cancelled++;
+          reject(options.signal.reason);
+        }, { once: true });
+      });
+    } finally {
+      active--;
+    }
+  } });
+  await sendMessage();
+  await waitFor(() => attempts === 5 && active === 0);
+  expect(cancelled).toBe(4);
+  await sendMessage();
+  await waitFor(() => attempts === 10);
+});
+
+test('the real outbound transport cancels stalled requests and continues dispatching', async () => {
+  for (let index = 0; index < 5; index++) await subscribe(`transport-${index}`);
+  let requests = 0;
+  let cancelled = 0;
+  const provider = Bun.serve({ port: 0, async fetch(request) {
+    requests++;
+    if (requests <= 4) return new Promise<Response>(resolve => {
+      request.signal.addEventListener('abort', () => {
+        cancelled++;
+        resolve(new Response(null, { status: 503 }));
+      }, { once: true });
+    });
+    return new Response(null, { status: 201 });
+  } });
+  try {
+    startPushDispatcher({ pollIntervalMs: 5, sendTimeoutMs: 50, send: (subscription, payload, options) =>
+      sendPushNotification({ ...subscription, endpoint: provider.url.href }, payload, options),
+    });
+    await sendMessage();
+    await waitFor(() => requests === 5 && cancelled === 4);
+    await sendMessage();
+    await waitFor(() => requests === 10);
+  } finally {
+    stopPushDispatcher();
+    provider.stop(true);
+  }
 });
 
 test('new work arriving in flight survives the observed generation and keeps the latest deadline', async () => {

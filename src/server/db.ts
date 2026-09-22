@@ -502,17 +502,11 @@ export function claimPushWork(
 
 export function completePushWork(
   work: Pick<PendingPushWork, 'slot_id' | 'revision' | 'generation'>,
-  claimToken?: string,
+  claimToken: string,
 ): void {
-  if (claimToken) {
-    db.query(`DELETE FROM push_work
-      WHERE slot_id = ? AND revision = ? AND generation = ? AND claim_token = ?`)
-      .run(work.slot_id, work.revision, work.generation, claimToken);
-    return;
-  }
   db.query(`DELETE FROM push_work
-    WHERE slot_id = ? AND revision = ? AND generation = ? AND claim_token IS NULL`)
-    .run(work.slot_id, work.revision, work.generation);
+    WHERE slot_id = ? AND revision = ? AND generation = ? AND claim_token = ?`)
+    .run(work.slot_id, work.revision, work.generation, claimToken);
 }
 
 export function releasePushClaim(slotId: string, claimToken: string): void {

@@ -19,7 +19,8 @@ IDs are opaque identifiers, not credentials. Endpoint URLs never authorize a tra
   an owned slot's endpoint and keys when its expected revision matches. Replacement
   retains the slot ID, increments its revision, restores it to `active`, and is
   allowed at or above the five-slot cap. A destination owned by another slot fails
-  with `ownership_conflict`.
+  with `ownership_conflict`. Quarantined legacy reservations cannot be replaced;
+  remove them explicitly before enabling again.
 - `POST /api/push/unsubscribe`: `{slot_id, installation_id, expected_revision}`.
   Deletes endpoint/key data and records revision + 1 atomically. Returns the
   revocation handle. Repeating the accepted removal is idempotent; older writes fail.
@@ -87,9 +88,12 @@ The dispatcher sends an empty payload with the remaining lifetime floored to
 whole seconds. Work with less than one second remaining is discarded. Delivery
 has bounded concurrency, one in-flight attempt per slot, and a finite provider
 wait. A leased SQLite claim serializes attempts across server processes; the
-provider receives the same finite request timeout, and a non-conforming adapter
-that outlives it retains local ownership until it actually settles. Any live SSE
-stream for the identity suppresses and consumes the observed generation. The
+transport is aborted at an absolute deadline, not merely on socket inactivity.
+Provider response bodies are discarded after reading the status. Injected adapters
+must honor the abort signal and settle after cancellation; a non-conforming adapter
+retains local ownership rather than permitting overlapping attempts. Any live SSE
+stream for the identity suppresses and consumes the observed generation, reclaiming
+an expired lease first when recovering work after restart. The
 service worker retains its generic `0xchat-message` notification tag.
 
 Pending work survives restart and respects stored due/provider times. Provider

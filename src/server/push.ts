@@ -4,37 +4,28 @@ import {
   cleanupInvalidPushWork,
   completePushWork,
   getDuePushWork,
-  getPushSubscriptionsForAddress,
   markPushSubscriptionDead,
   releasePushClaim,
   type PendingPushWork,
 } from './db.ts';
 import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, log, warn, error } from './constants.ts';
 import { connectionCount } from './sse.ts';
+import { sendPushNotification, type SendPush } from './push-provider.ts';
 
 const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 if (pushEnabled) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
-type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };
-type SendPush = (
-  subscription: Subscription,
-  payload: string | undefined,
-  options: { TTL: number; timeout?: number },
-) => Promise<unknown>;
-
 export interface PushDispatcherOptions {
+  /** Adapters must abort their transport and settle when options.signal is aborted. */
   send?: SendPush;
   concurrency?: number;
   pollIntervalMs?: number;
   sendTimeoutMs?: number;
 }
 
-const defaultSend: SendPush = (subscription, payload, options) =>
-  webpush.sendNotification(subscription, payload, options);
-
-let sendPush: SendPush = defaultSend;
+let sendPush: SendPush = sendPushNotification;
 let concurrency = 4;
 let sendTimeoutMs = 15_000;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -43,10 +34,14 @@ let dispatchingEpoch: number | null = null;
 let epoch = 0;
 const inFlight = new Map<string, number>();
 
-function timeout<T>(promise: Promise<T>, duration: number): Promise<T> {
+function timeout<T>(promise: Promise<T>, duration: number, controller: AbortController): Promise<T> {
   let handle: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
-    handle = setTimeout(() => reject(new Error('push delivery timed out')), duration);
+    handle = setTimeout(() => {
+      const reason = new Error('push delivery timed out');
+      controller.abort(reason);
+      reject(reason);
+    }, duration);
     handle.unref();
   });
   return Promise.race([promise, expired]).finally(() => {
@@ -61,26 +56,29 @@ async function deliver(work: PendingPushWork, activeEpoch: number): Promise<void
   try {
     const now = Date.now();
     const ttl = Math.floor((work.deadline - now) / 1000);
-    if (ttl < 1 || connectionCount(work.address) > 0) {
-      if (activeEpoch === epoch) completePushWork(observed);
-      return;
-    }
+    // Reclaim expired leases before consuming work, including suppressed work.
     claimToken = claimPushWork(observed, now, sendTimeoutMs + 1_000);
     if (!claimToken) return;
+    if (ttl < 1 || connectionCount(work.address) > 0) {
+      if (activeEpoch === epoch) completePushWork(observed, claimToken);
+      return;
+    }
+    const controller = new AbortController();
     let providerSettled = false;
     const providerOperation = Promise.resolve().then(() => sendPush({
       endpoint: work.endpoint,
       keys: { p256dh: work.p256dh, auth: work.auth },
-    }, undefined, { TTL: ttl, timeout: sendTimeoutMs })).finally(() => { providerSettled = true; });
+    }, undefined, { TTL: ttl, timeout: sendTimeoutMs, signal: controller.signal })).finally(() => { providerSettled = true; });
     try {
-      await timeout(providerOperation, sendTimeoutMs);
+      await timeout(providerOperation, sendTimeoutMs, controller);
       log('[push] sent', work.address);
       if (activeEpoch === epoch) completePushWork(observed, claimToken);
     } catch (caught: unknown) {
       if (activeEpoch !== epoch) return;
       if (!providerSettled) {
-        // The production provider receives the same finite timeout and aborts its
-        // request. Retain ownership until a non-conforming adapter actually settles.
+        // Cancellation may settle on the next turn. Retain ownership until it
+        // does, so neither replacement nor newer work overlaps the old transport.
+        // A non-conforming injected adapter fails closed rather than overlapping.
         retainInFlight = true;
         error('[push] send timed out', work.address);
         void providerOperation.catch(() => {}).finally(() => {
@@ -137,7 +135,7 @@ export function requestPushDispatch(): void {
 
 export function startPushDispatcher(options: PushDispatcherOptions = {}): void {
   stopPushDispatcher();
-  sendPush = options.send ?? defaultSend;
+  sendPush = options.send ?? sendPushNotification;
   concurrency = options.concurrency ?? 4;
   sendTimeoutMs = options.sendTimeoutMs ?? 15_000;
   enabled = options.send !== undefined || pushEnabled;
@@ -155,25 +153,4 @@ export function stopPushDispatcher(): void {
   timer = undefined;
   dispatchingEpoch = null;
   inFlight.clear();
-}
-
-// Retained for focused slot migration tests and callers outside message acceptance.
-// Production message delivery uses the durable dispatcher above.
-export async function pushNotify(address: string, ttlSeconds: number): Promise<void> {
-  if (!pushEnabled) return;
-  const subs = getPushSubscriptionsForAddress(address);
-  await Promise.all(subs.map(async (sub) => {
-    try {
-      await defaultSend({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, undefined, { TTL: ttlSeconds });
-      log('[push] sent', address);
-    } catch (caught: unknown) {
-      const statusCode = (caught as { statusCode?: number })?.statusCode;
-      if (statusCode === 404 || statusCode === 410) {
-        markPushSubscriptionDead(sub.slot_id, sub.revision);
-        warn('[push] subscription needs repair', address);
-      } else {
-        error('[push] send failed', address, statusCode ?? caught);
-      }
-    }
-  }));
 }
