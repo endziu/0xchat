@@ -6,8 +6,8 @@ export type SendPush = (
   options: { TTL: number; timeout: number; signal: AbortSignal },
 ) => Promise<unknown>;
 
-// The RFC 1123 HTTP-date form with the zones providers actually emit.
-const HTTP_DATE = /^[A-Za-z]{3,9}, \d{1,2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} (?:GMT|UTC)$/;
+// The strict RFC 1123 HTTP-date form with the zones providers actually emit.
+const HTTP_DATE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} (?:GMT|UTC)$/;
 
 /**
  * Parse a provider Retry-After header as positive milliseconds. Accepts the
