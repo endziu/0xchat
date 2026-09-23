@@ -25,6 +25,9 @@ export function parseRetryAfterMs(header: string | null, now: number): number | 
     if (!HTTP_DATE.test(trimmed)) return undefined;
     const date = Date.parse(trimmed);
     if (Number.isNaN(date)) return undefined;
+    // Date.parse normalizes impossible dates (for example 31 Feb); only an
+    // exact round-trip proves the header described a real calendar instant.
+    if (new Date(date).toUTCString().replace(/ GMT$/, '') !== trimmed.replace(/ (?:GMT|UTC)$/, '')) return undefined;
     ms = date - now;
   }
   return Number.isFinite(ms) && ms > 0 ? ms : undefined;
