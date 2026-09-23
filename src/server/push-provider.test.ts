@@ -62,7 +62,7 @@ test('provider transport exposes an HTTP-date Retry-After delay', async () => {
 });
 
 test('provider transport ignores invalid Retry-After values', async () => {
-  for (const header of ['0', 'soon', new Date(Date.now() - 60_000).toUTCString()]) {
+  for (const header of ['0', '1.5', '1e2', '1e308', 'soon', new Date(Date.now() - 60_000).toUTCString()]) {
     const provider = Bun.serve({ port: 0, fetch: () =>
       new Response(null, { status: 429, headers: { 'Retry-After': header } }) });
     try {

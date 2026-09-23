@@ -7,22 +7,23 @@ export type SendPush = (
 ) => Promise<unknown>;
 
 /**
- * Parse a provider Retry-After header as positive milliseconds. Accepts both
- * the delta-seconds and HTTP-date forms; anything unparseable or non-positive
- * is not a valid delay and is ignored.
+ * Parse a provider Retry-After header as positive milliseconds. Accepts the
+ * RFC 9110 delta-seconds form (a non-negative integer) and the HTTP-date
+ * form; anything unparseable, non-integer, non-finite or non-positive is not
+ * a valid delay and is ignored.
  */
 export function parseRetryAfterMs(header: string | null, now: number): number | undefined {
   if (!header) return undefined;
   const trimmed = header.trim();
   let ms: number;
-  if (Number.isFinite(Number(trimmed))) {
+  if (/^\d+$/.test(trimmed)) {
     ms = Number(trimmed) * 1000;
   } else {
     const date = Date.parse(trimmed);
     if (Number.isNaN(date)) return undefined;
     ms = date - now;
   }
-  return ms > 0 ? ms : undefined;
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
 
 /** web-push signs the request; fetch provides cancellation of the actual transport. */
