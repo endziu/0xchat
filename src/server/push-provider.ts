@@ -6,6 +6,9 @@ export type SendPush = (
   options: { TTL: number; timeout: number; signal: AbortSignal },
 ) => Promise<unknown>;
 
+// RFC 1123 and the older RFC 7231 spellings, as emitted by providers.
+const HTTP_DATE = /^[A-Za-z]{3,9}(?:,)? \d{1,2} [A-Za-z]{3} (?:\d{2}|\d{4}) \d{2}:\d{2}:\d{2}(?: [A-Za-z]{2,5})?$/;
+
 /**
  * Parse a provider Retry-After header as positive milliseconds. Accepts the
  * RFC 9110 delta-seconds form (a non-negative integer) and the HTTP-date
@@ -19,6 +22,7 @@ export function parseRetryAfterMs(header: string | null, now: number): number | 
   if (/^\d+$/.test(trimmed)) {
     ms = Number(trimmed) * 1000;
   } else {
+    if (!HTTP_DATE.test(trimmed)) return undefined;
     const date = Date.parse(trimmed);
     if (Number.isNaN(date)) return undefined;
     ms = date - now;
