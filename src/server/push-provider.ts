@@ -39,6 +39,9 @@ export const sendPushNotification: SendPush = async (subscription, payload, opti
       redirect: 'error',
     });
   } catch (error) {
+    // A rejected redirect is our own policy refusing a 3xx, not a temporary
+    // network failure, so it stays untagged and leaves the retry schedule.
+    if ((error as { code?: unknown })?.code === 'UnexpectedRedirect') throw error;
     // Network-level failure or cancellation: temporary at the transport boundary.
     throw Object.assign(error instanceof Error ? error : new Error('Push provider request failed'), { temporary: true });
   }

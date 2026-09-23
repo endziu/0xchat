@@ -90,3 +90,16 @@ test('provider transport never follows redirects', async () => {
     destination.stop(true);
   }
 });
+
+test('provider transport does not tag a rejected redirect as a temporary network failure', async () => {
+  const destination = Bun.serve({ port: 0, fetch: () => new Response(null, { status: 201 }) });
+  const provider = Bun.serve({ port: 0, fetch: () => Response.redirect(destination.url.href, 307) });
+  try {
+    const caught = await send(provider.url.href).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as { temporary?: boolean }).temporary).not.toBe(true);
+  } finally {
+    provider.stop(true);
+    destination.stop(true);
+  }
+});
