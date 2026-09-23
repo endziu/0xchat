@@ -509,6 +509,25 @@ export function completePushWork(
     .run(work.slot_id, work.revision, work.generation, claimToken);
 }
 
+/**
+ * Schedule a durable temporary retry after a failed attempt. Matched by claim
+ * token, not generation, so a failure also applies its backoff to newer work
+ * that coalesced into this slot while the attempt was in flight. A replaced or
+ * removed slot (different revision or no row) leaves the failure unmatched and
+ * never resurfaces its work.
+ */
+export function recordPushTemporaryFailure(
+  work: Pick<PendingPushWork, 'slot_id' | 'revision'>,
+  claimToken: string,
+  dueAt: number,
+  providerNotBefore: number | null,
+): number {
+  return db.query(`UPDATE push_work
+    SET due_at = ?, provider_not_before = ?, claim_token = NULL, claim_until = NULL
+    WHERE slot_id = ? AND revision = ? AND claim_token = ?`)
+    .run(dueAt, providerNotBefore, work.slot_id, work.revision, claimToken).changes;
+}
+
 export function releasePushClaim(slotId: string, claimToken: string): void {
   db.query(`UPDATE push_work SET claim_token = NULL, claim_until = NULL
     WHERE slot_id = ? AND claim_token = ?`).run(slotId, claimToken);

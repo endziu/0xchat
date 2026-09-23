@@ -68,6 +68,10 @@ async function waitFor(check: () => boolean): Promise<void> {
   throw new Error('Timed out waiting for push delivery');
 }
 
+function extendSession(address: string, expiresAt: number) {
+  getDb().query('UPDATE sessions SET expires_at = ? WHERE address = ?').run(expiresAt, address.toLowerCase());
+}
+
 async function subscribe(endpoint: string) {
   const response = await request('/api/push/subscribe', bob.address, {
     installation_id: crypto.randomUUID(),
@@ -191,6 +195,8 @@ test.each(['SSE', 'subsecond'])('restart discards expired-claim work under %s su
 
 test('absolute cancellation frees every occupied delivery slot', async () => {
   for (let index = 0; index < 5; index++) await subscribe(`cancel-${index}`);
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
   let attempts = 0;
   let active = 0;
   let cancelled = 0;
@@ -208,11 +214,17 @@ test('absolute cancellation frees every occupied delivery slot', async () => {
       active--;
     }
   } });
-  await sendMessage();
+  await sendMessage(3600);
   await waitFor(() => attempts === 5 && active === 0);
   expect(cancelled).toBe(4);
-  await sendMessage();
+  // The aborted attempts are temporary failures: the new message coalesces into
+  // the retained work but must not force an early attempt on the backoff.
+  await sendMessage(3600);
+  await Bun.sleep(30);
+  expect(attempts).toBe(6);
+  clock.mockReturnValue(base + 60_000);
   await waitFor(() => attempts === 10);
+  expect(attempts).toBe(10);
 });
 
 test('the real outbound transport cancels stalled requests and continues dispatching', async () => {
@@ -229,18 +241,155 @@ test('the real outbound transport cancels stalled requests and continues dispatc
     });
     return new Response(null, { status: 201 });
   } });
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
   try {
     startPushDispatcher({ pollIntervalMs: 5, sendTimeoutMs: 50, send: (subscription, payload, options) =>
       sendPushNotification({ ...subscription, endpoint: provider.url.href }, payload, options),
     });
-    await sendMessage();
+    await sendMessage(3600);
     await waitFor(() => requests === 5 && cancelled === 4);
-    await sendMessage();
+    // A stalled, aborted transport is a temporary failure: the new message
+    // must not force an early attempt on the backed-off endpoint.
+    await sendMessage(3600);
+    await Bun.sleep(30);
+    expect(requests).toBe(6);
+    clock.mockReturnValue(base + 60_000);
     await waitFor(() => requests === 10);
+    expect(requests).toBe(10);
   } finally {
     stopPushDispatcher();
     provider.stop(true);
   }
+});
+
+test('a temporary provider failure retries after one minute without another message', async () => {
+  await subscribe('retry-503');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  const attempts: number[] = [];
+  let failures = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts.push(Date.now());
+    if (failures++ === 0) throw Object.assign(new Error('provider unavailable'), { statusCode: 503 });
+  } });
+
+  await sendMessage(300);
+  await waitFor(() => attempts.length === 1);
+  clock.mockReturnValue(base + 59_999);
+  await Bun.sleep(15);
+  expect(attempts.length).toBe(1);
+  clock.mockReturnValue(base + 60_000);
+  await waitFor(() => attempts.length === 2);
+  expect(attempts[1] - attempts[0]).toBe(60_000);
+});
+
+test('temporary failures double the retry delay after each attempt up to a one-hour cap', async () => {
+  await subscribe('backoff-cap');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  const attempts: number[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts.push(Date.now());
+    throw Object.assign(new Error('provider still down'), { statusCode: 500 });
+  } });
+
+  const expectedGaps = [60_000, 120_000, 240_000, 480_000, 960_000, 1_920_000, 3_600_000];
+  await sendMessage(86400);
+  let due = 0;
+  for (const gap of expectedGaps) {
+    await waitFor(() => attempts.length === expectedGaps.indexOf(gap) + 1);
+    due += gap;
+    clock.mockReturnValue(base + due);
+  }
+  await waitFor(() => attempts.length === 8);
+  expect(attempts.slice(1).map((attempt, index) => attempt - attempts[index])).toEqual(expectedGaps);
+});
+
+test('a longer valid provider-requested delay wins and persists across a restart', async () => {
+  await subscribe('retry-after');
+  const path = join(directory, 'chat.db');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let attempts = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    if (attempts++ === 0) throw Object.assign(new Error('rate limited'), { statusCode: 429, retryAfterMs: 180_000 });
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => attempts === 1);
+  getDb().close();
+  initDb(path);
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => { attempts++; } });
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(15);
+  clock.mockReturnValue(base + 179_999);
+  await Bun.sleep(15);
+  expect(attempts).toBe(1);
+  clock.mockReturnValue(base + 180_000);
+  await waitFor(() => attempts === 2);
+  expect(attempts).toBe(2);
+});
+
+test('a shorter provider delay does not beat the backoff and coalescing keeps the schedule', async () => {
+  await subscribe('short-delay');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  const attempts: Array<{ at: number; ttl: number }> = [];
+  let failures = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async (_s, _p, options) => {
+    attempts.push({ at: Date.now(), ttl: options.TTL });
+    if (failures++ === 0) throw Object.assign(new Error('rate limited'), { statusCode: 429, retryAfterMs: 5_000 });
+  } });
+
+  await sendMessage(300);
+  await waitFor(() => attempts.length === 1);
+  clock.mockReturnValue(base + 5_000);
+  await Bun.sleep(15);
+  expect(attempts.length).toBe(1);
+  // A new message coalesces into the backed-off work: it extends the deadline
+  // but must not reset the backoff or force an early attempt.
+  await sendMessage(300);
+  clock.mockReturnValue(base + 59_999);
+  await Bun.sleep(15);
+  expect(attempts.length).toBe(1);
+  clock.mockReturnValue(base + 60_000);
+  await waitFor(() => attempts.length === 2);
+  // Latest deadline: the second message (accepted at base+5s, ttl 300s) wins.
+  expect(attempts[1].ttl).toBeGreaterThanOrEqual(243);
+  expect(attempts[1].ttl).toBeLessThanOrEqual(245);
+});
+
+test('a failure applies its backoff to newer work that coalesced while in flight', async () => {
+  await subscribe('inflight-backoff');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const attempts: Array<{ at: number; ttl: number }> = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async (_s, _p, options) => {
+    attempts.push({ at: Date.now(), ttl: options.TTL });
+    if (attempts.length === 1) {
+      await blocked;
+      throw Object.assign(new Error('provider down'), { statusCode: 503 });
+    }
+  } });
+
+  await sendMessage(300);
+  await waitFor(() => attempts.length === 1);
+  await sendMessage(86400);
+  release();
+  // Let the failure record its backoff before the test moves the clock.
+  await Bun.sleep(5);
+  // The retained newer work waits out the first failure's one-minute backoff
+  // before any second attempt, then uses the extended deadline.
+  clock.mockReturnValue(base + 59_999);
+  await Bun.sleep(15);
+  expect(attempts.length).toBe(1);
+  clock.mockReturnValue(base + 60_000);
+  await waitFor(() => attempts.length === 2);
+  expect(attempts[1].ttl).toBeGreaterThanOrEqual(86_338);
+  expect(attempts[1].ttl).toBeLessThanOrEqual(86_340);
 });
 
 test('new work arriving in flight survives the observed generation and keeps the latest deadline', async () => {
@@ -286,6 +435,105 @@ test('a live identity-wide SSE stream suppresses and discards its observed wake-
   expect(deliveries).toBe(1);
 });
 
+test('suppression discards a waiting retry and never schedules catch-up after disconnect', async () => {
+  await subscribe('suppressed-retry');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let deliveries = 0;
+  let failures = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    if (failures++ === 0) throw Object.assign(new Error('provider down'), { statusCode: 503 });
+    deliveries++;
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => failures === 1);
+
+  const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}` },
+  });
+  const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
+  const stream = await fetch(new URL(`/api/events?token=${token}`, server.url));
+  const reader = stream.body!.getReader();
+  await reader.read();
+
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(25);
+  expect(deliveries).toBe(0);
+  await reader.cancel();
+  await Bun.sleep(25);
+  expect(deliveries).toBe(0);
+  extendSession(alice.address, base + 600_000);
+  await sendMessage(3600);
+  await waitFor(() => deliveries === 1);
+  expect(deliveries).toBe(1);
+});
+
+test.each([400, 401, 403])('status %s is not temporary and never enters the retry schedule', async status => {
+  await subscribe(`no-retry-${status}`);
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  const attempts: number[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts.push(Date.now());
+    if (attempts.length === 1) throw Object.assign(new Error('rejected'), { statusCode: status });
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => attempts.length === 1);
+  // The failed generation completes; a new message starts fresh immediately
+  // instead of inheriting a temporary backoff.
+  await sendMessage(3600);
+  await waitFor(() => attempts.length === 2);
+  expect(attempts[1] - attempts[0]).toBe(0);
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(25);
+  expect(attempts.length).toBe(2);
+});
+
+test('a confirmed-dead endpoint stops retrying, stays repairable, and recovers on replacement', async () => {
+  const installationId = crypto.randomUUID();
+  const created = await request('/api/push/subscribe', bob.address, {
+    installation_id: installationId,
+    expected_revision: 0,
+    subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/dead-endpoint', keys },
+  });
+  expect(created.status).toBe(201);
+  const handle = await created.json() as { slot_id: string; installation_id: string; revision: number };
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let attempts = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts++;
+    throw Object.assign(new Error('gone'), { statusCode: 410 });
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => attempts === 1);
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(25);
+  expect(attempts).toBe(1);
+
+  extendSession(alice.address, base + 600_000);
+  extendSession(bob.address, base + 600_000);
+  const list = await (await fetch(new URL('/api/push/subscriptions', server.url), {
+    headers: { Authorization: `Bearer ${bob.address}` },
+  })).json() as { slots: Array<{ slot_id: string; state: string }> };
+  expect(list.slots).toEqual([expect.objectContaining({ slot_id: handle.slot_id, state: 'repair_needed' })]);
+
+  const replacement = await request('/api/push/reconcile', bob.address, {
+    slot_id: handle.slot_id,
+    installation_id: installationId,
+    expected_revision: handle.revision + 1,
+    subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/repaired-endpoint', keys },
+  });
+  expect(replacement.status).toBe(200);
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => { attempts++; } });
+  await sendMessage(3600);
+  await waitFor(() => attempts === 2);
+  expect(attempts).toBe(2);
+});
+
 test('an unfocused browser stream stays live while push delivery follows attention', async () => {
   await subscribe('background-live');
   let deliveries = 0;
@@ -312,6 +560,88 @@ test('an unfocused browser stream stays live while push delivery follows attenti
   await sendMessage();
   await waitFor(() => deliveries === 2);
   await reader.cancel();
+});
+
+test('temporary failure backoff is isolated per endpoint', async () => {
+  await subscribe('iso-failing');
+  await subscribe('iso-healthy');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  const endpoints: string[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async subscription => {
+    endpoints.push(subscription.endpoint);
+    if (subscription.endpoint.includes('iso-failing')) throw Object.assign(new Error('down'), { statusCode: 502 });
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => endpoints.length === 2);
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(25);
+  expect(endpoints.filter(endpoint => endpoint.includes('iso-failing')).length).toBe(2);
+  expect(endpoints.filter(endpoint => endpoint.includes('iso-healthy')).length).toBe(1);
+});
+
+test('retry work that expires while waiting is discarded and later work still delivers', async () => {
+  await subscribe('expired-retry');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let attempts = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts++;
+    if (attempts === 1) throw Object.assign(new Error('down'), { statusCode: 503 });
+  } });
+
+  await sendMessage(30);
+  await waitFor(() => attempts === 1);
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(25);
+  expect(attempts).toBe(1);
+  extendSession(alice.address, base + 600_000);
+  await sendMessage(3600);
+  await waitFor(() => attempts === 2);
+  expect(attempts).toBe(2);
+});
+
+test('a late timeout on replaced ownership does not back off the replacement slot', async () => {
+  const installationId = crypto.randomUUID();
+  const created = await request('/api/push/subscribe', bob.address, {
+    installation_id: installationId,
+    expected_revision: 0,
+    subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/replace-old', keys },
+  });
+  expect(created.status).toBe(201);
+  const handle = await created.json() as { slot_id: string; installation_id: string; revision: number };
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const endpoints: string[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, sendTimeoutMs: 10, send: async subscription => {
+    endpoints.push(subscription.endpoint);
+    if (endpoints.length === 1) {
+      await blocked;
+      throw Object.assign(new Error('late failure'), { statusCode: 503 });
+    }
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => endpoints.length === 1);
+  const replacement = await request('/api/push/reconcile', bob.address, {
+    slot_id: handle.slot_id,
+    installation_id: installationId,
+    expected_revision: handle.revision,
+    subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/replace-new', keys },
+  });
+  expect(replacement.status).toBe(200);
+  // The old transport finally fails late. It must not schedule a backoff for
+  // the transferred replacement work, which stays due at its original time.
+  release();
+  clock.mockReturnValue(base + 12_000);
+  await waitFor(() => endpoints.length === 2 && endpoints[1].includes('replace-new'));
+  await Bun.sleep(30);
+  clock.mockReturnValue(base + 59_999);
+  await Bun.sleep(30);
+  expect(endpoints.length).toBe(2);
 });
 
 test('replacement transfers pending work while fencing the old in-flight completion', async () => {
@@ -346,6 +676,34 @@ test('replacement transfers pending work while fencing the old in-flight complet
     'https://fcm.googleapis.com/fcm/send/old-endpoint',
     'https://fcm.googleapis.com/fcm/send/new-endpoint',
   ]);
+});
+
+test('a late failure on a removed slot cannot recreate its work', async () => {
+  const handle = await subscribe('late-removed');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  let attempts = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts++;
+    await blocked;
+    throw Object.assign(new Error('late failure'), { statusCode: 503 });
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => attempts === 1);
+  const removed = await request('/api/push/unsubscribe', bob.address, {
+    slot_id: handle.slot_id,
+    installation_id: handle.installation_id,
+    expected_revision: handle.revision,
+  });
+  expect(removed.status).toBe(200);
+  release();
+  await Bun.sleep(30);
+  await sendMessage(3600);
+  await Bun.sleep(30);
+  expect(attempts).toBe(1);
 });
 
 test('slot removal clears pending work and stale completion cannot recreate it', async () => {

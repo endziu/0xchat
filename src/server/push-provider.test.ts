@@ -37,6 +37,44 @@ test.each([404, 410, 429, 503])('provider transport preserves failure status %s'
   }
 });
 
+test('provider transport exposes a delta-seconds Retry-After delay', async () => {
+  const provider = Bun.serve({ port: 0, fetch: () =>
+    new Response(null, { status: 429, headers: { 'Retry-After': '90' } }) });
+  try {
+    await expect(send(provider.url.href)).rejects.toMatchObject({ statusCode: 429, retryAfterMs: 90_000 });
+  } finally {
+    provider.stop(true);
+  }
+});
+
+test('provider transport exposes an HTTP-date Retry-After delay', async () => {
+  const provider = Bun.serve({ port: 0, fetch: () =>
+    new Response(null, { status: 429, headers: { 'Retry-After': new Date(Date.now() + 90_000).toUTCString() } }) });
+  try {
+    const caught = await send(provider.url.href).catch((error: unknown) => error);
+    const retryAfterMs = (caught as { retryAfterMs?: number }).retryAfterMs;
+    // The date was formatted milliseconds before the transport parsed it.
+    expect(retryAfterMs!).toBeGreaterThanOrEqual(89_000);
+    expect(retryAfterMs!).toBeLessThanOrEqual(95_000);
+  } finally {
+    provider.stop(true);
+  }
+});
+
+test('provider transport ignores invalid Retry-After values', async () => {
+  for (const header of ['0', 'soon', new Date(Date.now() - 60_000).toUTCString()]) {
+    const provider = Bun.serve({ port: 0, fetch: () =>
+      new Response(null, { status: 429, headers: { 'Retry-After': header } }) });
+    try {
+      const caught = await send(provider.url.href).catch((error: unknown) => error);
+      expect(caught).toMatchObject({ statusCode: 429 });
+      expect((caught as { retryAfterMs?: number }).retryAfterMs).toBeUndefined();
+    } finally {
+      provider.stop(true);
+    }
+  }
+});
+
 test('provider transport never follows redirects', async () => {
   let followed = false;
   const destination = Bun.serve({ port: 0, fetch: () => {
