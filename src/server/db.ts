@@ -504,9 +504,17 @@ export function completePushWork(
   work: Pick<PendingPushWork, 'slot_id' | 'revision' | 'generation'>,
   claimToken: string,
 ): void {
-  db.query(`DELETE FROM push_work
+  const removed = db.query(`DELETE FROM push_work
     WHERE slot_id = ? AND revision = ? AND generation = ? AND claim_token = ?`)
-    .run(work.slot_id, work.revision, work.generation, claimToken);
+    .run(work.slot_id, work.revision, work.generation, claimToken).changes;
+  // When nothing was removed, newer work coalesced into this claim while the
+  // attempt ran. That attempt did not fail temporarily, so it must not inflate
+  // the retained work's temporary backoff; its failure count restarts.
+  if (removed === 0) {
+    db.query(`UPDATE push_work SET attempt_count = 0
+      WHERE slot_id = ? AND revision = ? AND claim_token = ?`)
+      .run(work.slot_id, work.revision, claimToken);
+  }
 }
 
 /**

@@ -365,6 +365,36 @@ test('a shorter provider delay does not beat the backoff and coalescing keeps th
   expect(attempts[1].ttl).toBeLessThanOrEqual(245);
 });
 
+test('a successful older attempt does not inflate the retained newer work backoff', async () => {
+  await subscribe('success-inflate');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const attempts: number[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts.push(Date.now());
+    if (attempts.length === 1) await blocked;
+    if (attempts.length === 2) throw Object.assign(new Error('provider down'), { statusCode: 503 });
+  } });
+
+  await sendMessage(300);
+  await waitFor(() => attempts.length === 1);
+  await sendMessage(86400);
+  release();
+  await Bun.sleep(5);
+  // The retained newer work is attempted immediately and fails temporarily.
+  await waitFor(() => attempts.length === 2);
+  // Its first temporary failure waits one minute, not the doubled delay of a
+  // second consecutive failure.
+  clock.mockReturnValue(base + 59_999);
+  await Bun.sleep(15);
+  expect(attempts.length).toBe(2);
+  clock.mockReturnValue(base + 60_000);
+  await waitFor(() => attempts.length === 3);
+  expect(attempts.length).toBe(3);
+});
+
 test('a failure applies its backoff to newer work that coalesced while in flight', async () => {
   await subscribe('inflight-backoff');
   const base = Date.now();
