@@ -41,17 +41,20 @@ const TEMPORARY_RETRY_MAX_MS = 3_600_000;
 export type PushFailureKind = 'temporary' | 'dead' | 'non_temporary';
 
 /**
- * Explicit delivery-result classification. Only network errors, timeouts,
- * 408, 429 and 5xx are temporary. Confirmed-dead 404/410 and authentication
- * or configuration rejections (400, 401, 403, ...) never enter the temporary
- * retry schedule; the latter keep their own repair/pause handling.
+ * Explicit delivery-result classification. Only 408, 429, 5xx, and untagged
+ * transport failures marked temporary by the outbound boundary (network
+ * errors and timeouts) are temporary. Confirmed-dead 404/410 and everything
+ * else — authentication or configuration failures, including local errors
+ * without a provider status — never enter the temporary retry schedule.
  */
 export function classifyPushFailure(error: unknown): PushFailureKind {
-  const statusCode = (error as { statusCode?: unknown })?.statusCode;
-  if (typeof statusCode !== 'number') return 'temporary';
-  if (statusCode === 404 || statusCode === 410) return 'dead';
-  if (statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode <= 599)) return 'temporary';
-  return 'non_temporary';
+  const statusCode = (error as { statusCode?: unknown; temporary?: unknown })?.statusCode;
+  if (typeof statusCode === 'number') {
+    if (statusCode === 404 || statusCode === 410) return 'dead';
+    if (statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode <= 599)) return 'temporary';
+    return 'non_temporary';
+  }
+  return (error as { temporary?: unknown } | null)?.temporary === true ? 'temporary' : 'non_temporary';
 }
 
 /** One minute, doubling per failed attempt, capped at one hour. */
@@ -84,7 +87,7 @@ function timeout<T>(promise: Promise<T>, duration: number, controller: AbortCont
   let handle: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
     handle = setTimeout(() => {
-      const reason = new Error('push delivery timed out');
+      const reason = Object.assign(new Error('push delivery timed out'), { temporary: true });
       controller.abort(reason);
       reject(reason);
     }, duration);

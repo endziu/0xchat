@@ -297,9 +297,14 @@ test('temporary failures double the retry delay after each attempt up to a one-h
   const expectedGaps = [60_000, 120_000, 240_000, 480_000, 960_000, 1_920_000, 3_600_000];
   await sendMessage(86400);
   let due = 0;
-  for (const gap of expectedGaps) {
-    await waitFor(() => attempts.length === expectedGaps.indexOf(gap) + 1);
-    due += gap;
+  for (let index = 0; index < expectedGaps.length; index++) {
+    await waitFor(() => attempts.length === index + 1);
+    const nextDue = due + expectedGaps[index];
+    // The retry must not fire before its exact due time.
+    clock.mockReturnValue(nextDue - 1);
+    await Bun.sleep(15);
+    expect(attempts.length).toBe(index + 1);
+    due = nextDue;
     clock.mockReturnValue(base + due);
   }
   await waitFor(() => attempts.length === 8);
@@ -469,6 +474,28 @@ test('suppression discards a waiting retry and never schedules catch-up after di
   expect(deliveries).toBe(1);
 });
 
+test('a local configuration failure without a provider status is not temporary', async () => {
+  await subscribe('no-status');
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  const attempts: number[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts.push(Date.now());
+    if (attempts.length === 1) throw new Error('VAPID private key not configured');
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => attempts.length === 1);
+  // A configuration failure completes the generation; a new message starts
+  // fresh immediately instead of inheriting a temporary backoff.
+  await sendMessage(3600);
+  await waitFor(() => attempts.length === 2);
+  expect(attempts[1] - attempts[0]).toBe(0);
+  clock.mockReturnValue(base + 60_000);
+  await Bun.sleep(25);
+  expect(attempts.length).toBe(2);
+});
+
 test.each([400, 401, 403])('status %s is not temporary and never enters the retry schedule', async status => {
   await subscribe(`no-retry-${status}`);
   const base = Date.now();
@@ -491,12 +518,12 @@ test.each([400, 401, 403])('status %s is not temporary and never enters the retr
   expect(attempts.length).toBe(2);
 });
 
-test('a confirmed-dead endpoint stops retrying, stays repairable, and recovers on replacement', async () => {
+test.each([404, 410])('confirmed-dead status %s stops retrying, stays repairable, and recovers on replacement', async status => {
   const installationId = crypto.randomUUID();
   const created = await request('/api/push/subscribe', bob.address, {
     installation_id: installationId,
     expected_revision: 0,
-    subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/dead-endpoint', keys },
+    subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/dead-endpoint-${status}`, keys },
   });
   expect(created.status).toBe(201);
   const handle = await created.json() as { slot_id: string; installation_id: string; revision: number };
@@ -505,7 +532,7 @@ test('a confirmed-dead endpoint stops retrying, stays repairable, and recovers o
   let attempts = 0;
   startPushDispatcher({ pollIntervalMs: 5, send: async () => {
     attempts++;
-    throw Object.assign(new Error('gone'), { statusCode: 410 });
+    throw Object.assign(new Error('gone'), { statusCode: status });
   } });
 
   await sendMessage(3600);
@@ -519,13 +546,15 @@ test('a confirmed-dead endpoint stops retrying, stays repairable, and recovers o
   const list = await (await fetch(new URL('/api/push/subscriptions', server.url), {
     headers: { Authorization: `Bearer ${bob.address}` },
   })).json() as { slots: Array<{ slot_id: string; state: string }> };
+  // The confirmed-dead slot retains its owned reservation without endpoint or
+  // key material; only a repaired endpoint becomes deliverable.
   expect(list.slots).toEqual([expect.objectContaining({ slot_id: handle.slot_id, state: 'repair_needed' })]);
 
   const replacement = await request('/api/push/reconcile', bob.address, {
     slot_id: handle.slot_id,
     installation_id: installationId,
     expected_revision: handle.revision + 1,
-    subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/repaired-endpoint', keys },
+    subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/repaired-endpoint-${status}`, keys },
   });
   expect(replacement.status).toBe(200);
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { attempts++; } });

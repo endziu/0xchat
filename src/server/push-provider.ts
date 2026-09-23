@@ -28,14 +28,20 @@ export function parseRetryAfterMs(header: string | null, now: number): number | 
 /** web-push signs the request; fetch provides cancellation of the actual transport. */
 export const sendPushNotification: SendPush = async (subscription, payload, options) => {
   const request = webpush.generateRequestDetails(subscription, payload, { TTL: options.TTL });
-  const response = await fetch(request.endpoint, {
-    method: request.method,
-    headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, String(value)])),
-    body: request.body,
-    signal: options.signal,
-    // Match web-push: never follow a provider redirect to a different destination.
-    redirect: 'error',
-  });
+  let response: Response;
+  try {
+    response = await fetch(request.endpoint, {
+      method: request.method,
+      headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, String(value)])),
+      body: request.body,
+      signal: options.signal,
+      // Match web-push: never follow a provider redirect to a different destination.
+      redirect: 'error',
+    });
+  } catch (error) {
+    // Network-level failure or cancellation: temporary at the transport boundary.
+    throw Object.assign(error instanceof Error ? error : new Error('Push provider request failed'), { temporary: true });
+  }
   // Only the status and the requested delay are needed. Do not wait for (or retain) an unbounded provider body.
   await response.body?.cancel();
   if (!response.ok) {
