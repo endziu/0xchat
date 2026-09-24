@@ -31,7 +31,7 @@ let alice: ChatClient
 let aliceToken: string
 let bobToken: string
 let openRequests: string[][]
-let intercept: (request: Request, next: () => Promise<Response>) => Promise<Response>
+let intercept: (request: Request, next: (forwarded?: Request) => Promise<Response>) => Promise<Response>
 let serverLog: ReturnType<typeof spyOn>
 let focused: boolean
 let visible: boolean
@@ -160,6 +160,7 @@ function mount(recipient: string | null = aliceAddress) {
   mounted.push(unmount)
   return {
     container,
+    unmount,
     text: () => container.textContent ?? '',
     select(address: string | null) { selected = address; render(view(), container) },
     switchIdentity(next: Keypair, nextToken: string, address: string) {
@@ -218,7 +219,7 @@ beforeEach(async () => {
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, srv) {
     const path = new URL(request.url).pathname
     if (request.method === 'POST' && path.endsWith('/open')) openRequests.push((await request.clone().json()).ids)
-    return intercept(request, () => handler(request, srv))
+    return intercept(request, (forwarded = request) => handler(forwarded, srv))
   } })
   origin = server.url.origin
   alice = new ChatClient(origin, aliceKey)
@@ -1111,6 +1112,44 @@ test('the update action stays outside the pane hidden on small screens while the
   expect(row.className).toContain('max-sm:[&>:last-child]:hidden')
   expect(row.contains(banner)).toBe(false)
   expect([...banner.querySelectorAll('button')].some(b => b.textContent === 'Reload to update')).toBe(true)
+})
+
+test('a client running a cached pre-release shell recovers after reloading to update', async () => {
+  const sent = await alice.send(bobKey.address, 'kept for the update', 300)
+  // The pre-release shell never advertises the delivery capability.
+  let cachedShell = true
+  const refused: string[] = []
+  intercept = async (request, next) => {
+    if (!cachedShell) return next()
+    const headers = new Headers(request.headers)
+    headers.delete('X-0xChat-Delivery-Capability')
+    const response = await next(new Request(request, { headers }))
+    if (response.status === 426) refused.push(new URL(request.url).pathname)
+    return response
+  }
+  const reload = spyOn(window.location, 'reload').mockImplementation(() => { cachedShell = false })
+  try {
+    const stale = mount()
+    await waitFor(() => stale.text().includes('0xChat has been updated'))
+    expect(refused.length).toBeGreaterThan(0)
+    expect(stale.text()).not.toContain('kept for the update')
+    expect(openRequests).toEqual([])
+    const button = [...document.querySelectorAll('button')].find(b => b.textContent === 'Reload to update')!
+    button.click()
+    await waitFor(() => reload.mock.calls.length === 1)
+
+    // The reload boots the updated shell.
+    stale.unmount()
+    refused.length = 0
+    const updated = mount()
+    await waitFor(() => updated.text().includes('kept for the update'))
+    expect(openRequests).toEqual([[sent.id]])
+    await waitFor(streamReady)
+    await alice.send(bobKey.address, 'live after the update', 300)
+    await waitFor(() => updated.text().includes('live after the update'))
+    expect(updated.text()).not.toContain('0xChat has been updated')
+    expect(refused).toEqual([])
+  } finally { reload.mockRestore() }
 })
 
 test('a token mint rejected while hidden waits for backoff after refocus', async () => {
