@@ -129,7 +129,10 @@ async function follow(
           try {
             const message = await client.confirmLiveMessage(partner, input)
             if (message) deliver(message)
-          } catch { status('Rejected an invalid message') }
+          } catch (error) {
+            if (error instanceof ClientUpdateRequiredError) throw error
+            status('Rejected an invalid message')
+          }
         } else if (event.event === 'expiry-update') {
           try {
             const input: unknown = JSON.parse(event.data)

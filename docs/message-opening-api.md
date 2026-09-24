@@ -93,7 +93,7 @@ acceptance and compatibility enforcement switch on together:
 - Stream admission refuses tokens minted before the latest activation with 401,
   so updated clients mint again. Activation closes live streams admitted without
   the capability before any new-policy message can be published.
-- Push subscription management, session removal, account deletion,
+- Push subscription management, session removal, registration removal,
   registration and authentication stay open to every client. Old clients can
   still remove notification subscriptions, and identity export is local.
 
