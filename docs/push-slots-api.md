@@ -124,13 +124,15 @@ the existing per-hook queue and generation.
   enable, removal and superseded cleanup — now run inside the lock, so they
   reflect state no concurrent tab can still be rewriting.
 - A superseded operation may not upload, mark enabled, or delete state it no
-  longer owns. It re-lists slots and compares the authoritative revision: it
-  removes only the slot revision it wrote itself. When its own write never
-  landed, it leaves any active slot for this installation — and the browser
+  longer owns. Under the exclusive lock, it re-lists slots and compares the
+  authoritative revision before removing the slot it wrote. When its own write
+  never landed, it leaves any active slot for this installation — and the browser
   subscription behind it — untouched, and it drops that browser subscription
-  only under an exclusive lock, since absent server state proves nobody owns it
-  only while no other tab can still be about to claim it. A local generation
-  alone never rejects a server request already in flight.
+  only under the lock. Without the lock, even a matching revision cannot prove
+  ownership: a newer tab can accept the same subscription without changing its
+  revision. Superseded cleanup then leaves both artifacts alone and surfaces a
+  conflict; it also cannot overwrite a newer tab's saved enable preference.
+  A local generation alone never rejects a server request already in flight.
 - Explicit actions surface a conflict (`COORDINATION_CONFLICT`) without marking
   notifications enabled; authoritative state converges through the re-read.
 - Automatic mutation is refused with actionable recovery when the browser has no

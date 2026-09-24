@@ -429,6 +429,42 @@ test('without a lock API, explicit enabling works and concurrent tabs still leav
   expect(first.container.textContent).toContain('Another 0xChat tab changed notifications')
 })
 
+test('a newer tab keeps its registration when an older no-lock enable finishes late', async () => {
+  const first = openTab({ locks: null })
+  const second = openTab({ locks: null })
+  mountTab(first, alice, true)
+  mountTab(second, alice, true)
+  await settle()
+
+  const wrote = deferred()
+  const release = deferred()
+  const normalFetch = globalThis.fetch
+  let holdFirst = true
+  globalThis.fetch = Object.assign(async (input: string | URL | Request, options?: RequestInit) => {
+    const response = await normalFetch(input, options)
+    if (holdFirst && String(input).endsWith('/push/subscribe')) {
+      holdFirst = false
+      wrote.resolve()
+      await release.promise
+    }
+    return response
+  }, { preconnect: normalFetch.preconnect })
+
+  const older = first.push.subscribe()
+  await wrote.promise // the first write landed, but its response is still in flight
+  const newer = await second.push.subscribe() // same browser subscription and slot revision
+  expect(newer).toBe(true)
+  const winner = (await list()).slots[0]
+  expect(winner).toBeDefined()
+
+  release.resolve()
+  expect(await older).toBe(false)
+  await settle()
+  expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: winner.slot_id, revision: winner.revision, state: 'active' })])
+  expect(browserSub).not.toBeNull()
+  expect(toggleState(second, 'Disable notifications')).toBe('true')
+})
+
 test('a superseded enable leaves the browser subscription another tab already owns', async () => {
   const remote = await (await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',
     headers: { Authorization: `Bearer ${alice}`, 'Content-Type': 'application/json' },

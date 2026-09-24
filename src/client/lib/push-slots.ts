@@ -57,8 +57,9 @@ export async function enablePushSlot(address: string, token: string, subscriptio
   const handle = slot
     ? await api.reconcilePush(subscription, condition(installation, slot), token)
     : await api.subscribePush(subscription, condition(installation, current), token)
-  // Keep the accepted handle for cleanup even if the UI generation was superseded.
-  save(address, { enabled: !isStale(), handle })
+  // The returned handle identifies this write for cleanup. A superseded tab
+  // must not overwrite a newer tab's saved preference (or its slot handle).
+  if (!isStale()) save(address, { enabled: true, handle })
   return handle
 }
 
@@ -72,12 +73,17 @@ export async function enablePushSlot(address: string, token: string, subscriptio
  */
 export async function releaseSupersededSlot(address: string, token: string,
   written: PushSlotHandle | undefined, serialized: boolean): Promise<boolean> {
+  // A newer tab can accept the same browser subscription without advancing the
+  // slot revision. Without the origin lock, even a matching revision cannot
+  // prove it is still ours to delete (or that the browser subscription is ours).
+  // Leave it in place and surface the conflict rather than remove a new owner.
+  if (!serialized) return false
   const installation = installationId()
   const listed = await api.listPushSlots(token)
   const active = listed.slots.find(slot => slot.installation_id === installation)
   // Absent server state only proves nobody owns this browser subscription while
   // no concurrent mutation could still be about to claim it.
-  if (!written) return serialized && !active
+  if (!written) return !active
   if (active?.slot_id !== written.slot_id || active.revision !== written.revision) return false
   const handle = await api.unsubscribePush(condition(installation, written), token)
   save(address, { enabled: false, handle })
