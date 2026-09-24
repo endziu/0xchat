@@ -5,7 +5,7 @@ import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, parseExpiryUpdate, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
+import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, parseExpiryUpdate, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
 const availabilityDeadline = Symbol('availabilityDeadline')
@@ -79,6 +79,13 @@ class HttpError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }
 
+/** The server no longer accepts this client's delivery protocol; retrying cannot help. */
+export class ClientUpdateRequiredError extends Error {
+  constructor() {
+    super('This 0xChat CLI is out of date for this server. Update it with git pull && bun install, then retry.')
+  }
+}
+
 export class ChatClient {
   readonly origin: string
   private token: string | null = null
@@ -95,6 +102,7 @@ export class ChatClient {
       headers: {
         Origin: this.origin,
         'Content-Type': 'application/json',
+        'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY,
         ...(authenticated ? { Authorization: `Bearer ${this.token}` } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -107,7 +115,8 @@ export class ChatClient {
       return this.request(path, method, body, authenticated, false)
     }
     if (!response.ok) {
-      const data = await response.json().catch(() => ({})) as { error?: unknown }
+      const data = await response.json().catch(() => ({})) as { error?: unknown; code?: unknown }
+      if (data.code === 'client_update_required') throw new ClientUpdateRequiredError()
       throw new HttpError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
     }
     return response.status === 204 ? undefined as T : await response.json() as T

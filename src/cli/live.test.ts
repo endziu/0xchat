@@ -6,6 +6,7 @@ import { ChatClient } from './client'
 import { createIdentity, parsePrivateKey } from './identity'
 import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
+import { LifecycleGate } from '../server/lifecycle-gate'
 import * as limiters from '../server/rate-limiters'
 import * as constants from '../server/constants'
 import { UNOPENED_RETENTION_MS } from '../shared/message-envelope'
@@ -33,7 +34,7 @@ beforeEach(async () => {
   const identity = await createIdentity(identityPath)
   transform = async (_request, response) => response
   processes = []
-  const handler = createFetch({ testDeliveryPolicy: 'recipient-opening' })
+  const handler = createFetch({ lifecycleGate: new LifecycleGate(true) })
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, server) {
     const response = await handler(request, server)
     if (new URL(request.url).pathname !== '/api/events' || !response.ok) return transform(request, response)
@@ -281,3 +282,23 @@ test('stopping watch during opening prevents late plaintext output', async () =>
     expect(cli.output()).not.toContain('cancelled opening')
   } finally { release() }
 })
+
+for (const command of ['watch', 'chat'] as const) {
+  test(`${command} stops reconnecting and names the update action when the server requires a newer client`, async () => {
+    let tokenRequests = 0
+    transform = async (request, response) => {
+      if (new URL(request.url).pathname !== '/api/events/token') return response
+      tokenRequests++
+      return Response.json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.',
+        code: 'client_update_required' }, { status: 426 })
+    }
+    const cli = start(command)
+    await cli.proc.exited
+    expect(cli.proc.exitCode).toBe(1)
+    const shown = command === 'chat' ? cli.output() : cli.diagnostics()
+    expect(shown).toContain('This 0xChat CLI is out of date')
+    expect(shown).toContain('git pull && bun install')
+    expect(shown).not.toContain('reconnecting')
+    expect(tokenRequests).toBe(1)
+  })
+}

@@ -7,6 +7,8 @@ if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
 export const PORT = rawPort;
 
 export const DEBUG = process.env['DEBUG'] === '1' || process.env['DEBUG'] === 'true';
+/** Accept new messages under recipient-opening expiry and require updated clients. */
+export const RECIPIENT_OPENING = process.env['RECIPIENT_OPENING'] === '1' || process.env['RECIPIENT_OPENING'] === 'true';
 
 export function log(...args: unknown[]): void {
   if (DEBUG) console.log(...args);

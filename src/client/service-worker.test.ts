@@ -11,7 +11,7 @@ interface TestClient {
   focus?: () => Promise<unknown>
 }
 
-async function loadWorker(clients: TestClient[] = []) {
+async function loadWorker(clients: TestClient[] = [], cacheNames: string[] = []) {
   const handlers = new Map<string, WorkerHandler>()
   const shown: Array<{ title: string; options: NotificationOptions }> = []
   const opened: string[] = []
@@ -22,6 +22,7 @@ async function loadWorker(clients: TestClient[] = []) {
       showNotification: async (title: string, options: NotificationOptions) => { shown.push({ title, options }) },
     },
     clients: {
+      claim: async () => {},
       matchAll: async () => clients,
       openWindow: async (url: string) => { opened.push(url) },
     },
@@ -34,12 +35,15 @@ async function loadWorker(clients: TestClient[] = []) {
     fetched.push(request.url)
     return response
   }
+  const stored = new Set(cacheNames)
   const caches = {
     open: async () => ({ put: async (key: string) => { cached.push(key) } }),
     match: async () => undefined,
+    keys: async () => [...stored],
+    delete: async (name: string) => stored.delete(name),
   }
   Function('self', 'fetch', 'caches', source)(worker, fetch, caches)
-  return { handlers, shown, opened, fetched, cached }
+  return { handlers, shown, opened, fetched, cached, stored }
 }
 
 async function dispatch(handler: WorkerHandler, event: Record<string, unknown>) {
@@ -164,5 +168,14 @@ describe('production service worker notifications', () => {
     expect(await (await response)?.text()).toBe('app shell')
     expect(fetched).toEqual(['https://chat.example/chat'])
     expect(cached).toEqual(['/chat'])
+  })
+
+  test('activating the lifecycle release purges shells cached by clients that predate it', async () => {
+    const previous = ['0xchat-shell-v1', '0xchat-assets-v1', '0xchat-shell-v2', '0xchat-assets-v2']
+    const { handlers, stored } = await loadWorker([], previous)
+
+    await dispatch(handlers.get('activate')!, {})
+
+    expect([...stored]).toEqual([])
   })
 })

@@ -10,6 +10,7 @@ import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
+import { LifecycleGate } from './lifecycle-gate.ts';
 import * as limiters from './rate-limiters.ts';
 
 function identity(byte: string) {
@@ -31,7 +32,7 @@ beforeEach(() => {
     registerPubkey(person.address, person.publicKey);
     createSession(person.address, person.address, 1_000_000_000);
   }
-  server = Bun.serve({ port: 0, fetch: createFetch({ testDeliveryPolicy: 'recipient-opening' }) });
+  server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(true) }) });
 });
 afterEach(() => {
   server?.stop(true);
@@ -44,14 +45,14 @@ afterEach(() => {
 function request(suffix = '', address = bob.address, body?: unknown, partner = alice.address) {
   return fetch(new URL(`/api/messages/${partner}${suffix}`, server.url), {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${address}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
 async function send(ttl = 5) {
   const envelope = await createSignedMessageEnvelope('hello', ttl, alice, bob.address, bob.publicKey);
   const response = await fetch(new URL('/api/messages', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${alice.address}`, 'Content-Type': 'application/json' },
+    method: 'POST', headers: { Authorization: `Bearer ${alice.address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     body: JSON.stringify(envelope),
   });
   expect(response.status).toBe(201);
@@ -231,7 +232,7 @@ test('state lookup bounds IDs, streamed bodies, and request rate independently o
       controller.close();
     } });
     const response = await fetch(new URL(`/api/messages/${alice.address}/state`, server.url), {
-      method: 'POST', headers: { Authorization: `Bearer ${bob.address}` }, body,
+      method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }, body,
     });
     expect(response.status).toBe(status);
     await response.body?.cancel();

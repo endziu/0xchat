@@ -163,6 +163,8 @@ export function initDb(path = 'chat.db'): void {
       db.run("ALTER TABLE messages ADD COLUMN delivery_policy TEXT NOT NULL DEFAULT 'legacy'");
     }
     if (!columns.has('opened_at')) db.run('ALTER TABLE messages ADD COLUMN opened_at INTEGER');
+    db.run(`CREATE INDEX IF NOT EXISTS idx_msg_opening_expires
+      ON messages(expires_at) WHERE delivery_policy = 'recipient-opening'`);
   }).immediate();
   db.transaction(() => {
     db.run(`CREATE TABLE IF NOT EXISTS message_recovery (
@@ -414,6 +416,12 @@ export function getConversations(
        ORDER BY last_message_at DESC`,
     )
     .all(address, now, address, address) as ConversationSummary[];
+}
+
+/** Whether any still-available message requires a lifecycle-aware client. */
+export function hasRecipientOpeningMessages(): boolean {
+  return db.query(`SELECT 1 FROM messages
+    WHERE delivery_policy = 'recipient-opening' AND expires_at > ? LIMIT 1`).get(Date.now()) !== null;
 }
 
 export function deleteExpiredMessages(): void {

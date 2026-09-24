@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
@@ -142,6 +142,7 @@ async function follow(
       if (!signal.aborted) throw new Error('Live connection closed')
     } catch (error) {
       if (signal.aborted) return
+      if (error instanceof ClientUpdateRequiredError) throw error
       status(`${error instanceof Error ? error.message : 'Connection failed'}; reconnecting in ${backoff / 1000}s`)
       await delay(backoff, undefined, { signal }).catch(() => {})
       backoff = Math.min(backoff * 2, 30_000)
@@ -313,7 +314,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         text => console.error(terminalText(text)))
     } else if (command === 'chat') await chat(client, partner, ttl, controller)
   } catch (error) {
-    if (!controller.signal.aborted) {
+    // Leaving chat aborts the controller, but an update requirement must still be reported.
+    if (!controller.signal.aborted || error instanceof ClientUpdateRequiredError) {
       if (command === 'init' || command === 'import') {
         console.error(`Identity remains saved at ${terminalText(identityPath)}. Run register with the same --identity and chosen --server options to retry; do not run init again.`)
       }

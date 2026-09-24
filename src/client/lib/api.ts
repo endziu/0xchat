@@ -3,11 +3,14 @@ import { verifyEncryptionPublicKey } from './encryption-key'
 import { isApiErrorCode, type ApiErrorCode } from '../../shared/api-error'
 import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import { buildSessionChallenge } from '../../shared/session-challenge'
-import type { DeliveredMessage, MessageEnvelope } from '../../shared/message-envelope'
+import { DELIVERY_CAPABILITY, type DeliveredMessage, type MessageEnvelope } from '../../shared/message-envelope'
 
 import type { PushSlotCondition, PushSlotHandle, PushSlotList } from '../../shared/push-slot'
 
 export type Message = DeliveredMessage
+
+/** Dispatched when the server requires a newer client; retrying cannot succeed. */
+export const CLIENT_UPDATE_REQUIRED_EVENT = 'client:update-required'
 
 export class ApiError extends Error {
   constructor(message: string, readonly code?: ApiErrorCode) {
@@ -41,6 +44,9 @@ export interface Conversation {
 // switch. `null` is only valid for public / pre-auth endpoints.
 async function request<T>(path: string, options: RequestInit, token: string | null): Promise<T> {
   const headers = new Headers(options.headers)
+  // Separate from the signed envelope version: tells the server this client
+  // implements recipient-opening expiry.
+  headers.set('X-0xChat-Delivery-Capability', DELIVERY_CAPABILITY)
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
@@ -66,6 +72,7 @@ async function request<T>(path: string, options: RequestInit, token: string | nu
       : {}
     const message = typeof body.error === 'string' && body.error ? body.error : res.statusText
     const code = isApiErrorCode(body.code) ? body.code : undefined
+    if (code === 'client_update_required') globalThis.dispatchEvent(new CustomEvent(CLIENT_UPDATE_REQUIRED_EVENT))
     throw new ApiError(message, code)
   }
 

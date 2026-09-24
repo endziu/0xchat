@@ -10,6 +10,7 @@ import { createSession, deleteInactivePubkeys, getDb, initDb, registerPubkey } f
 import { startPushDispatcher, stopPushDispatcher } from './push.ts';
 import { sendPushNotification } from './push-provider.ts';
 import { createFetch } from './router.ts';
+import { LifecycleGate } from './lifecycle-gate.ts';
 import * as limiters from './rate-limiters.ts';
 
 function identity(byte: string) {
@@ -55,7 +56,7 @@ afterEach(() => {
 function request(path: string, token: string, body: unknown) {
   return fetch(new URL(path, server.url), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     body: JSON.stringify(body),
   });
 }
@@ -269,7 +270,7 @@ test('a live identity-wide SSE stream suppresses and discards its observed wake-
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { deliveries++; } });
 
   const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${bob.address}` },
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
   });
   const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
   const stream = await fetch(new URL(`/api/events?token=${token}`, server.url));
@@ -292,7 +293,7 @@ test('an unfocused browser stream stays live while push delivery follows attenti
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { deliveries++; } });
 
   const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${bob.address}` },
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
   });
   const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
   const stream = await fetch(new URL(`/api/events?token=${token}&attentive=false`, server.url));
@@ -414,10 +415,10 @@ test('restart preserves future due time and provider not-before without extendin
   expect(deliveries).toBe(1);
 });
 
-test('dormant opening policy still uses the signed legacy lifetime for push scheduling', async () => {
+test('activated opening policy keeps the signed lifetime for push scheduling until retention-based push ships', async () => {
   await subscribe('legacy-deadline');
   server.stop(true);
-  server = Bun.serve({ port: 0, fetch: createFetch({ testDeliveryPolicy: 'recipient-opening' }) });
+  server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(true) }) });
   const ttls: number[] = [];
   startPushDispatcher({ pollIntervalMs: 5, send: async (_subscription, _payload, options) => {
     ttls.push(options.TTL);

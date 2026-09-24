@@ -7,6 +7,7 @@ import { createFetch } from '../router.ts'
 import { connectionCount, notify, pushSuppressingConnectionCount } from '../sse.ts'
 import { handleGetSSEToken, handleSSE, handleSSEAttention, SseTokenStore } from './events.ts'
 import type { Context } from '../http.ts'
+import { LifecycleGate } from '../lifecycle-gate.ts'
 
 const address = `0x${'b'.repeat(40)}`
 const otherAddress = `0x${'c'.repeat(40)}`
@@ -40,7 +41,7 @@ function makeContext(
       Authorization: `Bearer ${auth}`,
     },
   })
-  return { req, url: new URL(req.url), path, method: req.method, ip }
+  return { req, url: new URL(req.url), path, method: req.method, ip, lifecycleGate: new LifecycleGate() }
 }
 
 async function mintSseToken(

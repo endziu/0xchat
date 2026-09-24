@@ -5,6 +5,7 @@ import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { useSSE } from '../hooks/useSSE'
 import { useLatest } from '../hooks/useLatest'
+import { reloadForUpdate, useClientUpdateRequired } from '../hooks/useClientUpdate'
 import { Keypair } from '../lib/burner'
 import { api } from '../lib/api'
 import { Plus, X, QrCode } from 'lucide-preact'
@@ -43,7 +44,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     }
   })
 
-  const { connected, connection } = useSSE(token, handleSSE, handleDisconnect, handleExpiryUpdate)
+  // Reconnecting cannot succeed once the server requires a newer client.
+  const updateRequired = useClientUpdateRequired()
+  const { connected, connection } = useSSE(updateRequired ? null : token, handleSSE, handleDisconnect, handleExpiryUpdate)
   const { messages, recovering, sendMessage, addMessage, applyExpiryUpdate, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
@@ -126,6 +129,12 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       </nav>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {updateRequired && (
+          <div role="alert" className="p-2 border-b border-neutral-800 flex items-center justify-center gap-2 text-red-400">
+            <span>0xChat has been updated. Reload to keep chatting.</span>
+            <button onClick={() => void reloadForUpdate()}>Reload to update</button>
+          </div>
+        )}
         {disconnectNotice && <p className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</p>}
         {recipientAddress ? (
           <MessagePane

@@ -1,7 +1,10 @@
 // App-shell service worker. Nothing sensitive is cached: /api/ is never touched,
 // so ciphertexts, tokens and SSE traffic always go straight to the network.
 // Push payloads are never read or cached either — see the push listener below.
-const VERSION = 'v2'
+// Bump on protocol releases: activation deletes every older shell and asset
+// cache, so a client cached before the release cannot boot again offline.
+// v3: recipient-opening lifecycle release gate.
+const VERSION = 'v3'
 const SHELL = `0xchat-shell-${VERSION}`
 const ASSETS = `0xchat-assets-${VERSION}`
 

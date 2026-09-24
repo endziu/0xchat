@@ -99,6 +99,11 @@ expires according to the server's existing policy. Failed sends are not
 automatically retried after network errors; delivery may have succeeded, so check
 history before resending.
 
+The CLI advertises the `recipient-opening-v1` delivery capability on every
+request. When a server requires a newer client (`client_update_required`), every
+command exits with status 1 and an update instruction (`git pull && bun install`);
+`watch` and `chat` stop instead of reconnecting.
+
 ## Identity storage and browser interoperability
 
 The default file is `$XDG_CONFIG_HOME/0xchat/identity.json`, falling back to
