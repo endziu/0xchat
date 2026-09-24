@@ -38,6 +38,8 @@ beforeEach(async () => {
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, server) {
     const response = await handler(request, server)
     if (new URL(request.url).pathname !== '/api/events' || !response.ok) return transform(request, response)
+    const replaced = await transform(request, response)
+    if (replaced !== response) { await response.body?.cancel(); return replaced }
     const reader = response.body!.getReader()
     let last: Uint8Array | undefined
     const stream = new ReadableStream<Uint8Array>({
@@ -283,12 +285,19 @@ test('stopping watch during opening prevents late plaintext output', async () =>
   } finally { release() }
 })
 
-for (const command of ['watch', 'chat'] as const) {
-  test(`${command} stops reconnecting and names the update action when the server requires a newer client`, async () => {
-    let tokenRequests = 0
+const updateRequiredCases = [
+  { command: 'watch', rejected: 'token minting', matches: (path: string) => path === '/api/events/token' },
+  { command: 'chat', rejected: 'token minting', matches: (path: string) => path === '/api/events/token' },
+  { command: 'watch', rejected: 'stream admission', matches: (path: string) => path === '/api/events' },
+  { command: 'watch', rejected: 'opening', matches: (path: string) => path.endsWith('/open') },
+] as const
+for (const { command, rejected, matches } of updateRequiredCases) {
+  test(`${command} stops reconnecting and names the update action when ${rejected} requires a newer client`, async () => {
+    if (rejected === 'opening') await alice.send(bob.identity.address, 'needs opening', 300)
+    let rejections = 0
     transform = async (request, response) => {
-      if (new URL(request.url).pathname !== '/api/events/token') return response
-      tokenRequests++
+      if (!matches(new URL(request.url).pathname)) return response
+      rejections++
       return Response.json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.',
         code: 'client_update_required' }, { status: 426 })
     }
@@ -299,6 +308,7 @@ for (const command of ['watch', 'chat'] as const) {
     expect(shown).toContain('This 0xChat CLI is out of date')
     expect(shown).toContain('git pull && bun install')
     expect(shown).not.toContain('reconnecting')
-    expect(tokenRequests).toBe(1)
+    expect(shown).not.toContain('needs opening')
+    expect(rejections).toBe(1)
   })
 }

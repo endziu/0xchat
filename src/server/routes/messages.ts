@@ -86,6 +86,9 @@ export async function handleSendMessage({ req, ip, lifecycleGate }: Context): Pr
     return json({ error: 'invalid envelope signature' }, 400);
   }
 
+  // Activation may have happened while the body was read or verified; the
+  // check and the synchronous insert below cannot be separated by it.
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   const stored = createMessage(envelope, lifecycleGate.acceptancePolicy);
   if (!stored) {
     warn('[invalid] message replay', envelope.id, sessionAddress);
@@ -169,6 +172,7 @@ export async function handleOpenMessages({ req, path, ip, lifecycleGate }: Conte
   }
   const ids = await readMessageIds(req);
   if (ids instanceof Response) return ids;
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   const counterparty = path.split('/')[3]!.toLowerCase();
   const { updates, server_time, results } = openMessages(address, counterparty, ids);
   const response: OpeningResponse = { server_time, results };
@@ -245,5 +249,6 @@ export async function handleMessageStates({ req, path, ip, lifecycleGate }: Cont
   if (stateIpLimiter.hit(ip) || stateLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
   const ids = await readMessageIds(req);
   if (ids instanceof Response) return ids;
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   return json(getMessageStates(address, path.split('/')[3]!.toLowerCase(), ids));
 }

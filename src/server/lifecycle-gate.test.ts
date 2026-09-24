@@ -203,3 +203,24 @@ test('an activated gate leaves notification cleanup and session removal open to 
   expect(removed.status).toBe(200);
   expect((await request('/api/session', 'old', bob.address, undefined, 'DELETE')).status).toBe(204);
 });
+
+test('activation during an old send body rejects the send instead of storing a new-policy message', async () => {
+  const gate = new LifecycleGate(false);
+  start(gate);
+  const envelope = await createSignedMessageEnvelope('in flight', 5, alice, bob.address, bob.publicKey);
+  const encoded = new TextEncoder().encode(JSON.stringify(envelope));
+  let finish!: () => void;
+  const body = new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(encoded.slice(0, 10));
+    finish = () => { controller.enqueue(encoded.slice(10)); controller.close(); };
+  } });
+  const sending = fetch(new URL('/api/messages', server.url), { method: 'POST', body,
+    headers: { Authorization: `Bearer ${alice.address}`, 'Content-Type': 'application/json' } });
+  await Bun.sleep(50);
+  gate.activate();
+  finish();
+  const response = await sending;
+  expect(response.status).toBe(426);
+  const page = await (await request(`/api/messages/${alice.address}`, 'updated')).json();
+  expect(page.messages).toEqual([]);
+});
