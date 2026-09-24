@@ -184,6 +184,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   rl.on('SIGINT', () => controller.abort())
   rl.on('close', () => controller.abort())
   let pendingSend = Promise.resolve()
+  let updateRequired: ClientUpdateRequiredError | undefined
   rl.on('line', line => {
     if (line === '/quit') { controller.abort(); return }
     if (line === '/help') { status = 'Enter sends text. /ttl SECONDS changes lifetime. /quit exits.'; render(); return }
@@ -201,7 +202,11 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     pendingSend = client.send(partner, line, ttl).then(message => {
       messages.set(message.id, message)
       status = 'Sent'
-    }).catch(error => { status = `Send failed: ${error instanceof Error ? error.message : 'unknown error'}` })
+    }).catch(error => {
+      // Every later request would be refused too; leave chat and report the update action.
+      if (error instanceof ClientUpdateRequiredError) { updateRequired = error; controller.abort(); return }
+      status = `Send failed: ${error instanceof Error ? error.message : 'unknown error'}`
+    })
       .finally(() => { sending = false; if (!controller.signal.aborted) render() })
   })
   render()
@@ -218,6 +223,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     process.stdout.write('\x1b[?1049l')
     await pendingSend
   }
+  if (updateRequired) throw updateRequired
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {

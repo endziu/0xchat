@@ -6,7 +6,7 @@ import { ChatClient } from './client'
 import { createIdentity, parsePrivateKey } from './identity'
 import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
-import { LifecycleGate } from '../server/lifecycle-gate'
+import { LifecycleGate, clientUpdateRequired } from '../server/lifecycle-gate'
 import * as limiters from '../server/rate-limiters'
 import * as constants from '../server/constants'
 import { UNOPENED_RETENTION_MS } from '../shared/message-envelope'
@@ -298,8 +298,7 @@ for (const { command, rejected, matches } of updateRequiredCases) {
     transform = async (request, response) => {
       if (!matches(new URL(request.url).pathname)) return response
       rejections++
-      return Response.json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.',
-        code: 'client_update_required' }, { status: 426 })
+      return clientUpdateRequired()
     }
     const cli = start(command)
     await cli.proc.exited
@@ -320,8 +319,7 @@ test('watch stops with the update action when opening a live message requires a 
   transform = async (request, response) => {
     if (!new URL(request.url).pathname.endsWith('/open')) return response
     rejections++
-    return Response.json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.',
-      code: 'client_update_required' }, { status: 426 })
+    return clientUpdateRequired()
   }
   await alice.send(bob.identity.address, 'live after activation', 300)
   await cli.proc.exited
@@ -329,5 +327,23 @@ test('watch stops with the update action when opening a live message requires a 
   expect(cli.diagnostics()).toContain('This 0xChat CLI is out of date')
   expect(cli.diagnostics()).not.toContain('Rejected an invalid message')
   expect(cli.output()).not.toContain('live after activation')
+  expect(rejections).toBe(1)
+})
+
+test('chat exits with the update action when sending requires a newer client', async () => {
+  const cli = start('chat')
+  await until(() => cli.screen().includes('Connected'), 'initial synchronization')
+  let rejections = 0
+  transform = async (request, response) => {
+    if (request.method !== 'POST' || new URL(request.url).pathname !== '/api/messages') return response
+    rejections++
+    return clientUpdateRequired()
+  }
+  cli.proc.terminal!.write('needs an update\r')
+  await cli.proc.exited
+  expect(cli.proc.exitCode).toBe(1)
+  expect(cli.output()).toContain('This 0xChat CLI is out of date')
+  expect(cli.output()).toContain('git pull && bun install')
+  expect(cli.output()).not.toContain('Send failed')
   expect(rejections).toBe(1)
 })
