@@ -3,7 +3,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { render } from 'preact'
 import { getDb, initDb } from '../../server/db'
 import { createFetch } from '../../server/router'
-import { LifecycleGate } from '../../server/lifecycle-gate'
+import { LifecycleGate, clientUpdateRequired } from '../../server/lifecycle-gate'
 import * as limiters from '../../server/rate-limiters'
 import * as serverConstants from '../../server/constants'
 import { ChatClient } from '../../cli/client'
@@ -159,6 +159,7 @@ function mount(recipient: string | null = aliceAddress) {
   const unmount = () => { render(null, container); container.remove() }
   mounted.push(unmount)
   return {
+    container,
     text: () => container.textContent ?? '',
     select(address: string | null) { selected = address; render(view(), container) },
     switchIdentity(next: Keypair, nextToken: string, address: string) {
@@ -1097,6 +1098,21 @@ test('recovery preserves the pre-disconnect position even at the bottom', async 
   } finally { rect.mockRestore(); scroll.mockRestore() }
 })
 
+test('the update action stays outside the pane hidden on small screens while the conversation list shows', async () => {
+  intercept = async (request, next) => {
+    if (new URL(request.url).pathname !== '/api/events/token') return next()
+    return clientUpdateRequired()
+  }
+  const view = mount(null)
+  await waitFor(() => view.text().includes('0xChat has been updated'))
+  // On small screens the responsive row hides the pane that is not selected.
+  const row = view.container.querySelector('nav')!.parentElement!
+  const banner = view.container.querySelector('[role="alert"]')!
+  expect(row.className).toContain('max-sm:[&>:last-child]:hidden')
+  expect(row.contains(banner)).toBe(false)
+  expect([...banner.querySelectorAll('button')].some(b => b.textContent === 'Reload to update')).toBe(true)
+})
+
 test('a token mint rejected while hidden waits for backoff after refocus', async () => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
@@ -1125,8 +1141,7 @@ test('a server requiring a newer client stops live reconnects and offers a reloa
   intercept = async (request, next) => {
     if (new URL(request.url).pathname !== '/api/events/token') return next()
     mints++
-    return Response.json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.',
-      code: 'client_update_required' }, { status: 426 })
+    return clientUpdateRequired()
   }
   const reload = spyOn(window.location, 'reload').mockImplementation(() => {})
   try {
