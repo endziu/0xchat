@@ -3,21 +3,14 @@ import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as secp from '@noble/secp256k1';
-import { bytesToHex, hexToBytes } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
 import { LifecycleGate } from './lifecycle-gate.ts';
 import * as limiters from './rate-limiters.ts';
+import { identity } from './test-identity.ts';
 
-function identity(byte: string) {
-  const privateKey = `0x${byte.repeat(32)}` as const;
-  return { privateKey, address: privateKeyToAccount(privateKey).address.toLowerCase(),
-    publicKey: bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true)) };
-}
 const alice = identity('12');
 const bob = identity('23');
 const carol = identity('34');
