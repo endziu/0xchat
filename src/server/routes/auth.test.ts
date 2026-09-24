@@ -6,6 +6,7 @@ import { getDb, initDb } from '../db.ts';
 import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
 import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import type { Context } from '../http.ts';
+import { LifecycleGate } from '../lifecycle-gate.ts';
 
 const address = `0x${'2'.repeat(40)}`;
 
@@ -36,7 +37,7 @@ function postContext(ip: string, path: string, body: unknown, origin?: string): 
     headers,
     body: JSON.stringify(body),
   });
-  return { req, url: new URL(req.url), path, method: 'POST', ip };
+  return { req, url: new URL(req.url), path, method: 'POST', ip, lifecycleGate: new LifecycleGate() };
 }
 
 const challengeContext = (ip: string): Context => postContext(ip, '/api/auth/challenge', { address });

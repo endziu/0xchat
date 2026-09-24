@@ -1,6 +1,6 @@
 const clients = new Map<
   string,
-  Map<ReadableStreamDefaultController, { supportsOpening: boolean; suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
+  Map<ReadableStreamDefaultController, { supportsOpening: boolean; suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number; close: () => void }>
 >();
 
 const ATTENTION_TTL_MS = 45_000;
@@ -11,13 +11,14 @@ export function addClient(
   supportsOpening = false,
   suppressPush = true,
   tracksAttention = false,
+  close: () => void = () => ctrl.close(),
 ): void {
   let set = clients.get(address);
   if (!set) {
     set = new Map();
     clients.set(address, set);
   }
-  set.set(ctrl, { supportsOpening, suppressPush, tracksAttention, attentionAt: Date.now(), sequence: 0 });
+  set.set(ctrl, { supportsOpening, suppressPush, tracksAttention, attentionAt: Date.now(), sequence: 0, close });
 }
 
 /** Only an attentive browser or a live terminal stream suppresses push. */
@@ -79,7 +80,18 @@ export function notify(
   if (set.size === 0) clients.delete(address);
 }
 
-/** Dormant rollout detection; admission and delivery remain unenforced. */
+/** Ends every live stream admitted without the delivery capability. */
+export function closeIncompatibleClients(): void {
+  for (const [address, set] of clients) {
+    for (const [ctrl, client] of set) {
+      if (client.supportsOpening) continue;
+      set.delete(ctrl);
+      try { client.close(); } catch { /* already closed */ }
+    }
+    if (set.size === 0) clients.delete(address);
+  }
+}
+
 export function openingConnectionCount(address: string): number {
   return [...(clients.get(address)?.values() ?? [])].filter(client => client.supportsOpening).length;
 }

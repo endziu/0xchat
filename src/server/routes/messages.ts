@@ -3,6 +3,7 @@ import { createMessage, getMessageStates, recoverMessages, openMessages, getConv
 import { json, getSessionAddress } from '../http.ts';
 import { recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
+import { clientUpdateRequired } from '../lifecycle-gate.ts';
 import { requestPushDispatch } from '../push.ts';
 import { log, warn, VALID_TTLS } from '../constants.ts';
 import {
@@ -42,12 +43,13 @@ function deliveredRow(row: MessageRow): Record<string, unknown> {
   };
 }
 
-export async function handleSendMessage({ req, ip, testDeliveryPolicy }: Context): Promise<Response> {
+export async function handleSendMessage({ req, ip, lifecycleGate }: Context): Promise<Response> {
   const sessionAddress = getSessionAddress(req);
   if (!sessionAddress) {
     warn('[unauth] message no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
 
   if (messageIpLimiter.hit(ip) || messageLimiter.hit(`${ip}:${sessionAddress}`)) {
     warn('[rate-limit] msg', sessionAddress, ip);
@@ -84,7 +86,10 @@ export async function handleSendMessage({ req, ip, testDeliveryPolicy }: Context
     return json({ error: 'invalid envelope signature' }, 400);
   }
 
-  const stored = createMessage(envelope, testDeliveryPolicy);
+  // Activation may have happened while the body was read or verified; the
+  // check and the synchronous insert below cannot be separated by it.
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
+  const stored = createMessage(envelope, lifecycleGate.acceptancePolicy);
   if (!stored) {
     warn('[invalid] message replay', envelope.id, sessionAddress);
     return json({ error: 'duplicate message ID' }, 409);
@@ -100,12 +105,13 @@ export async function handleSendMessage({ req, ip, testDeliveryPolicy }: Context
   return json(event, 201);
 }
 
-export async function handleGetMessages({ req, url, path, ip }: Context): Promise<Response> {
+export async function handleGetMessages({ req, url, path, ip, lifecycleGate }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) {
     warn('[unauth] get messages no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
 
   const match = path.match(/^\/api\/messages\/(0x[0-9a-fA-F]{40})$/);
   const counterparty = match![1]!.toLowerCase();
@@ -139,12 +145,13 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
   });
 }
 
-export async function handleGetConversations({ req, ip }: Context): Promise<Response> {
+export async function handleGetConversations({ req, ip, lifecycleGate }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) {
     warn('[unauth] get conversations no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
 
   const convs = getConversations(address);
   return json({
@@ -152,18 +159,20 @@ export async function handleGetConversations({ req, ip }: Context): Promise<Resp
   });
 }
 
-export async function handleOpenMessages({ req, path, ip }: Context): Promise<Response> {
+export async function handleOpenMessages({ req, path, ip, lifecycleGate }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) {
     warn('[unauth] open messages no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   if (openingIpLimiter.hit(ip) || openingLimiter.hit(address)) {
     warn('[rate-limit] open messages', address, ip);
     return json({ error: 'Too many requests' }, 429);
   }
   const ids = await readMessageIds(req);
   if (ids instanceof Response) return ids;
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   const counterparty = path.split('/')[3]!.toLowerCase();
   const { updates, server_time, results } = openMessages(address, counterparty, ids);
   const response: OpeningResponse = { server_time, results };
@@ -175,9 +184,10 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
   return json(response);
 }
 
-export async function handleRecoverMessages({ req, url, path, ip }: Context): Promise<Response> {
+export async function handleRecoverMessages({ req, url, path, ip, lifecycleGate }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   if (recoveryIpLimiter.hit(ip) || recoveryLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
   const counterparty = path.split('/')[3]!.toLowerCase();
   const after = url.searchParams.get('after');
@@ -232,11 +242,13 @@ async function readMessageIds(req: Request): Promise<string[] | Response> {
   return ids;
 }
 
-export async function handleMessageStates({ req, path, ip }: Context): Promise<Response> {
+export async function handleMessageStates({ req, path, ip, lifecycleGate }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   if (stateIpLimiter.hit(ip) || stateLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
   const ids = await readMessageIds(req);
   if (ids instanceof Response) return ids;
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
   return json(getMessageStates(address, path.split('/')[3]!.toLowerCase(), ids));
 }

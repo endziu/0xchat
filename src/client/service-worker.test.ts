@@ -11,7 +11,8 @@ interface TestClient {
   focus?: () => Promise<unknown>
 }
 
-async function loadWorker(clients: TestClient[] = []) {
+/** Cache contents are given as cache name → request path → body. */
+async function loadWorker(clients: TestClient[] = [], cacheNames: string[] | Record<string, Record<string, string>> = []) {
   const handlers = new Map<string, WorkerHandler>()
   const shown: Array<{ title: string; options: NotificationOptions }> = []
   const opened: string[] = []
@@ -22,6 +23,7 @@ async function loadWorker(clients: TestClient[] = []) {
       showNotification: async (title: string, options: NotificationOptions) => { shown.push({ title, options }) },
     },
     clients: {
+      claim: async () => {},
       matchAll: async () => clients,
       openWindow: async (url: string) => { opened.push(url) },
     },
@@ -29,17 +31,40 @@ async function loadWorker(clients: TestClient[] = []) {
   const source = await Bun.file(new URL('../../public/sw.js', import.meta.url)).text()
   const fetched: string[] = []
   const cached: string[] = []
-  const response = new Response('app shell')
+  const network = { online: true, shell: 'app shell' }
   const fetch = async (request: { url: string }) => {
     fetched.push(request.url)
-    return response
+    if (!network.online) throw new TypeError('Failed to fetch')
+    return new Response(network.shell)
   }
+  const stored = new Map(Array.isArray(cacheNames)
+    ? cacheNames.map(name => [name, new Map<string, string>()])
+    : Object.entries(cacheNames).map(([name, entries]) => [name, new Map(Object.entries(entries))]))
+  const pending: Promise<unknown>[] = []
   const caches = {
-    open: async () => ({ put: async (key: string) => { cached.push(key) } }),
-    match: async () => undefined,
+    open: async (name: string) => ({
+      put: async (key: string, response: Response) => {
+        cached.push(key)
+        const entries = stored.get(name) ?? new Map<string, string>()
+        stored.set(name, entries)
+        const body = response.text().then(text => entries.set(key, text))
+        pending.push(body)
+        await body
+      },
+    }),
+    match: async (key: string) => {
+      for (const entries of stored.values()) {
+        const body = entries.get(key)
+        if (body !== undefined) return new Response(body)
+      }
+      return undefined
+    },
+    keys: async () => [...stored.keys()],
+    delete: async (name: string) => stored.delete(name),
   }
   Function('self', 'fetch', 'caches', source)(worker, fetch, caches)
-  return { handlers, shown, opened, fetched, cached }
+  const settled = async () => { await Bun.sleep(0); await Promise.all(pending) }
+  return { handlers, shown, opened, fetched, cached, stored, network, settled }
 }
 
 async function dispatch(handler: WorkerHandler, event: Record<string, unknown>) {
@@ -164,5 +189,37 @@ describe('production service worker notifications', () => {
     expect(await (await response)?.text()).toBe('app shell')
     expect(fetched).toEqual(['https://chat.example/chat'])
     expect(cached).toEqual(['/chat'])
+  })
+
+  test('activating the lifecycle release purges shells cached by clients that predate it', async () => {
+    const previous = ['0xchat-shell-v1', '0xchat-assets-v1', '0xchat-shell-v2', '0xchat-assets-v2']
+    const { handlers, stored } = await loadWorker([], previous)
+
+    await dispatch(handlers.get('activate')!, {})
+
+    expect([...stored]).toEqual([])
+  })
+
+  test('a shell cached before the release can no longer boot once the updated worker activates', async () => {
+    const { handlers, stored, network, settled } = await loadWorker([], {
+      '0xchat-shell-v2': { '/chat': 'pre-release shell' },
+    })
+    const navigate = async () => {
+      let response: Promise<Response> | undefined
+      handlers.get('fetch')!({
+        request: { method: 'GET', url: 'https://chat.example/chat', mode: 'navigate' },
+        respondWith: (value: Promise<Response>) => { response = value },
+      })
+      return (await response)?.text()
+    }
+
+    await dispatch(handlers.get('activate')!, {})
+    network.shell = 'updated shell'
+    expect(await navigate()).toBe('updated shell')
+    await settled()
+    network.online = false
+
+    expect(await navigate()).toBe('updated shell')
+    expect([...stored.keys()]).not.toContain('0xchat-shell-v2')
   })
 })

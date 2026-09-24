@@ -8,6 +8,7 @@ import { messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import { handleSendMessage } from './messages.ts';
 import type { Context } from '../http.ts';
+import { LifecycleGate } from '../lifecycle-gate.ts';
 
 beforeAll(() => {
   messageLimiter.setSchedule(noOpSchedule);
@@ -43,6 +44,7 @@ function messageContext(ip: string, token: string, body: unknown = { version: 2 
     path: '/api/messages',
     method: 'POST',
     ip,
+    lifecycleGate: new LifecycleGate(),
   };
 }
 

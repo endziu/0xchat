@@ -4,6 +4,7 @@ import { pushMutationLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { handleSubscribePush } from './push.ts'
 import type { Context } from '../http.ts'
+import { LifecycleGate } from '../lifecycle-gate.ts'
 
 const address = `0x${'a'.repeat(40)}`
 const token = 'push-route-test-token'
@@ -28,7 +29,7 @@ function subscribeContext(body: unknown): Context {
     },
     body: JSON.stringify({ installation_id: crypto.randomUUID(), expected_revision: 0, subscription: body }),
   })
-  return { req, url: new URL(req.url), path, method: 'POST', ip: `push-test-${Math.random()}` }
+  return { req, url: new URL(req.url), path, method: 'POST', ip: `push-test-${Math.random()}`, lifecycleGate: new LifecycleGate() }
 }
 
 describe('push subscribe route validation', () => {

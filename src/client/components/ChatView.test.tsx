@@ -3,12 +3,13 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { render } from 'preact'
 import { getDb, initDb } from '../../server/db'
 import { createFetch } from '../../server/router'
+import { LifecycleGate, clientUpdateRequired } from '../../server/lifecycle-gate'
 import * as limiters from '../../server/rate-limiters'
 import * as serverConstants from '../../server/constants'
 import { ChatClient } from '../../cli/client'
 import { parsePrivateKey } from '../../cli/identity'
 import { signEIP191, type Keypair } from '../lib/burner'
-import type { MessageLifecycle, OpeningResponse } from '../../shared/message-envelope'
+import { DELIVERY_CAPABILITY, type MessageLifecycle, type OpeningResponse } from '../../shared/message-envelope'
 
 // The mounted view talks to a real in-process server over HTTP and SSE. Only
 // the platform edges are replaced: happy-dom supplies the document, a
@@ -30,7 +31,7 @@ let alice: ChatClient
 let aliceToken: string
 let bobToken: string
 let openRequests: string[][]
-let intercept: (request: Request, next: () => Promise<Response>) => Promise<Response>
+let intercept: (request: Request, next: (forwarded?: Request) => Promise<Response>) => Promise<Response>
 let serverLog: ReturnType<typeof spyOn>
 let focused: boolean
 let visible: boolean
@@ -127,7 +128,7 @@ async function createSession(identity: Keypair): Promise<string> {
 async function lifecycle(id: string): Promise<(MessageLifecycle & { status: string }) | { status: string }> {
   const response = await bunFetch(`${origin}/api/messages/${bobKey.address.toLowerCase()}/state`, {
     method: 'POST',
-    headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'Content-Type': 'application/json' },
+    headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
     body: JSON.stringify({ ids: [id] }),
   })
   return ((await response.json()) as OpeningResponse).results[0]!
@@ -158,6 +159,8 @@ function mount(recipient: string | null = aliceAddress) {
   const unmount = () => { render(null, container); container.remove() }
   mounted.push(unmount)
   return {
+    container,
+    unmount,
     text: () => container.textContent ?? '',
     select(address: string | null) { selected = address; render(view(), container) },
     switchIdentity(next: Keypair, nextToken: string, address: string) {
@@ -212,11 +215,11 @@ beforeEach(async () => {
   visible = true
   openRequests = []
   intercept = (_request, next) => next()
-  const handler = createFetch({ testDeliveryPolicy: 'recipient-opening' })
+  const handler = createFetch({ lifecycleGate: new LifecycleGate(true) })
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, srv) {
     const path = new URL(request.url).pathname
     if (request.method === 'POST' && path.endsWith('/open')) openRequests.push((await request.clone().json()).ids)
-    return intercept(request, () => handler(request, srv))
+    return intercept(request, (forwarded = request) => handler(forwarded, srv))
   } })
   origin = server.url.origin
   alice = new ChatClient(origin, aliceKey)
@@ -524,7 +527,7 @@ test('a failed opening keeps the conversation unread until a retry succeeds', as
 async function openAs(token: string, counterparty: string, id: string): Promise<void> {
   const response = await bunFetch(`${origin}/api/messages/${counterparty}/open`, {
     method: 'POST',
-    headers: { Origin: origin, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { Origin: origin, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
     body: JSON.stringify({ ids: [id] }),
   })
   expect(response.status).toBe(200)
@@ -1096,6 +1099,59 @@ test('recovery preserves the pre-disconnect position even at the bottom', async 
   } finally { rect.mockRestore(); scroll.mockRestore() }
 })
 
+test('the update action stays outside the pane hidden on small screens while the conversation list shows', async () => {
+  intercept = async (request, next) => {
+    if (new URL(request.url).pathname !== '/api/events/token') return next()
+    return clientUpdateRequired()
+  }
+  const view = mount(null)
+  await waitFor(() => view.text().includes('0xChat has been updated'))
+  // On small screens the responsive row hides the pane that is not selected.
+  const row = view.container.querySelector('nav')!.parentElement!
+  const banner = view.container.querySelector('[role="alert"]')!
+  expect(row.className).toContain('max-sm:[&>:last-child]:hidden')
+  expect(row.contains(banner)).toBe(false)
+  expect([...banner.querySelectorAll('button')].some(b => b.textContent === 'Reload to update')).toBe(true)
+})
+
+test('a client running a cached pre-release shell recovers after reloading to update', async () => {
+  const sent = await alice.send(bobKey.address, 'kept for the update', 300)
+  // The pre-release shell never advertises the delivery capability.
+  let cachedShell = true
+  const refused: string[] = []
+  intercept = async (request, next) => {
+    if (!cachedShell) return next()
+    const headers = new Headers(request.headers)
+    headers.delete('X-0xChat-Delivery-Capability')
+    const response = await next(new Request(request, { headers }))
+    if (response.status === 426) refused.push(new URL(request.url).pathname)
+    return response
+  }
+  const reload = spyOn(window.location, 'reload').mockImplementation(() => { cachedShell = false })
+  try {
+    const stale = mount()
+    await waitFor(() => stale.text().includes('0xChat has been updated'))
+    expect(refused.length).toBeGreaterThan(0)
+    expect(stale.text()).not.toContain('kept for the update')
+    expect(openRequests).toEqual([])
+    const button = [...document.querySelectorAll('button')].find(b => b.textContent === 'Reload to update')!
+    button.click()
+    await waitFor(() => reload.mock.calls.length === 1)
+
+    // The reload boots the updated shell.
+    stale.unmount()
+    refused.length = 0
+    const updated = mount()
+    await waitFor(() => updated.text().includes('kept for the update'))
+    expect(openRequests).toEqual([[sent.id]])
+    await waitFor(streamReady)
+    await alice.send(bobKey.address, 'live after the update', 300)
+    await waitFor(() => updated.text().includes('live after the update'))
+    expect(updated.text()).not.toContain('0xChat has been updated')
+    expect(refused).toEqual([])
+  } finally { reload.mockRestore() }
+})
+
 test('a token mint rejected while hidden waits for backoff after refocus', async () => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
@@ -1117,4 +1173,24 @@ test('a token mint rejected while hidden waits for backoff after refocus', async
   expect(mints).toBe(1)
   await waitFor(() => streamReady() && view.text().includes('No messages yet'))
   expect(mints).toBe(2)
+})
+
+test('a server requiring a newer client stops live reconnects and offers a reload to update', async () => {
+  let mints = 0
+  intercept = async (request, next) => {
+    if (new URL(request.url).pathname !== '/api/events/token') return next()
+    mints++
+    return clientUpdateRequired()
+  }
+  const reload = spyOn(window.location, 'reload').mockImplementation(() => {})
+  try {
+    const view = mount()
+    await waitFor(() => view.text().includes('0xChat has been updated'))
+    // The first reconnect would follow a one-second backoff.
+    await Bun.sleep(1_500)
+    expect(mints).toBe(1)
+    const button = [...document.querySelectorAll('button')].find(b => b.textContent === 'Reload to update')!
+    button.click()
+    await waitFor(() => reload.mock.calls.length === 1)
+  } finally { reload.mockRestore() }
 })

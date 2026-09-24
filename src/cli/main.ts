@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
@@ -129,7 +129,10 @@ async function follow(
           try {
             const message = await client.confirmLiveMessage(partner, input)
             if (message) deliver(message)
-          } catch { status('Rejected an invalid message') }
+          } catch (error) {
+            if (error instanceof ClientUpdateRequiredError) throw error
+            status('Rejected an invalid message')
+          }
         } else if (event.event === 'expiry-update') {
           try {
             const input: unknown = JSON.parse(event.data)
@@ -142,6 +145,7 @@ async function follow(
       if (!signal.aborted) throw new Error('Live connection closed')
     } catch (error) {
       if (signal.aborted) return
+      if (error instanceof ClientUpdateRequiredError) throw error
       status(`${error instanceof Error ? error.message : 'Connection failed'}; reconnecting in ${backoff / 1000}s`)
       await delay(backoff, undefined, { signal }).catch(() => {})
       backoff = Math.min(backoff * 2, 30_000)
@@ -180,6 +184,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
   rl.on('SIGINT', () => controller.abort())
   rl.on('close', () => controller.abort())
   let pendingSend = Promise.resolve()
+  let updateRequired: ClientUpdateRequiredError | undefined
   rl.on('line', line => {
     if (line === '/quit') { controller.abort(); return }
     if (line === '/help') { status = 'Enter sends text. /ttl SECONDS changes lifetime. /quit exits.'; render(); return }
@@ -197,7 +202,11 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     pendingSend = client.send(partner, line, ttl).then(message => {
       messages.set(message.id, message)
       status = 'Sent'
-    }).catch(error => { status = `Send failed: ${error instanceof Error ? error.message : 'unknown error'}` })
+    }).catch(error => {
+      // Every later request would be refused too; leave chat and report the update action.
+      if (error instanceof ClientUpdateRequiredError) { updateRequired = error; controller.abort(); return }
+      status = `Send failed: ${error instanceof Error ? error.message : 'unknown error'}`
+    })
       .finally(() => { sending = false; if (!controller.signal.aborted) render() })
   })
   render()
@@ -214,6 +223,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
     process.stdout.write('\x1b[?1049l')
     await pendingSend
   }
+  if (updateRequired) throw updateRequired
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
@@ -313,7 +323,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         text => console.error(terminalText(text)))
     } else if (command === 'chat') await chat(client, partner, ttl, controller)
   } catch (error) {
-    if (!controller.signal.aborted) {
+    // Leaving chat aborts the controller, but an update requirement must still be reported.
+    if (!controller.signal.aborted || error instanceof ClientUpdateRequiredError) {
       if (command === 'init' || command === 'import') {
         console.error(`Identity remains saved at ${terminalText(identityPath)}. Run register with the same --identity and chosen --server options to retry; do not run init again.`)
       }

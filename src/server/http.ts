@@ -1,9 +1,10 @@
 import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
 import { TRUSTED_PROXY_IPS, resolveClientIp } from './trusted-proxy.ts';
+import type { LifecycleGate } from './lifecycle-gate.ts';
 
 export interface Context {
-  testDeliveryPolicy?: 'recipient-opening';
+  lifecycleGate: LifecycleGate;
   req: Request;
   url: URL;
   path: string;

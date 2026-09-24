@@ -1,5 +1,6 @@
 import { getClientIp } from './http.ts';
-import { SECURITY_HEADERS, log } from './constants.ts';
+import { RECIPIENT_OPENING, SECURITY_HEADERS, log } from './constants.ts';
+import { LifecycleGate } from './lifecycle-gate.ts';
 import { handleRegisterChallenge, handleRegister, regStore } from './routes/register.ts';
 import { handleAuthChallenge, handleAuthSession, authStore } from './routes/auth.ts';
 import { handleGetPubkey } from './routes/pubkey.ts';
@@ -53,10 +54,8 @@ function re(pattern: RegExp) {
   return (path: string) => pattern.test(path);
 }
 
-export function createFetch(options: { testDeliveryPolicy?: 'recipient-opening' } = {}) {
-  if (options.testDeliveryPolicy && process.env['NODE_ENV'] !== 'test') {
-    throw new Error('New delivery policy is restricted to isolated tests');
-  }
+export function createFetch(options: { lifecycleGate?: LifecycleGate } = {}) {
+  const lifecycleGate = options.lifecycleGate ?? new LifecycleGate(RECIPIENT_OPENING);
   return async (req: Request, server: { requestIP: (r: Request) => { address: string } | null }): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/$/, '') || '/';
@@ -69,7 +68,7 @@ export function createFetch(options: { testDeliveryPolicy?: 'recipient-opening' 
       return new Response(null, { status: 200, headers: SECURITY_HEADERS });
     }
 
-    const ctx: Context = { req, url, path, method, ip, ...options };
+    const ctx: Context = { req, url, path, method, ip, lifecycleGate };
     const route = routes.find((r) => r.method === method && r.test(path));
     return route ? route.handler(ctx) : notFound();
   };

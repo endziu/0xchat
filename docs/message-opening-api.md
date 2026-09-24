@@ -1,7 +1,7 @@
 # Message delivery and opening contract
 
-Implemented by issue #75. Production continues to accept `legacy` deliveries.
-Browser/CLI reveal behavior and rollout enforcement belong to dependent tickets.
+Implemented by issue #75. The release gate (issue #81, [below](#release-gate))
+decides whether new messages use `legacy` or `recipient-opening` delivery.
 
 ## Delivery metadata
 
@@ -73,28 +73,73 @@ lifecycle fields above. It contains no ciphertext, signature or plaintext.
 Legacy confirmations and retries do not publish another update. Clients must
 refresh authoritative state after a lost stream; SSE is not a durable event log.
 
-Clients can advertise `X-0xChat-Delivery-Capability: recipient-opening-v1` on
-requests. `advertisesDeliveryCapability` detects that exact value independently
-of signed-envelope version. SSE token minting captures it; stream admission
-inherits the token's captured capability, never a query-string override.
-`openingConnectionCount` exposes capable live streams for the later rollout gate.
-Missing/unknown capability is accepted today; admission, sending and reading
-remain unenforced. Token expiry, single use and connection caps still apply.
+Clients advertise `X-0xChat-Delivery-Capability: recipient-opening-v1` on
+requests; the browser and CLI send it on every request. `advertisesDeliveryCapability`
+detects that exact value independently of signed-envelope version. SSE token
+minting captures it; stream admission inherits the token's captured capability,
+never a query-string override. The release gate below decides whether a missing
+capability is rejected. Token expiry, single use and connection caps still apply.
+
+## Release gate
+
+Issue #81. Set `RECIPIENT_OPENING=1` (or `true`) to activate the lifecycle. New-policy
+acceptance and compatibility enforcement switch on together:
+
+- New messages are stored as `recipient-opening`.
+- Send, conversation read, conversation list, open, state, recover and SSE token
+  requests without the capability return 426
+  `{ "error": "This 0xChat client is out of date. Reload the page or update the CLI.", "code": "client_update_required" }`.
+  The check follows authentication, so a missing session is still 401.
+- Stream admission refuses tokens minted before the latest activation with 401,
+  so updated clients mint again. Activation closes live streams admitted without
+  the capability before any new-policy message can be published.
+- Push subscription management, session removal, registration removal,
+  registration and authentication stay open to every client. Old clients can
+  still remove notification subscriptions, and identity export is local.
+
+The browser and CLI stop their ordinary retry loops on `client_update_required`.
+The browser stops reconnecting its live stream and shows a "Reload to update"
+action. That action fetches the newest service worker before reloading. Service
+worker cache version `v3` deletes app shells cached before this release, so a
+cached old client cannot boot again offline. Old browser tabs that predate the
+gate display the error text, which tells users to reload.
+
+Push notification deadlines still use the signed lifetime; retention-based push
+scheduling is issue #91.
+
+### Staged enablement
+
+1. Deploy this server with `RECIPIENT_OPENING` unset. Production behavior is
+   unchanged: every client is admitted and new messages are `legacy`.
+2. Deploy the rebuilt browser bundle and publish the updated CLI. Both advertise
+   the capability and interpret both policies. Refresh existing browser tabs.
+3. Restart with `RECIPIENT_OPENING=1`. Older clients are now told to update.
+
+### Rollback
+
+Unsetting `RECIPIENT_OPENING` and restarting makes future messages `legacy`
+again. Existing `recipient-opening` messages keep their lifecycle. Dual-policy
+reads, opening and compatibility enforcement stay active while any unexpired
+`recipient-opening` message remains. Enforcement is derived from stored
+messages, so it survives restarts without separate gate state. Once the last
+new-policy message expires, old clients are admitted again. Never roll back to
+a server build that predates the lifecycle migration: it cannot interpret stored
+lifecycle data.
 
 ## Isolated validation
 
-`createFetch({ testDeliveryPolicy: 'recipient-opening' })` enables new-policy
-acceptance for test servers only and throws outside `NODE_ENV=test`. The
-production entry point calls `createFetch()` and has no environment activation
-switch. Tests explicitly initialize an in-memory or temporary SQLite database.
+`createFetch({ lifecycleGate: new LifecycleGate(true) })` activates the gate for
+a test server; `LifecycleGate.activate()` activates it at runtime. Without a
+gate, `createFetch()` reads `RECIPIENT_OPENING`. Tests explicitly initialize an
+in-memory or temporary SQLite database.
 Do not run `bun run test` in the working checkout: it deletes `chat.db` and
 `dist`. Run that full command from an isolated copy with its own database.
 
 Recovery and read-only lifecycle refresh are now documented in
 [message-recovery-api.md](message-recovery-api.md) (issue #76).
 
-No rollout gate, push TTL change, or push endpoint allowlist change is
-included in this slice; browser reveal is described below. Deploy the rebuilt
+Issue #75 changed neither push TTLs nor the push endpoint allowlist; browser
+reveal is described below. Deploy the rebuilt
 frontend alongside the server and refresh existing browser tabs so they load the
 updated shared delivery validator. Older strict delivery validators reject the
 added fields even though the signed-envelope version is unchanged. There are no

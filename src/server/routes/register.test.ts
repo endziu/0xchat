@@ -7,6 +7,7 @@ import { initDb } from '../db.ts';
 import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
 import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import type { Context } from '../http.ts';
+import { LifecycleGate } from '../lifecycle-gate.ts';
 
 beforeAll(() => {
   // Route tests must not start real cleanup timers on the production singletons.
@@ -41,6 +42,7 @@ function context(
     path,
     method: 'POST',
     ip,
+    lifecycleGate: new LifecycleGate(),
   };
 }
 

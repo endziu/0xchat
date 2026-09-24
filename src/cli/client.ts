@@ -5,7 +5,7 @@ import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { canonicalMessageAad, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, parseExpiryUpdate, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
+import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, parseExpiryUpdate, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
 const availabilityDeadline = Symbol('availabilityDeadline')
@@ -79,6 +79,19 @@ class HttpError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }
 
+/** The server no longer accepts this client's delivery protocol; retrying cannot help. */
+export class ClientUpdateRequiredError extends Error {
+  constructor() {
+    super('This 0xChat CLI is out of date for this server. Update it with git pull && bun install, then retry.')
+  }
+}
+
+async function responseError(response: Response, fallback: string): Promise<Error> {
+  const data = await response.json().catch(() => ({})) as { error?: unknown; code?: unknown }
+  if (data.code === 'client_update_required') return new ClientUpdateRequiredError()
+  return new HttpError(response.status, typeof data.error === 'string' ? data.error : fallback)
+}
+
 export class ChatClient {
   readonly origin: string
   private token: string | null = null
@@ -95,6 +108,7 @@ export class ChatClient {
       headers: {
         Origin: this.origin,
         'Content-Type': 'application/json',
+        'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY,
         ...(authenticated ? { Authorization: `Bearer ${this.token}` } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -106,10 +120,7 @@ export class ChatClient {
       await this.login()
       return this.request(path, method, body, authenticated, false)
     }
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({})) as { error?: unknown }
-      throw new HttpError(response.status, typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
-    }
+    if (!response.ok) throw await responseError(response, `HTTP ${response.status}`)
     return response.status === 204 ? undefined as T : await response.json() as T
   }
 
@@ -209,7 +220,8 @@ export class ChatClient {
     try {
       response = await this.request<OpeningResponse>(`/api/messages/${partner}/${action}`, 'POST',
         { ids: messages.map(item => item.message.id) })
-    } catch {
+    } catch (error) {
+      if (error instanceof ClientUpdateRequiredError) throw error
       const operation = action === 'open' ? 'opening' : 'availability check'
       throw new Error(`Message ${operation} failed; retry read to confirm availability`)
     }
@@ -298,8 +310,9 @@ export class ChatClient {
       })
     } finally { clearTimeout(connectTimer) }
     if (!response.ok || !response.body) {
+      const failure = response.ok ? null : await responseError(response, '')
       controller.abort()
-      throw new Error(`Live connection failed: HTTP ${response.status}`)
+      throw failure instanceof ClientUpdateRequiredError ? failure : new Error(`Live connection failed: HTTP ${response.status}`)
     }
     const reader = response.body.getReader()
     const decoder = new TextDecoder()

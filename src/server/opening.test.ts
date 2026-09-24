@@ -4,20 +4,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openingConnectionCount } from './sse.ts';
-import * as secp from '@noble/secp256k1';
-import { bytesToHex, hexToBytes } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
+import { LifecycleGate } from './lifecycle-gate.ts';
 import * as limiters from './rate-limiters.ts';
+import { identity } from './test-identity.ts';
 
-function identity(byte: string) {
-  const privateKey = `0x${byte.repeat(32)}` as const;
-  return { privateKey, address: privateKeyToAccount(privateKey).address.toLowerCase(),
-    publicKey: bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true)) };
-}
 const alice = identity('12');
 const bob = identity('23');
 let server: ReturnType<typeof Bun.serve>;
@@ -45,11 +39,11 @@ function start(newPolicy = true, path = ':memory:') {
     registerPubkey(person.address, person.publicKey);
     createSession(person.address, person.address, 1_000_000_000);
   }
-  server = Bun.serve({ port: 0, fetch: createFetch(newPolicy ? { testDeliveryPolicy: 'recipient-opening' } : {}) });
+  server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(newPolicy) }) });
 }
 function request(path: string, identity = bob.address, body?: unknown) {
   return fetch(new URL(path, server.url), { method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     body: body === undefined ? undefined : JSON.stringify(body) });
 }
 async function send(ttl = 5) {
@@ -116,7 +110,7 @@ test('opening rejects unauthorized and malformed requests and conceals inaccessi
   }
   expect((await request(`/api/messages/${alice.address}/open`, bob.address, { ids: ['a'.repeat(8192)] })).status).toBe(413);
   const invalidJson = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${bob.address}` }, body: '{' });
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }, body: '{' });
   expect(invalidJson.status).toBe(400);
   const response = await (await open([message.id, absent])).json();
   expect(response.results).toEqual([
@@ -175,13 +169,13 @@ async function stream(address: string, capability?: string) {
   return { reader, abort };
 }
 
-test('SSE records advertised capability without enforcement and both participants receive committed metadata', async () => {
+test('SSE records advertised capability and both participants receive committed metadata', async () => {
   start();
   const message = await send();
-  const sender = await stream(alice.address);
+  const sender = await stream(alice.address, 'recipient-opening-v1');
   const recipient = await stream(bob.address, 'recipient-opening-v1');
   try {
-    expect(openingConnectionCount(alice.address)).toBe(0);
+    expect(openingConnectionCount(alice.address)).toBe(1);
     expect(openingConnectionCount(bob.address)).toBe(1);
     clock.mockReturnValue(2000);
     const opening = await open([message.id]);
@@ -219,7 +213,7 @@ test('opening accepts a pretty-printed batch of 100 distinct IDs', async () => {
   const ids = Array.from({ length: 100 }, (_, n) => `0x${n.toString(16).padStart(32, '0')}`);
   const response = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     body: JSON.stringify({ ids }, null, 2),
   });
   expect(response.status).toBe(200);
@@ -259,7 +253,7 @@ test('opening bounds streamed bodies at 8 KiB without Content-Length', async () 
     });
     const response = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       body,
     });
     expect(response.status).toBe(status);

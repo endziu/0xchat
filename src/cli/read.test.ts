@@ -7,6 +7,7 @@ import { createIdentity, parsePrivateKey } from './identity'
 import { main } from './main'
 import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
+import { LifecycleGate } from '../server/lifecycle-gate'
 import * as limiters from '../server/rate-limiters'
 import { canonicalMessageEnvelope, type DeliveredMessage, type OpeningResponse } from '../shared/message-envelope'
 import { signEIP191 } from '../client/lib/burner'
@@ -45,7 +46,7 @@ beforeEach(async () => {
   stateBodies = []
   legacy = false
   transform = async (_request, response) => response
-  const handler = createFetch({ testDeliveryPolicy: 'recipient-opening' })
+  const handler = createFetch({ lifecycleGate: new LifecycleGate(true) })
   const legacyHandler = createFetch()
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, server) {
     if (isMessageAction(request, 'open')) openingBodies.push((await request.clone().json()).ids)
@@ -202,6 +203,20 @@ test('legacy incoming messages require confirmation without changing their deadl
   transform = async (request, response) => isMessageAction(request, 'open')
     ? Response.json({ server_time: Date.now(), results: [{ id: sent.id, status: 'unavailable' }] }) : response
   expect((await bob.read(alice.identity.address)).messages).toEqual([])
+})
+
+test('after activation the CLI reads and opens a conversation that mixes legacy and new-policy messages', async () => {
+  legacy = true
+  const before = await alice.send(bob.identity.address, 'sent before activation', 5)
+  legacy = false
+  const after = await alice.send(bob.identity.address, 'sent after activation', 5)
+  clock.mockReturnValue(1_002_000)
+  const page = await bob.read(alice.identity.address)
+  expect(page.messages).toEqual([
+    expect.objectContaining({ id: before.id, plaintext: 'sent before activation', delivery_policy: 'legacy', opened_at: null, expires_at: 1_005_000 }),
+    expect.objectContaining({ id: after.id, plaintext: 'sent after activation', delivery_policy: 'recipient-opening', opened_at: 1_002_000, expires_at: 1_007_000 }),
+  ])
+  expect(openingBodies).toEqual([[after.id, before.id]])
 })
 
 for (const corruption of ['signature', 'ciphertext', 'misaddressed']) {
