@@ -5,6 +5,7 @@ import {
   completePushWork,
   getDuePushWork,
   markPushSubscriptionDead,
+  recordPushTemporaryFailure,
   releasePushClaim,
   type PendingPushWork,
 } from './db.ts';
@@ -34,11 +35,59 @@ let dispatchingEpoch: number | null = null;
 let epoch = 0;
 const inFlight = new Map<string, number>();
 
+const TEMPORARY_RETRY_BASE_MS = 60_000;
+const TEMPORARY_RETRY_MAX_MS = 3_600_000;
+
+export type PushFailureKind = 'temporary' | 'dead' | 'non_temporary';
+
+/**
+ * Explicit delivery-result classification. Only 408, 429, 5xx, and untagged
+ * transport failures marked temporary by the outbound boundary (network
+ * errors and timeouts) are temporary. Confirmed-dead 404/410 and everything
+ * else — authentication or configuration failures, including local errors
+ * without a provider status — never enter the temporary retry schedule.
+ */
+export function classifyPushFailure(error: unknown): PushFailureKind {
+  const statusCode = (error as { statusCode?: unknown; temporary?: unknown })?.statusCode;
+  if (typeof statusCode === 'number') {
+    if (statusCode === 404 || statusCode === 410) return 'dead';
+    if (statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode <= 599)) return 'temporary';
+    return 'non_temporary';
+  }
+  return (error as { temporary?: unknown } | null)?.temporary === true ? 'temporary' : 'non_temporary';
+}
+
+/** One minute, doubling per failed attempt, capped at one hour. */
+export function temporaryPushRetryDelayMs(attemptCount: number): number {
+  return Math.min(TEMPORARY_RETRY_BASE_MS * 2 ** Math.max(0, attemptCount - 1), TEMPORARY_RETRY_MAX_MS);
+}
+
+/** Persist the next temporary due time; a longer valid provider delay wins. */
+function temporaryRetrySchedule(attemptCount: number, providerRetryAfterMs: number | undefined): { dueAt: number; notBefore: number | null } {
+  const now = Date.now();
+  let dueAt = now + temporaryPushRetryDelayMs(attemptCount);
+  let notBefore: number | null = null;
+  if (providerRetryAfterMs !== undefined && providerRetryAfterMs > 0) {
+    const providerDue = now + providerRetryAfterMs;
+    if (providerDue > dueAt) {
+      dueAt = providerDue;
+      notBefore = providerDue;
+    }
+  }
+  return { dueAt, notBefore };
+}
+
+function recordFailure(work: PendingPushWork, claimToken: string, providerRetryAfterMs: number | undefined): void {
+  // The claim already incremented attempt_count, so the failed attempt is #attempt_count + 1.
+  const { dueAt, notBefore } = temporaryRetrySchedule(work.attempt_count + 1, providerRetryAfterMs);
+  recordPushTemporaryFailure(work, claimToken, dueAt, notBefore);
+}
+
 function timeout<T>(promise: Promise<T>, duration: number, controller: AbortController): Promise<T> {
   let handle: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
     handle = setTimeout(() => {
-      const reason = new Error('push delivery timed out');
+      const reason = Object.assign(new Error('push delivery timed out'), { temporary: true });
       controller.abort(reason);
       reject(reason);
     }, duration);
@@ -83,7 +132,9 @@ async function deliver(work: PendingPushWork, activeEpoch: number): Promise<void
         error('[push] send timed out', work.address);
         void providerOperation.catch(() => {}).finally(() => {
           if (activeEpoch !== epoch) return;
-          completePushWork(observed, claimToken!);
+          // A timeout is a temporary failure. The result is ambiguous, and the
+          // accepted at-least-once policy permits the durable retry below.
+          recordFailure(work, claimToken!, undefined);
           releasePushClaim(work.slot_id, claimToken!);
           if (inFlight.get(work.slot_id) === activeEpoch) inFlight.delete(work.slot_id);
           requestPushDispatch();
@@ -91,14 +142,20 @@ async function deliver(work: PendingPushWork, activeEpoch: number): Promise<void
         return;
       }
       const statusCode = (caught as { statusCode?: number })?.statusCode;
-      if (statusCode === 404 || statusCode === 410) {
+      const kind = classifyPushFailure(caught);
+      if (kind === 'dead') {
         markPushSubscriptionDead(work.slot_id, work.revision);
         warn('[push] subscription needs repair', work.address);
+      } else if (kind === 'temporary') {
+        const retryAfterMs = (caught as { retryAfterMs?: number })?.retryAfterMs;
+        recordFailure(work, claimToken, retryAfterMs);
+        error('[push] send failed, retrying at backoff', work.address, statusCode);
       } else {
-        // Durable repeat attempts and failure-specific backoff are introduced by #89/#90.
-        // This slice makes one bounded initial attempt and then completes that generation.
+        // Authentication and configuration failures are not temporary: complete
+        // the observed generation without scheduling a retry. Its pause and
+        // repair state are owned by #90.
         completePushWork(observed, claimToken);
-        error('[push] send failed', work.address, statusCode ?? caught);
+        error('[push] send failed, not retryable', work.address, statusCode ?? caught);
       }
     }
   } finally {
