@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { enablePushSlot, getPushSlotState, releaseSupersededSlot, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
 import type { PushSlotSummary } from '../../shared/push-slot'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
+import { workerPushManager } from '../lib/push-native'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
 import { COORDINATION_TIMEOUT, pushCoordinator, type PushClaim, type PushCoordinator, type PushDeadline,
   type PushMutationOutcome } from '../lib/push-coordinator'
@@ -97,6 +98,11 @@ export function usePushSubscription(token: string | null, address: string | null
     return Promise.race([work, timedOut]).finally(deadline.stop)
   }
 
+  // Native calls go through the service worker, which outlives this page and
+  // holds them in order until each one settles (#85).
+  const nativePush = (deadline: PushDeadline) => () =>
+    navigator.serviceWorker.ready.then((reg) => workerPushManager(reg, deadline.remaining))
+
   // Apply a coordinated mutation's outcome: converge on authoritative state,
   // then surface a conflict the operation itself did not explain. A conflict is
   // reported, never resolved by guessing, and never marks notifications on.
@@ -145,7 +151,7 @@ export function usePushSubscription(token: string | null, address: string | null
 
     return coordinate(attempt, deadline, false, (stale, claim) => runSubscribeOp({
       isStale: stale,
-      ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+      ready: nativePush(deadline),
       // Time spent answering the prompt does not count against the deadline.
       requestPermission: () => deadline.untimed(() => Notification.requestPermission()),
       getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
@@ -192,7 +198,7 @@ export function usePushSubscription(token: string | null, address: string | null
 
     return coordinate(attempt, deadline, undefined, (stale, claim) => runUnsubscribeOp({
       isStale: stale,
-      ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+      ready: nativePush(deadline),
       removeSlot: () => removePushSlot(attempt.address, attempt.token, stale),
       mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
       setSubscribed,

@@ -17,19 +17,15 @@
 // Every mutation is bounded (#85): a deadline started when the action is
 // requested releases the caller after 30 seconds, not counting time spent in
 // the permission prompt. Expiry invalidates the operation but cannot cancel a
-// browser promise, so the lock stays held until the work actually settles and
-// a persisted pending record keeps a reloaded tab from starting a conflicting
-// mutation while its predecessor's native call may still land.
+// browser promise, so the lock stays held until the work actually settles. A
+// reload drops this lock, so the native calls themselves run in the service
+// worker under a lock of its own that outlives the page (push-native.ts).
 
 const GENERATION_KEY = '0xchat.push.generation'
 const LOCK_NAME = '0xchat.push.subscription'
 const CHANNEL_NAME = '0xchat.push'
-const PENDING_KEY = '0xchat.push.pending'
 
 export const PUSH_TIMEOUT_MS = 30_000
-// How long a pending record from a tab that no longer holds the lock keeps
-// conflicting work deferred. The owner cannot report settlement once it is gone.
-export const PENDING_TTL_MS = 60_000
 
 export const COORDINATION_UNAVAILABLE =
   'Notifications cannot be coordinated across your open 0xChat tabs here. Close the other tabs, reload, and enable notifications again.'
@@ -38,8 +34,6 @@ export const COORDINATION_CONFLICT =
 
 export const COORDINATION_TIMEOUT =
   'Notifications did not respond within 30 seconds. Check your connection, then reload 0xChat and try again.'
-export const COORDINATION_PENDING =
-  'An earlier notification change is still finishing. Wait a minute, then try again.'
 
 export type PushMutationKind = 'explicit' | 'automatic'
 
@@ -60,6 +54,8 @@ export interface PushClock {
 /** Time budget for one action, started before it queues for anything. */
 export interface PushDeadline {
   isExpired: () => boolean
+  /** Milliseconds left, frozen while `untimed` runs. */
+  remaining: () => number
   /** Resolves once the budget is spent. */
   expired: Promise<void>
   /** Run `wait` with the clock stopped — for time the user spends in a prompt. */
@@ -135,6 +131,7 @@ function createDeadline(clock: PushClock, ms: number): PushDeadline {
   arm()
   return {
     isExpired: () => done,
+    remaining: () => done ? 0 : Math.max(0, paused ? remaining : remaining - (clock.now() - since)),
     expired,
     async untimed(wait) {
       if (!done && paused++ === 0) {
@@ -152,8 +149,6 @@ function createDeadline(clock: PushClock, ms: number): PushDeadline {
     },
   }
 }
-
-interface PendingRecord { id: string; at: number }
 
 function browserLocks(): PushLockManager | null {
   const locks = typeof navigator === 'undefined' ? null : navigator.locks
@@ -195,29 +190,6 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
       return Number.isFinite(stored) ? stored : 0
     } catch {
       return null
-    }
-  }
-
-  // The pending record names the operation that may still have a native
-  // browser call outstanding. It is written and cleared under the lock, so a
-  // record found by the next lock holder belongs to a tab that died mid-flight.
-  // Without a lock, concurrent explicit actions are allowed and fenced by the
-  // shared generation and server revisions instead, so no record is kept.
-  function readPending(): PendingRecord | null {
-    if (!locks) return null
-    try {
-      const record = JSON.parse(storage?.getItem(PENDING_KEY) ?? 'null') as PendingRecord | null
-      return record && typeof record.id === 'string' && Number.isFinite(record.at) ? record : null
-    } catch {
-      return null
-    }
-  }
-  function writePending(record: PendingRecord | null) {
-    if (!locks) return
-    try {
-      storage?.setItem(PENDING_KEY, record ? JSON.stringify(record) : '')
-    } catch {
-      // Unwritable storage leaves ordering to the lock and server revisions.
     }
   }
 
@@ -267,18 +239,12 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
       const execute = async (): Promise<PushMutationOutcome<T>> => {
         // Expired while queued: the caller has gone, so start nothing native.
         if (deadline.isExpired()) return { status: 'timedOut', message: COORDINATION_TIMEOUT }
-        const id = crypto.randomUUID()
         try {
-          const pending = readPending()
-          if (pending && clock.now() - pending.at < PENDING_TTL_MS)
-            return { status: 'blocked', message: COORDINATION_PENDING }
-          writePending({ id, at: clock.now() })
           const value = await options.run(claimed)
           return claimed.isSuperseded()
             ? { status: 'superseded', message: COORDINATION_CONFLICT }
             : { status: 'ran', value }
         } finally {
-          if (readPending()?.id === id) writePending(null)
           channel?.postMessage({ type: 'push-state-changed' })
           // A late settlement also changes what this tab should show.
           if (timedOut) for (const listener of listeners) listener()

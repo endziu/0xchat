@@ -1,10 +1,8 @@
 import { afterEach, expect, test } from 'bun:test'
 import {
   COORDINATION_CONFLICT,
-  COORDINATION_PENDING,
   COORDINATION_TIMEOUT,
   COORDINATION_UNAVAILABLE,
-  PENDING_TTL_MS,
   PUSH_TIMEOUT_MS,
   createPushCoordinator,
   type PushBroadcast,
@@ -23,7 +21,7 @@ function createOrigin(options: { locks?: PushLockManager | null; storage?: boole
     getItem: (key: string) => entries.get(key) ?? null,
     setItem: (key: string, value: string) => { entries.set(key, value) },
   }
-  let locks = options.locks === undefined ? createLockManager() : options.locks
+  const locks = options.locks === undefined ? createLockManager() : options.locks
   const open = (): PushCoordinator => {
     const coordinator = createPushCoordinator({
       locks,
@@ -34,9 +32,7 @@ function createOrigin(options: { locks?: PushLockManager | null; storage?: boole
     opened.push(coordinator)
     return coordinator
   }
-  // A reload drops every lock the old page held, as a real browser does.
-  const reload = () => { locks = createLockManager() }
-  return { open, reload, clock }
+  return { open, clock }
 }
 
 const opened: PushCoordinator[] = []
@@ -259,22 +255,20 @@ test('time spent in the permission prompt does not count toward the deadline', a
   native.resolve()
 })
 
-test('a tab reloaded mid-operation defers the next mutation until its record expires', async () => {
+test('a deadline reports the budget left, frozen while the permission prompt is open', async () => {
   const origin = createOrigin()
-  const dying = origin.open()
-  const stalled = dying.mutate({ kind: 'explicit', run: () => new Promise(() => {}) })
-  await Bun.sleep(5)
+  const deadline = origin.open().startDeadline()
+  const prompt = deferred()
+
+  origin.clock.advance(10_000)
+  expect(deadline.remaining()).toBe(PUSH_TIMEOUT_MS - 10_000)
+  const answering = deadline.untimed(() => prompt.promise)
+  origin.clock.advance(5 * 60_000)
+  expect(deadline.remaining()).toBe(PUSH_TIMEOUT_MS - 10_000)
+
+  prompt.resolve()
+  await answering
   origin.clock.advance(PUSH_TIMEOUT_MS)
-  expect((await stalled).status).toBe('timedOut')
-
-  origin.reload()
-  const reloaded = origin.open()
-  let ran = false
-  const run = async () => { ran = true }
-  expect(await reloaded.mutate({ kind: 'explicit', run })).toEqual({ status: 'blocked', message: COORDINATION_PENDING })
-  expect(ran).toBe(false)
-
-  origin.clock.advance(PENDING_TTL_MS - PUSH_TIMEOUT_MS)
-  expect(await reloaded.mutate({ kind: 'explicit', run })).toEqual({ status: 'ran', value: undefined })
-  expect(ran).toBe(true)
+  expect(deadline.remaining()).toBe(0)
+  expect(deadline.isExpired()).toBe(true)
 })

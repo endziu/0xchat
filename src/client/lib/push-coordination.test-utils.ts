@@ -48,3 +48,34 @@ export async function isSettled(promise: Promise<unknown>): Promise<boolean> {
   await Bun.sleep(5)
   return settled
 }
+
+export interface PushWorkerEnv {
+  pushManager: Pick<PushManager, 'subscribe' | 'getSubscription'>
+  // The worker's own view of the origin's locks. A page reload does not drop
+  // what the worker holds, so tests keep this apart from the pages' manager.
+  locks?: PushLockManager | null
+  now?: () => number
+  channelName?: string
+}
+
+/** The production public/sw.js, as `registration.active` is to a page. */
+export async function loadPushWorker(env: PushWorkerEnv) {
+  const handlers = new Map<string, (event: Record<string, unknown>) => void>()
+  const running: Promise<unknown>[] = []
+  const worker = {
+    addEventListener: (type: string, handler: (event: Record<string, unknown>) => void) => handlers.set(type, handler),
+    location: { origin: 'http://localhost' },
+    registration: { pushManager: env.pushManager },
+    navigator: { locks: env.locks ?? undefined },
+  }
+  const channelName = env.channelName ?? `push-worker-${crypto.randomUUID()}`
+  class Channel extends BroadcastChannel { constructor() { super(channelName) } }
+  const source = await Bun.file(new URL('../../../public/sw.js', import.meta.url)).text()
+  Function('self', 'BroadcastChannel', 'Date', source)(worker, Channel, { now: env.now ?? Date.now })
+  const active = {
+    postMessage(data: unknown, transfer: Transferable[] = []) {
+      handlers.get('message')!({ data, ports: transfer, waitUntil: (work: Promise<unknown>) => { running.push(work) } })
+    },
+  } as unknown as ServiceWorker
+  return { active, running }
+}

@@ -73,10 +73,11 @@ export async function enablePushSlot(address: string, token: string, subscriptio
  */
 export async function releaseSupersededSlot(address: string, token: string,
   written: PushSlotHandle | undefined, canClean: boolean | (() => boolean)): Promise<boolean> {
-  // A newer tab can accept the same browser subscription without advancing the
-  // slot revision. Without the origin lock, even a matching revision cannot
-  // prove it is still ours if another tab has claimed since. Same-tab changes
-  // are ordered by the local queue, so their cleanup remains safe.
+  // Every accepted write advances the slot revision (#85), so a newer tab's
+  // write never leaves ours matching. Without the origin lock, cleanup still
+  // stands down once another tab has claimed: absent server state proves
+  // nothing while that tab may be mid-write. Same-tab changes are ordered by
+  // the local queue, so their cleanup remains safe.
   const safe = () => typeof canClean === 'function' ? canClean() : canClean
   if (!safe()) return false
   const installation = installationId()

@@ -48,12 +48,16 @@ test('durable removal wins over stale reconciliation, allows only fresh explicit
   const body = enable();
   const handle = await (await request('subscribe', body)).json();
   const stale = { ...body, ...condition(handle) };
-  expect((await request('reconcile', stale)).status).toBe(200);
-  const foreign = await request('unsubscribe', condition(handle), bob);
+  const confirmed = await (await request('reconcile', stale)).json();
+  // Confirming the unchanged binding advances its revision, so a removal sent
+  // before the confirmation cannot revoke it afterwards.
+  expect(confirmed).toEqual({ ...handle, revision: 2 });
+  expect((await (await request('unsubscribe', condition(handle))).json()).code).toBe('revision_conflict');
+  const foreign = await request('unsubscribe', condition(confirmed), bob);
   expect(foreign.status).toBe(409);
-  const removed = await (await request('unsubscribe', condition(handle))).json();
-  expect(removed).toEqual({ ...handle, revision: 2 });
-  expect(await (await request('unsubscribe', condition(handle))).json()).toEqual(removed);
+  const removed = await (await request('unsubscribe', condition(confirmed))).json();
+  expect(removed).toEqual({ ...handle, revision: 3 });
+  expect(await (await request('unsubscribe', condition(confirmed))).json()).toEqual(removed);
   getDb().close();
   initDb(join(directory, 'chat.db'));
   expect((await (await request('reconcile', stale)).json()).code).toBe('revoked');
@@ -66,7 +70,7 @@ test('durable removal wins over stale reconciliation, allows only fresh explicit
   limiters.pushMutationLimiter.reset();
   const fresh = await request('subscribe', { ...enable(body.installation_id), ...condition(removed) });
   expect(fresh.status).toBe(201);
-  expect(await fresh.json()).toEqual({ ...handle, revision: 3 });
+  expect(await fresh.json()).toEqual({ ...handle, revision: 4 });
   expect((await request('unsubscribe', condition(handle))).status).toBe(409);
 });
 
@@ -173,10 +177,11 @@ test('legacy over-cap migration is repeatable, preserves bindings, and adoption 
   const adopted = await (await request('subscribe', claim)).json();
   expect(adopted.revision).toBe(2);
   expect(listed.slots.some((slot: PushSlotHandle) => slot.slot_id === adopted.slot_id)).toBe(true);
-  expect((await request('reconcile', { ...claim, ...condition(adopted) })).status).toBe(200);
+  const confirmed = await request('reconcile', { ...claim, ...condition(adopted) });
+  expect(confirmed.status).toBe(200);
   expect((await (await request('subscribe', enable())).json()).code).toBe('slot_cap');
   expect((await (await request('subscriptions')).json()).slots).toHaveLength(6);
-  await request('unsubscribe', condition(adopted));
+  expect((await request('unsubscribe', condition(await confirmed.json()))).status).toBe(200);
   expect((await (await request('subscribe', enable())).json()).code).toBe('slot_cap');
   const remaining = (await (await request('subscriptions')).json()).slots;
   await request('unsubscribe', condition(remaining[0]));
@@ -229,8 +234,9 @@ test('legacy adoption persists the submitted keys, including across restart', as
   expect(await deliveredSubscriptions(path)).toEqual([refreshed.subscription]);
   getDb().close();
   initDb(path);
-  expect((await request('reconcile', { ...refreshed, ...condition(adopted) })).status).toBe(200);
-  expect((await (await request('reconcile', { ...claim, ...condition(adopted) })).json()).code).toBe('repair_needed');
+  const confirmed = await request('reconcile', { ...refreshed, ...condition(adopted) });
+  expect(confirmed.status).toBe(200);
+  expect((await (await request('reconcile', { ...claim, ...condition(await confirmed.json()) })).json()).code).toBe('repair_needed');
 });
 
 test.each([alice, bob])('legacy alias collisions retain slots but block adoption until removal (second owner %s)', async secondOwner => {
