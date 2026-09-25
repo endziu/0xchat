@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { sendPushNotification } from './push-provider.ts';
 
 const keys = {
@@ -48,16 +48,18 @@ test('provider transport exposes a delta-seconds Retry-After delay', async () =>
 });
 
 test('provider transport exposes an HTTP-date Retry-After delay', async () => {
-  const provider = Bun.serve({ port: 0, fetch: () =>
-    new Response(null, { status: 429, headers: { 'Retry-After': new Date(Date.now() + 90_000).toUTCString() } }) });
+  const now = 1_700_000_000_000;
+  const clock = spyOn(Date, 'now').mockReturnValue(now);
   try {
-    const caught = await send(provider.url.href).catch((error: unknown) => error);
-    const retryAfterMs = (caught as { retryAfterMs?: number }).retryAfterMs;
-    // The date was formatted milliseconds before the transport parsed it.
-    expect(retryAfterMs!).toBeGreaterThanOrEqual(89_000);
-    expect(retryAfterMs!).toBeLessThanOrEqual(95_000);
+    const provider = Bun.serve({ port: 0, fetch: () =>
+      new Response(null, { status: 429, headers: { 'Retry-After': new Date(now + 90_000).toUTCString() } }) });
+    try {
+      await expect(send(provider.url.href)).rejects.toMatchObject({ statusCode: 429, retryAfterMs: 90_000 });
+    } finally {
+      provider.stop(true);
+    }
   } finally {
-    provider.stop(true);
+    clock.mockRestore();
   }
 });
 

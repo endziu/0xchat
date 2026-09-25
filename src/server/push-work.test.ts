@@ -131,8 +131,10 @@ test('ambiguous delivery remains durable across a database and dispatcher restar
   await sendMessage();
   await waitFor(() => firstCalls === 1);
   stopPushDispatcher();
+  server.stop(true);
   getDb().close();
   initDb(path);
+  server = Bun.serve({ port: 0, fetch: createFetch() });
   releaseFirst();
   clock = spyOn(Date, 'now').mockReturnValue(base + 2_000);
 
@@ -301,7 +303,7 @@ test('temporary failures double the retry delay after each attempt up to a one-h
     await waitFor(() => attempts.length === index + 1);
     const nextDue = due + expectedGaps[index];
     // The retry must not fire before its exact due time.
-    clock.mockReturnValue(nextDue - 1);
+    clock.mockReturnValue(base + nextDue - 1);
     await Bun.sleep(15);
     expect(attempts.length).toBe(index + 1);
     due = nextDue;
@@ -323,8 +325,10 @@ test('a longer valid provider-requested delay wins and persists across a restart
 
   await sendMessage(3600);
   await waitFor(() => attempts === 1);
+  server.stop(true);
   getDb().close();
   initDb(path);
+  server = Bun.serve({ port: 0, fetch: createFetch() });
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { attempts++; } });
   clock.mockReturnValue(base + 60_000);
   await Bun.sleep(15);
@@ -504,42 +508,27 @@ test('suppression discards a waiting retry and never schedules catch-up after di
   expect(deliveries).toBe(1);
 });
 
-test('a local configuration failure without a provider status is not temporary', async () => {
-  await subscribe('no-status');
+const nonTemporaryFailures = [
+  { name: 'configuration error', fail: () => new Error('VAPID private key not configured') },
+  { name: 'status 400', fail: () => Object.assign(new Error('rejected'), { statusCode: 400 }) },
+  { name: 'status 401', fail: () => Object.assign(new Error('rejected'), { statusCode: 401 }) },
+  { name: 'status 403', fail: () => Object.assign(new Error('rejected'), { statusCode: 403 }) },
+];
+
+test.each(nonTemporaryFailures)('$name is not temporary and never enters the retry schedule', async scenario => {
+  await subscribe(`no-retry-${scenario.name.replace(/\s/g, '-')}`);
   const base = Date.now();
   clock = spyOn(Date, 'now').mockReturnValue(base);
   const attempts: number[] = [];
   startPushDispatcher({ pollIntervalMs: 5, send: async () => {
     attempts.push(Date.now());
-    if (attempts.length === 1) throw new Error('VAPID private key not configured');
+    if (attempts.length === 1) throw scenario.fail();
   } });
 
   await sendMessage(3600);
   await waitFor(() => attempts.length === 1);
-  // A configuration failure completes the generation; a new message starts
+  // The non-temporary failure completes the generation; a new message starts
   // fresh immediately instead of inheriting a temporary backoff.
-  await sendMessage(3600);
-  await waitFor(() => attempts.length === 2);
-  expect(attempts[1] - attempts[0]).toBe(0);
-  clock.mockReturnValue(base + 60_000);
-  await Bun.sleep(25);
-  expect(attempts.length).toBe(2);
-});
-
-test.each([400, 401, 403])('status %s is not temporary and never enters the retry schedule', async status => {
-  await subscribe(`no-retry-${status}`);
-  const base = Date.now();
-  clock = spyOn(Date, 'now').mockReturnValue(base);
-  const attempts: number[] = [];
-  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
-    attempts.push(Date.now());
-    if (attempts.length === 1) throw Object.assign(new Error('rejected'), { statusCode: status });
-  } });
-
-  await sendMessage(3600);
-  await waitFor(() => attempts.length === 1);
-  // The failed generation completes; a new message starts fresh immediately
-  // instead of inheriting a temporary backoff.
   await sendMessage(3600);
   await waitFor(() => attempts.length === 2);
   expect(attempts[1] - attempts[0]).toBe(0);
@@ -818,8 +807,10 @@ test('restart preserves future due time and provider not-before without extendin
   clock = spyOn(Date, 'now').mockReturnValue(base);
   await sendMessage(300);
   getDb().query('UPDATE push_work SET due_at = ?, provider_not_before = ?').run(base + 1_000, base + 2_000);
+  server.stop(true);
   getDb().close();
   initDb(path);
+  server = Bun.serve({ port: 0, fetch: createFetch() });
 
   let deliveries = 0;
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { deliveries++; } });
