@@ -57,9 +57,38 @@ export async function enablePushSlot(address: string, token: string, subscriptio
   const handle = slot
     ? await api.reconcilePush(subscription, condition(installation, slot), token)
     : await api.subscribePush(subscription, condition(installation, current), token)
-  // Keep the accepted handle for cleanup even if the UI generation was superseded.
-  save(address, { enabled: !isStale(), handle })
+  // The returned handle identifies this write for cleanup. A superseded tab
+  // must not overwrite a newer tab's saved preference (or its slot handle).
+  if (!isStale()) save(address, { enabled: true, handle })
   return handle
+}
+
+/**
+ * Cleanup for a superseded operation (#84). It may drop only what it still
+ * demonstrably owns: the slot revision it wrote itself, or — when its own
+ * write never landed — the browser subscription, and then only while no active
+ * slot holds this installation and either a lock is held or no other tab has
+ * claimed since. Returns whether the browser subscription is also the caller's to
+ * remove, so late completion can never delete a newer registration.
+ */
+export async function releaseSupersededSlot(address: string, token: string,
+  written: PushSlotHandle | undefined, canClean: boolean | (() => boolean)): Promise<boolean> {
+  // A newer tab can accept the same browser subscription without advancing the
+  // slot revision. Without the origin lock, even a matching revision cannot
+  // prove it is still ours if another tab has claimed since. Same-tab changes
+  // are ordered by the local queue, so their cleanup remains safe.
+  const safe = () => typeof canClean === 'function' ? canClean() : canClean
+  if (!safe()) return false
+  const installation = installationId()
+  const listed = await api.listPushSlots(token)
+  if (!safe()) return false
+  const active = listed.slots.find(slot => slot.installation_id === installation)
+  // Absent server state is usable only while this claim is still safe to clean.
+  if (!written) return !active
+  if (active?.slot_id !== written.slot_id || active.revision !== written.revision) return false
+  const handle = await api.unsubscribePush(condition(installation, written), token)
+  save(address, { enabled: false, handle })
+  return true
 }
 
 /** Removal is independent of the browser subscription surviving locally. */
@@ -70,7 +99,8 @@ export async function removePushSlot(address: string, token: string, isStale: ()
   const current = [...listed.slots, ...listed.revocations].find(slot => slot.installation_id === installation)
   if (!current) return
   const handle = await api.unsubscribePush(condition(installation, current), token)
-  save(address, { enabled: false, handle })
+  // A newer tab may have enabled again while this response was in flight.
+  if (!isStale()) save(address, { enabled: false, handle })
 }
 
 /** Remote removal deliberately leaves the local browser subscription untouched. */
