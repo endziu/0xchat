@@ -13,15 +13,27 @@
 // upload, mark enabled, or delete anything it no longer owns; it re-reads
 // authoritative state and uses server revisions to decide, because a local
 // generation alone cannot recall a server request already sent.
+//
+// Every mutation is bounded (#85): a deadline started when the action is
+// requested releases the caller after 30 seconds, not counting time spent in
+// the permission prompt. Expiry invalidates the operation but cannot cancel a
+// browser promise, so the lock stays held until the work actually settles. A
+// reload drops this lock, so the native calls themselves run in the service
+// worker under a lock of its own that outlives the page (push-native.ts).
 
 const GENERATION_KEY = '0xchat.push.generation'
 const LOCK_NAME = '0xchat.push.subscription'
 const CHANNEL_NAME = '0xchat.push'
 
+export const PUSH_TIMEOUT_MS = 30_000
+
 export const COORDINATION_UNAVAILABLE =
   'Notifications cannot be coordinated across your open 0xChat tabs here. Close the other tabs, reload, and enable notifications again.'
 export const COORDINATION_CONFLICT =
   'Another 0xChat tab changed notifications while this was running. Check the current setting before trying again.'
+
+export const COORDINATION_TIMEOUT =
+  'Notifications did not respond within 30 seconds. Check your connection, then reload 0xChat and try again.'
 
 export type PushMutationKind = 'explicit' | 'automatic'
 
@@ -31,6 +43,25 @@ export type PushMutationOutcome<T> =
   | { status: 'ran'; value: T }
   | { status: 'superseded'; message: string }
   | { status: 'blocked'; message: string }
+  | { status: 'timedOut'; message: string }
+
+export interface PushClock {
+  now: () => number
+  setTimeout: (callback: () => void, ms: number) => unknown
+  clearTimeout: (handle: unknown) => void
+}
+
+/** Time budget for one action, started before it queues for anything. */
+export interface PushDeadline {
+  isExpired: () => boolean
+  /** Milliseconds left, frozen while `untimed` runs. */
+  remaining: () => number
+  /** Resolves once the budget is spent. */
+  expired: Promise<void>
+  /** Run `wait` with the clock stopped — for time the user spends in a prompt. */
+  untimed: <T>(wait: () => Promise<T>) => Promise<T>
+  stop: () => void
+}
 
 export interface PushClaim {
   /** True once any newer claim on this origin has been taken. */
@@ -61,13 +92,62 @@ export interface PushCoordinatorEnv {
   // origin singletons, while each tab needs a channel of its own to hear the
   // others (a channel never receives what it posted itself).
   broadcast?: () => PushBroadcast | null
+  clock?: PushClock
+}
+
+export interface MutateOptions<T> {
+  kind: PushMutationKind
+  run: (claim: PushClaim) => Promise<T>
+  // Pass the action's own deadline so queueing before the call counts too.
+  deadline?: PushDeadline
 }
 
 export interface PushCoordinator {
-  mutate<T>(options: { kind: PushMutationKind; run: (claim: PushClaim) => Promise<T> }): Promise<PushMutationOutcome<T>>
+  mutate<T>(options: MutateOptions<T>): Promise<PushMutationOutcome<T>>
+  startDeadline(): PushDeadline
   /** Called when another tab of this origin finished a mutation. */
   onChange(listener: () => void): () => void
   close(): void
+}
+
+const browserClock: PushClock = {
+  now: () => Date.now(),
+  setTimeout: (callback, ms) => setTimeout(callback, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+}
+
+function createDeadline(clock: PushClock, ms: number): PushDeadline {
+  let remaining = ms
+  let since = clock.now()
+  let timer: unknown
+  let paused = 0
+  let done = false
+  let fire!: () => void
+  const expired = new Promise<void>((resolve) => { fire = resolve })
+  const arm = () => {
+    since = clock.now()
+    timer = clock.setTimeout(() => { done = true; fire() }, Math.max(0, remaining))
+  }
+  arm()
+  return {
+    isExpired: () => done,
+    remaining: () => done ? 0 : Math.max(0, paused ? remaining : remaining - (clock.now() - since)),
+    expired,
+    async untimed(wait) {
+      if (!done && paused++ === 0) {
+        clock.clearTimeout(timer)
+        remaining -= clock.now() - since
+      }
+      try {
+        return await wait()
+      } finally {
+        if (!done && --paused === 0) arm()
+      }
+    },
+    stop() {
+      if (!done) clock.clearTimeout(timer)
+    },
+  }
 }
 
 function browserLocks(): PushLockManager | null {
@@ -91,6 +171,7 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
   const locks = env.locks === undefined ? browserLocks() : env.locks
   const storage = env.storage === undefined ? browserStorage() : env.storage
   const channel = (env.broadcast ?? browserBroadcast)()
+  const clock = env.clock ?? browserClock
   const listeners = new Set<() => void>()
   // Without a lock we can still order this tab's own side effects.
   let tail: Promise<unknown> = Promise.resolve()
@@ -145,14 +226,19 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
   }
 
   return {
-    async mutate<T>(options: { kind: PushMutationKind; run: (claim: PushClaim) => Promise<T> }) {
+    startDeadline: () => createDeadline(clock, PUSH_TIMEOUT_MS),
+    async mutate<T>(options: MutateOptions<T>) {
       // Automatic work never competes for ownership: without both the lock and
       // the shared generation it stops and asks for a deliberate recovery.
       if (options.kind === 'automatic' && !(locks && storage))
         return { status: 'blocked', message: COORDINATION_UNAVAILABLE } as PushMutationOutcome<T>
 
+      const deadline = options.deadline ?? createDeadline(clock, PUSH_TIMEOUT_MS)
       const claimed = claim()
+      let timedOut = false
       const execute = async (): Promise<PushMutationOutcome<T>> => {
+        // Expired while queued: the caller has gone, so start nothing native.
+        if (deadline.isExpired()) return { status: 'timedOut', message: COORDINATION_TIMEOUT }
         try {
           const value = await options.run(claimed)
           return claimed.isSuperseded()
@@ -160,12 +246,31 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
             : { status: 'ran', value }
         } finally {
           channel?.postMessage({ type: 'push-state-changed' })
+          // A late settlement also changes what this tab should show.
+          if (timedOut) for (const listener of listeners) listener()
         }
       }
-      if (locks) return locks.request(LOCK_NAME, { mode: 'exclusive' }, execute)
-      const result = tail.then(execute)
-      tail = result.catch(() => undefined)
-      return result
+      let settled: Promise<PushMutationOutcome<T>>
+      if (locks) {
+        settled = locks.request(LOCK_NAME, { mode: 'exclusive' }, execute)
+      } else {
+        // Chain on the real settlement, not the caller's release, so this
+        // tab's next mutation still waits for a stalled one.
+        settled = tail.then(execute)
+        tail = settled.catch(() => undefined)
+      }
+      // Release the caller at the deadline without releasing the lock: the
+      // work keeps its ownership until the browser promise really settles.
+      const expired = deadline.expired.then((): PushMutationOutcome<T> => {
+        timedOut = true
+        settled.catch(() => undefined)
+        return { status: 'timedOut', message: COORDINATION_TIMEOUT }
+      })
+      try {
+        return await Promise.race([settled, expired])
+      } finally {
+        if (!options.deadline) deadline.stop()
+      }
     },
     onChange(listener) {
       listeners.add(listener)

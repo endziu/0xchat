@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { createClock, createLockManager, deferred, isSettled, loadPushWorker } from './lib/push-coordination.test-utils'
+import { NATIVE_EXPIRED, workerPushManager } from './lib/push-native'
 
 // The production JavaScript owns event-specific fields; the harness supplies them.
 type WorkerHandler = (event: Record<string, unknown>) => void
@@ -221,5 +223,148 @@ describe('production service worker notifications', () => {
 
     expect(await navigate()).toBe('updated shell')
     expect([...stored.keys()]).not.toContain('0xchat-shell-v2')
+  })
+})
+
+// The browser's push manager as the worker sees it: one subscription per
+// registration, reused by `subscribe` while it exists.
+function fakeBrowserPush() {
+  const state = { current: null as PushSubscription | null, subscribed: 0, unsubscribing: undefined as Promise<void> | undefined }
+  const make = (endpoint: string) => ({
+    endpoint,
+    toJSON: () => ({ endpoint, keys: { p256dh: 'p', auth: 'a' } }),
+    unsubscribe: async () => {
+      await state.unsubscribing
+      if (state.current?.endpoint === endpoint) state.current = null
+      return true
+    },
+  }) as unknown as PushSubscription
+  const pushManager = {
+    subscribe: async () => {
+      state.subscribed++
+      return (state.current ??= make(`https://push.example/${crypto.randomUUID()}`))
+    },
+    getSubscription: async () => state.current,
+  } as unknown as PushManager
+  // The browser dropping the subscription on its own.
+  const drop = () => { state.current = null }
+  return { state, pushManager, drop }
+}
+
+describe('native push calls run in the worker', () => {
+  const key = { applicationServerKey: new Uint8Array([4, 1, 2]) }
+
+  test('a call from a reloaded page waits until the closed page\'s call has settled', async () => {
+    const browser = fakeBrowserPush()
+    const { active, running } = await loadPushWorker({ pushManager: browser.pushManager, locks: createLockManager() })
+    const closedPage = workerPushManager({ active }, () => 30_000)
+    const reloadedPage = workerPushManager({ active }, () => 30_000)
+    const doomed = await closedPage.subscribe(key)
+    const stalled = deferred()
+    browser.state.unsubscribing = stalled.promise
+
+    // The closing page's unsubscribe never reports back to it; the worker
+    // stays alive for it regardless.
+    void doomed.unsubscribe()
+    await Bun.sleep(5)
+    const enabling = reloadedPage.subscribe(key)
+    expect(await isSettled(enabling)).toBe(false)
+    expect(await isSettled(Promise.all(running))).toBe(false)
+    expect(browser.state.subscribed).toBe(1)
+
+    stalled.resolve()
+    const fresh = await enabling
+    expect(fresh.toJSON().endpoint).not.toBe(doomed.toJSON().endpoint)
+    expect(browser.state.current?.endpoint).toBe(fresh.toJSON().endpoint)
+  })
+
+  test('a call still queued when its page\'s budget runs out never starts', async () => {
+    const clock = createClock()
+    const browser = fakeBrowserPush()
+    const { active } = await loadPushWorker({ pushManager: browser.pushManager, locks: createLockManager(), now: clock.now })
+    const holder = await workerPushManager({ active }, () => 30_000).subscribe(key)
+    const stalled = deferred()
+    browser.state.unsubscribing = stalled.promise
+    void holder.unsubscribe()
+    await Bun.sleep(5)
+
+    const late = workerPushManager({ active }, () => 30_000).subscribe(key)
+    clock.advance(30_000)
+    stalled.resolve()
+
+    await expect(late).rejects.toThrow(NATIVE_EXPIRED)
+    expect(browser.state.subscribed).toBe(1)
+    expect(browser.state.current).toBeNull()
+  })
+
+  test('without Web Locks in the worker, calls still run one at a time', async () => {
+    const browser = fakeBrowserPush()
+    const { active } = await loadPushWorker({ pushManager: browser.pushManager, locks: null })
+    const page = workerPushManager({ active }, () => 30_000)
+    const first = await page.subscribe(key)
+    const stalled = deferred()
+    browser.state.unsubscribing = stalled.promise
+
+    void first.unsubscribe()
+    const lookup = page.getSubscription()
+    expect(await isSettled(lookup)).toBe(false)
+    stalled.resolve()
+    expect(await lookup).toBeNull()
+  })
+
+  test('unsubscribe removes only the subscription the page saw', async () => {
+    const browser = fakeBrowserPush()
+    const { active } = await loadPushWorker({ pushManager: browser.pushManager, locks: createLockManager() })
+    const page = workerPushManager({ active }, () => 30_000)
+    const seen = await page.subscribe(key)
+    browser.drop()
+    const since = await page.subscribe(key)
+
+    expect(await seen.unsubscribe()).toBe(false)
+    expect(browser.state.current?.endpoint).toBe(since.toJSON().endpoint)
+    expect(await since.unsubscribe()).toBe(true)
+    // Already gone is what the page asked for.
+    expect(await since.unsubscribe()).toBe(true)
+  })
+
+  test('a failed browser call is reported to the page and releases the queue', async () => {
+    const browser = fakeBrowserPush()
+    browser.pushManager.subscribe = async () => { throw new DOMException('Registration failed', 'AbortError') }
+    const { active } = await loadPushWorker({ pushManager: browser.pushManager, locks: createLockManager() })
+    const page = workerPushManager({ active }, () => 30_000)
+
+    await expect(page.subscribe(key)).rejects.toThrow('Registration failed')
+    expect(await page.getSubscription()).toBeNull()
+  })
+
+  test('a settled removal is announced to every tab, even when its page is gone', async () => {
+    const channelName = `push-native-${crypto.randomUUID()}`
+    const browser = fakeBrowserPush()
+    const { active } = await loadPushWorker({ pushManager: browser.pushManager, locks: createLockManager(), channelName })
+    const tab = new BroadcastChannel(channelName)
+    const heard: unknown[] = []
+    tab.addEventListener('message', (event) => heard.push(event.data))
+    const page = workerPushManager({ active }, () => 30_000)
+
+    const sub = await page.subscribe(key)
+    await page.getSubscription()
+    await Bun.sleep(5)
+    expect(heard).toEqual([])
+    await sub.unsubscribe()
+    await Bun.sleep(5)
+    tab.close()
+    expect(heard).toEqual([{ type: 'push-state-changed' }])
+  })
+
+  test('ignores messages that are not native push requests', async () => {
+    const browser = fakeBrowserPush()
+    const { active, running } = await loadPushWorker({ pushManager: browser.pushManager })
+    const { port2 } = new MessageChannel()
+
+    active.postMessage({ type: 'something-else', op: 'subscribe' }, [port2])
+    active.postMessage({ type: 'push-native', op: 'subscribe' })
+
+    expect(running).toEqual([])
+    expect(browser.state.subscribed).toBe(0)
   })
 })

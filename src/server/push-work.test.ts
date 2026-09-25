@@ -717,6 +717,31 @@ test('replacement transfers pending work while fencing the old in-flight complet
   ]);
 });
 
+test('confirming an unchanged binding keeps pending work deliverable at the new revision', async () => {
+  const installationId = crypto.randomUUID();
+  const endpoint = 'https://fcm.googleapis.com/fcm/send/confirmed-endpoint';
+  const created = await (await request('/api/push/subscribe', bob.address, {
+    installation_id: installationId,
+    expected_revision: 0,
+    subscription: { endpoint, keys },
+  })).json() as { slot_id: string; installation_id: string; revision: number };
+  await sendMessage();
+
+  const confirmed = await request('/api/push/reconcile', bob.address, {
+    slot_id: created.slot_id,
+    installation_id: installationId,
+    expected_revision: created.revision,
+    subscription: { endpoint, keys },
+  });
+  expect(await confirmed.json()).toEqual({ ...created, revision: created.revision + 1 });
+  const endpoints: string[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async subscription => { endpoints.push(subscription.endpoint); } });
+  await waitFor(() => endpoints.length === 1);
+  await Bun.sleep(30);
+
+  expect(endpoints).toEqual([endpoint]);
+});
+
 test('a late failure on a removed slot cannot recreate its work', async () => {
   const handle = await subscribe('late-removed');
   const base = Date.now();

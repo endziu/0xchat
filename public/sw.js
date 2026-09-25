@@ -81,6 +81,62 @@ self.addEventListener('push', (event) => {
   )
 })
 
+// Native push calls (#85). Pages hand pushManager.subscribe, getSubscription
+// and PushSubscription.unsubscribe to this worker instead of calling them
+// themselves. The worker outlives a page reload, so a call started by a tab
+// that has since closed keeps the native lock until the browser actually
+// settles it, and every later call queues behind it. The lock is shared by
+// every context of the origin, so it also orders calls across worker versions
+// during an update. A request carries its page's remaining time budget: one
+// still queued when that runs out never starts.
+const NATIVE_LOCK = '0xchat.push.native'
+const PUSH_CHANNEL = '0xchat.push'
+let nativeTail = Promise.resolve()
+
+function exclusively(task) {
+  const locks = self.navigator && self.navigator.locks
+  if (locks) return locks.request(NATIVE_LOCK, { mode: 'exclusive' }, task)
+  const run = nativeTail.then(task)
+  nativeTail = run.catch(() => {})
+  return run
+}
+
+async function runNative(request, expiresAt) {
+  if (Date.now() >= expiresAt) return { status: 'expired' }
+  const push = self.registration.pushManager
+  if (request.op === 'subscribe') {
+    const sub = await push.subscribe({ userVisibleOnly: true, applicationServerKey: request.applicationServerKey })
+    return { status: 'done', subscription: sub.toJSON() }
+  }
+  const sub = await push.getSubscription()
+  if (request.op === 'get') return { status: 'done', subscription: sub ? sub.toJSON() : null }
+  // Remove only the subscription the page saw, never one created since.
+  if (!sub) return { status: 'done', removed: true }
+  if (sub.endpoint !== request.endpoint) return { status: 'done', removed: false }
+  return { status: 'done', removed: await sub.unsubscribe() }
+}
+
+self.addEventListener('message', (event) => {
+  const request = event.data
+  const port = event.ports && event.ports[0]
+  if (!request || request.type !== 'push-native' || !port) return
+  const expiresAt = Date.now() + Math.max(0, Number(request.timeLeft) || 0)
+  // Keep the worker alive until the browser call settles, whoever is listening.
+  event.waitUntil(exclusively(() => runNative(request, expiresAt))
+    .catch((err) => ({ status: 'failed', message: String((err && err.message) || err) }))
+    .then((reply) => {
+      port.postMessage(reply)
+      // A settled removal, even one whose page is gone, can turn notifications
+      // off in every tab. A new subscription is announced by the page that
+      // uploads it; one whose page has gone binds nothing new.
+      if (request.op === 'unsubscribe' && reply.status !== 'expired' && typeof BroadcastChannel === 'function') {
+        const channel = new BroadcastChannel(PUSH_CHANNEL)
+        channel.postMessage({ type: 'push-state-changed' })
+        channel.close()
+      }
+    }))
+})
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   event.waitUntil(

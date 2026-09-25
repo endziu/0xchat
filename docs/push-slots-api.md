@@ -16,8 +16,9 @@ IDs are opaque identifiers, not credentials. Endpoint URLs never authorize a tra
   Only a fresh explicit enable with the current revocation revision supersedes it.
 - `POST /api/push/reconcile`: same body, slot ID required. Never creates or
   supersedes revocation. Confirms an unchanged live binding, or atomically replaces
-  an owned slot's endpoint and keys when its expected revision matches. Replacement
-  retains the slot ID, increments its revision, restores it to `active`, and is
+  an owned slot's endpoint and keys when its expected revision matches. Both
+  increment the revision. Replacement
+  retains the slot ID, restores it to `active`, and is
   allowed at or above the five-slot cap. A destination owned by another slot fails
   with `ownership_conflict`. Quarantined legacy reservations cannot be replaced;
   remove them explicitly before enabling again.
@@ -26,7 +27,9 @@ IDs are opaque identifiers, not credentials. Endpoint URLs never authorize a tra
   revocation handle. Repeating the accepted removal is idempotent; older writes fail.
 
 Every creation, adoption, removal and replacement is serialized by an SQLite immediate transaction. New slots start at revision 1. Legacy adoption
-increments its revision. Unchanged confirmations do not increment it. Provider
+increments its revision. Confirmations of an unchanged binding increment it too,
+so a removal or write sent before a confirmation cannot match afterwards;
+pending wake-ups move to the new revision. Provider
 404/410 clears endpoint/key data, retains the slot, and increments its revision;
 completion is conditional on the attempted ID/revision. All retained slots,
 including repair-needed slots, count toward five. Legacy excess is preserved.
@@ -129,10 +132,11 @@ the existing per-hook queue and generation.
   authoritative revision before removing the slot it wrote. When its own write
   never landed, it leaves any active slot for this installation — and the browser
   subscription behind it — untouched, and it drops that browser subscription
-  only under the lock. Without the lock, even a matching revision cannot prove
-  ownership: a newer tab can accept the same subscription without changing its
-  revision. Superseded cleanup then leaves both artifacts alone and surfaces a
-  conflict; it also cannot overwrite a newer tab's saved enable preference.
+  only under the lock. Every accepted write advances the revision, so a newer
+  tab's write never leaves an older one matching. Without the lock, superseded
+  cleanup still stands down once another tab has claimed: it leaves both
+  artifacts alone and surfaces a conflict; it also cannot overwrite a newer
+  tab's saved enable preference.
   A local generation alone never rejects a server request already in flight.
 - Explicit actions surface a conflict (`COORDINATION_CONFLICT`) without marking
   notifications enabled; authoritative state converges through the re-read.
@@ -141,6 +145,25 @@ the existing per-hook queue and generation.
   actions still run there, serialized within the tab and fenced by the server's
   conditional writes.
 
-Waiting for the lock is unbounded in this slice, and an unresolved native
-browser operation is not persisted across reload: #85 adds bounded waiting and
-that persistence, and automatic repair stays disabled until then.
+Every enable, disable and slot removal is bounded to 30 seconds from the
+moment it is requested, covering queueing, lock waiting, service-worker
+readiness and browser/server calls, but not time spent answering the permission
+prompt. Expiry releases the caller with an actionable error and makes the
+operation stale, so a late result cannot upload, mark enabled, or delete a newer
+binding. It cannot cancel the browser's promise, so the lock stays held until
+that promise settles and the tab then re-reads actual state; other tabs'
+actions wait meanwhile and time out themselves.
+
+A reload drops the page's lock, so the native calls themselves (`subscribe`,
+`getSubscription`, `unsubscribe`) run in the service worker, which outlives the
+page. The worker makes them one at a time under its own Web Lock (or an
+in-worker queue without Web Locks), so a call started by a closed tab keeps
+every later call waiting until the browser actually settles it; no elapsed-time
+grace period stands in for settlement. Each request carries its page's
+remaining budget, and the worker never starts one still queued when that runs
+out, including late cleanup from a timed-out operation. It removes only the
+subscription endpoint the page saw, and announces each settled removal to every
+tab so they re-read state. Server requests a reloaded page already sent are
+fenced by revisions: re-enabling advances the slot revision even when the
+subscription is unchanged, so a removal that lands afterwards fails instead of
+revoking the newer binding. Automatic repair remains disabled.
