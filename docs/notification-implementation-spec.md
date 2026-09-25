@@ -539,8 +539,8 @@ capability matrix, including installed iOS where available. Record versions and
 results; simulations do not establish real push-service or OS behavior.
 
 Implementation completion requires the repository typecheck, lint, and full test
-suite plus recorded applicable device checks or explicit unverified cases. The
-full test command wipes the local `chat.db`, which is test-only, so run it freely.
+suite plus recorded applicable device checks or explicit unverified cases. Run
+the destructive full test command only in an isolated checkout/database context.
 This documentation-only synthesis does not claim those behavioral tests exist
 or pass yet.
 
