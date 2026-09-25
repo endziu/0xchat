@@ -7,13 +7,8 @@ import { requestPushPermission } from './push-permission'
 // functions own the per-op flow and take every side effect as an injected
 // dependency so supersession paths are unit-testable without a browser.
 //
-// Contract: once the op has committed to browser state — a subscription was
-// created (subscribe) or looked up (unsubscribe) — browser-side cleanup always
-// completes, even if the op is superseded mid-flight. Only server writes and
-// UI state updates are gated on the generation: a stale op finishing local
-// cleanup is harmless, but skipping it leaks a browser subscription the
-// server no longer knows about (or that the next identity would silently
-// re-upload under a different token).
+// Browser cleanup after supersession is conditional on ownership: an older
+// tab must not unsubscribe a registration newly enabled by another tab.
 //
 // One exception outranks that (#84): a superseded subscribe only cleans up
 // while it still owns the registration. `releaseIfOwned` re-reads server state
@@ -45,6 +40,7 @@ export interface SubscribeOpDeps<Written = unknown> {
   // Release the server slot this op wrote, if it is still the owned one, and
   // report whether the browser subscription is also this op's to remove.
   releaseIfOwned: (written: Written | undefined) => Promise<boolean>
+  mayRemoveBrowser: () => boolean
   setPermission: (permission: NotificationPermission) => void
   setSubscribed: (subscribed: boolean) => void
   setError: (message: string) => void
@@ -53,7 +49,7 @@ export interface SubscribeOpDeps<Written = unknown> {
 async function abandonSubscribeOp<Written>(deps: SubscribeOpDeps<Written>, sub: PushSubscription,
   written: Written | undefined): Promise<false> {
   const owned = await deps.releaseIfOwned(written).catch(() => false)
-  if (owned) await sub.unsubscribe().catch(() => {})
+  if (owned && deps.mayRemoveBrowser()) await sub.unsubscribe().catch(() => {})
   return false
 }
 
@@ -106,6 +102,7 @@ export interface UnsubscribeOpDeps {
   isStale: () => boolean
   ready: () => Promise<PushManagerLike>
   removeSlot: () => Promise<unknown>
+  mayRemoveBrowser: () => boolean
   setSubscribed: (subscribed: boolean) => void
   setError: (message: string) => void
 }
@@ -117,7 +114,7 @@ export async function runUnsubscribeOp(deps: UnsubscribeOpDeps): Promise<void> {
     let removalFailed = false
     // Even a missing browser subscription can leave an owned server slot.
     if (!deps.isStale()) await deps.removeSlot().catch(() => { removalFailed = true })
-    if (sub && !(await sub.unsubscribe())) throw new Error('Browser subscription was not removed')
+    if (sub && deps.mayRemoveBrowser() && !(await sub.unsubscribe())) throw new Error('Browser subscription was not removed')
     if (!deps.isStale()) {
       deps.setSubscribed(false)
       if (removalFailed) deps.setError('Notifications are off here, but server cleanup failed. Old alerts may continue. Retry disabling before enabling another identity.')

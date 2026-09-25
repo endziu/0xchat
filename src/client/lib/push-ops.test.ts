@@ -68,6 +68,7 @@ function subscribeDeps(
       state.releases++
       return state.ownsArtifacts
     },
+    mayRemoveBrowser: () => true,
     setPermission: (p) => {
       state.permission = p
     },
@@ -105,6 +106,7 @@ function unsubscribeDeps(
       await hooks.beforeDelete?.()
       state.deletes.push('ep-sub')
     },
+    mayRemoveBrowser: () => true,
     setSubscribed: (b) => {
       state.subscribed = b
     },

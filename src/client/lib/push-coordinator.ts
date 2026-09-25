@@ -35,6 +35,8 @@ export type PushMutationOutcome<T> =
 export interface PushClaim {
   /** True once any newer claim on this origin has been taken. */
   isSuperseded: () => boolean
+  /** Conservative ownership check for cleanup without a lock. */
+  isSupersededElsewhere: () => boolean
   // True while an exclusive lock guarantees no other tab's mutation is running.
   // Cleanup that infers ownership from absent state is only sound under it.
   serialized: boolean
@@ -93,6 +95,7 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
   // Without a lock we can still order this tab's own side effects.
   let tail: Promise<unknown> = Promise.resolve()
   let local = 0
+  let lastClaimed: number | null = null
 
   // Set iteration tolerates a listener unsubscribing itself mid-dispatch.
   channel?.addEventListener('message', () => { for (const listener of listeners) listener() })
@@ -121,8 +124,17 @@ export function createPushCoordinator(env: PushCoordinatorEnv = {}): PushCoordin
     } catch {
       // A rejected write leaves cross-tab ordering to the lock alone.
     }
+    // A gap in this tab's sequence means another tab claimed between our
+    // claims. Do not mistake a later claim from this same tab for that case.
+    const externalBefore = claimed === null || (lastClaimed !== null && claimed !== lastClaimed + 1)
+    lastClaimed = claimed
     return {
       serialized: !!locks,
+      isSupersededElsewhere: () => {
+        const current = readShared()
+        return externalBefore || current === null || claimed === null ||
+          current !== claimed + (local - mine) || current !== lastClaimed
+      },
       isSuperseded: () => {
         if (mine !== local) return true
         if (claimed === null) return false

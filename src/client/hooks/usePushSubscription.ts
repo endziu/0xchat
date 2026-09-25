@@ -124,7 +124,8 @@ export function usePushSubscription(token: string | null, address: string | null
             requestPermission: () => Notification.requestPermission(),
             getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
             upload: (sub) => enablePushSlot(attempt.address, attempt.token, sub, stale),
-            releaseIfOwned: (written) => releaseSupersededSlot(attempt.address, attempt.token, written, claim.serialized),
+            releaseIfOwned: (written) => releaseSupersededSlot(attempt.address, attempt.token, written, () => claim.serialized || !claim.isSupersededElsewhere()),
+            mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
             setPermission,
             setSubscribed,
             setError: (message) => { attempt.reported = true; setError(message) },
@@ -182,6 +183,7 @@ export function usePushSubscription(token: string | null, address: string | null
             isStale: stale,
             ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
             removeSlot: () => removePushSlot(attempt.address, attempt.token, stale),
+            mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
             setSubscribed,
             setError: (message) => { attempt.reported = true; setError(message) },
           })

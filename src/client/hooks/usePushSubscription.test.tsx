@@ -429,6 +429,72 @@ test('without a lock API, explicit enabling works and concurrent tabs still leav
   expect(first.container.textContent).toContain('Another 0xChat tab changed notifications')
 })
 
+test('a newer no-lock enable survives an older disable response arriving late', async () => {
+  const first = openTab({ locks: null })
+  const second = openTab({ locks: null })
+  mountTab(first, alice, true)
+  mountTab(second, alice, true)
+  await settle()
+  expect(await first.push.subscribe()).toBe(true)
+  await settle()
+
+  const wrote = deferred<void>()
+  const release = deferred<void>()
+  const normalFetch = globalThis.fetch
+  let holdFirst = true
+  globalThis.fetch = Object.assign(async (input: string | URL | Request, options?: RequestInit) => {
+    const response = await normalFetch(input, options)
+    if (holdFirst && String(input).endsWith('/push/unsubscribe')) {
+      holdFirst = false
+      wrote.resolve()
+      await release.promise
+    }
+    return response
+  }, { preconnect: normalFetch.preconnect })
+
+  const older = first.push.unsubscribe()
+  await wrote.promise
+  expect(await second.push.subscribe()).toBe(true)
+  const winner = (await list()).slots[0]
+  release.resolve()
+  await older
+  await settle()
+  expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: winner.slot_id, revision: winner.revision, state: 'active' })])
+  expect(browserSub).not.toBeNull()
+  expect(toggleState(second, 'Disable notifications')).toBe('true')
+})
+
+test('a same-tab identity switch cleans up a late enable without Web Locks', async () => {
+  const first = openTab({ locks: null })
+  mountTab(first, alice)
+  await settle()
+  const wrote = deferred<void>()
+  const release = deferred<void>()
+  const normalFetch = globalThis.fetch
+  let holdFirst = true
+  globalThis.fetch = Object.assign(async (input: string | URL | Request, options?: RequestInit) => {
+    const response = await normalFetch(input, options)
+    if (holdFirst && String(input).endsWith('/push/subscribe')) {
+      holdFirst = false
+      wrote.resolve()
+      await release.promise
+    }
+    return response
+  }, { preconnect: normalFetch.preconnect })
+
+  const older = first.push.subscribe()
+  await wrote.promise
+  render(null, first.container)
+  mountTab(first, bob)
+  release.resolve()
+  expect(await older).toBe(false)
+  await settle()
+  expect((await list(alice)).slots).toEqual([])
+  expect(browserSub).toBeNull()
+  expect(await first.push.subscribe()).toBe(true)
+  expect((await list(bob)).slots).toHaveLength(1)
+})
+
 test('a newer tab keeps its registration when an older no-lock enable finishes late', async () => {
   const first = openTab({ locks: null })
   const second = openTab({ locks: null })
