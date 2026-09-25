@@ -7,7 +7,7 @@ import { ToastProvider } from '../components/Toast'
 import { createFetch } from '../../server/router'
 import * as limiters from '../../server/rate-limiters'
 import type { PushCoordinator, PushCoordinatorEnv, PushLockManager } from '../lib/push-coordinator'
-import { createLockManager, deferred } from '../lib/push-coordination.test-utils'
+import { createClock, createLockManager, deferred, isSettled } from '../lib/push-coordination.test-utils'
 import type { PushSlotSummary } from '../../shared/push-slot'
 
 const originalFetch = globalThis.fetch
@@ -24,6 +24,7 @@ let browserSub: PushSubscription | null
 let failRemoval = false
 const listBarriers = new Map<string, Promise<void>>()
 let subscribeBarrier: Promise<void> | undefined
+let nativeBarrier: Promise<void> | undefined
 const keys = { p256dh: Buffer.alloc(65, 1).toString('base64url'), auth: Buffer.alloc(16, 2).toString('base64url') }
 
 // One browser, several tabs: they share this origin's lock manager, storage and
@@ -59,6 +60,7 @@ beforeEach(() => {
   failRemoval = false
   listBarriers.clear()
   subscribeBarrier = undefined
+  nativeBarrier = undefined
   channelName = `push-tabs-${crypto.randomUUID()}`
   locks = createLockManager()
   openTabs = []
@@ -68,6 +70,7 @@ beforeEach(() => {
     ready: Promise.resolve({ pushManager: {
       getSubscription: async () => browserSub,
       subscribe: async () => {
+        await nativeBarrier
         if (!browserSub) {
           const endpoint = `https://fcm.googleapis.com/fcm/send/${crypto.randomUUID()}`
           browserSub = { endpoint, expirationTime: null, options: { applicationServerKey: null, userVisibleOnly: true },
@@ -561,4 +564,127 @@ test('a superseded enable leaves the browser subscription another tab already ow
   expect(browserSub).not.toBeNull()
   expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: owned.slot_id, state: 'active' })])
   expect(toggleState(other, 'Disable notifications')).toBe('true')
+})
+
+const TIMED_OUT = 'did not respond within 30 seconds'
+
+test('a stalled service worker times out enabling, and late readiness neither uploads nor enables', async () => {
+  const clock = createClock()
+  const timed = openTab({ clock })
+  mountTab(timed, alice, true)
+  await settle()
+  const registration = await navigator.serviceWorker.ready
+  const ready = deferred<ServiceWorkerRegistration>()
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { ready: ready.promise } })
+
+  const enabling = timed.push.subscribe()
+  await settle()
+  clock.advance(30_000)
+  expect(await enabling).toBe(false)
+  await settle()
+  expect(timed.container.textContent).toContain(TIMED_OUT)
+
+  ready.resolve(registration)
+  await settle()
+  expect((await list()).slots).toEqual([])
+  expect(browserSub).toBeNull()
+  expect(toggleState(timed, 'Enable notifications')).toBe('false')
+
+  // Once the browser recovers, a fresh attempt works normally.
+  expect(await timed.push.subscribe()).toBe(true)
+  expect((await list()).slots).toHaveLength(1)
+})
+
+test('time spent answering the permission prompt does not count toward the timeout', async () => {
+  const clock = createClock()
+  const timed = openTab({ clock })
+  mountTab(timed)
+  await settle()
+  const answer = deferred<NotificationPermission>()
+  Object.defineProperty(globalThis, 'Notification', { configurable: true,
+    value: { permission: 'default', requestPermission: () => answer.promise } })
+
+  const enabling = timed.push.subscribe()
+  await settle()
+  clock.advance(5 * 60_000)
+  answer.resolve('granted')
+  expect(await enabling).toBe(true)
+  expect((await list()).slots).toHaveLength(1)
+})
+
+test('a stalled browser subscription defers other tabs and reloads, and its late completion leaves the newer binding alone', async () => {
+  const clock = createClock()
+  const stalled = openTab({ clock })
+  const waiting = openTab({ clock })
+  mountTab(stalled, alice, true)
+  mountTab(waiting, alice, true)
+  await settle()
+  const native = deferred()
+  nativeBarrier = native.promise
+
+  const first = stalled.push.subscribe()
+  await settle()
+  clock.advance(30_000)
+  expect(await first).toBe(false)
+
+  // The native call still holds the lock, so another tab's enable waits.
+  const second = waiting.push.subscribe()
+  await settle()
+  expect(await isSettled(second)).toBe(false)
+
+  // A reload drops the lock, but the persisted record still defers new work
+  // until the stalled operation could no longer plausibly land.
+  locks = createLockManager()
+  const reloaded = openTab({ clock })
+  mountTab(reloaded, alice, true)
+  await settle()
+  expect(await reloaded.push.subscribe()).toBe(false)
+  await settle()
+  expect(reloaded.container.textContent).toContain('still finishing')
+  expect((await list()).slots).toEqual([])
+
+  clock.advance(30_000)
+  expect(await second).toBe(false)
+  await settle()
+  expect(waiting.container.textContent).toContain(TIMED_OUT)
+
+  nativeBarrier = undefined
+  expect(await reloaded.push.subscribe()).toBe(true)
+  const winner = (await list()).slots[0]
+
+  native.resolve()
+  await settle()
+  expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: winner.slot_id, revision: winner.revision, state: 'active' })])
+  expect(browserSub).not.toBeNull()
+  expect(toggleState(reloaded, 'Disable notifications')).toBe('true')
+})
+
+test('a disable stuck behind another tab times out so the identity can still switch', async () => {
+  const clock = createClock()
+  const holder = openTab({ clock })
+  const switching = openTab({ clock })
+  mountTab(holder, alice, true)
+  mountTab(switching, alice, true)
+  await settle()
+  const native = deferred()
+  nativeBarrier = native.promise
+  void holder.push.subscribe()
+  await settle()
+
+  const disabling = switching.push.unsubscribe()
+  await settle()
+  clock.advance(30_000)
+  expect(await disabling).toBeUndefined()
+
+  // The next identity loads its own state while the old operation is unresolved.
+  const bobSlot = await (await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',
+    headers: { Authorization: `Bearer ${bob}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ installation_id: crypto.randomUUID(), expected_revision: 0,
+      subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/bob-elsewhere', keys } }),
+  })).json()
+  mountTab(switching, bob, true)
+  await settle()
+  expect(switching.container.textContent).toContain(bobSlot.slot_id)
+  expect(switching.container.textContent).not.toContain(TIMED_OUT)
+  native.resolve()
 })

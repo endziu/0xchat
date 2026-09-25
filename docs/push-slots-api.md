@@ -141,6 +141,16 @@ the existing per-hook queue and generation.
   actions still run there, serialized within the tab and fenced by the server's
   conditional writes.
 
-Waiting for the lock is unbounded in this slice, and an unresolved native
-browser operation is not persisted across reload: #85 adds bounded waiting and
-that persistence, and automatic repair stays disabled until then.
+Every enable, disable and slot removal is bounded to 30 seconds from the
+moment it is requested, covering queueing, lock waiting, service-worker
+readiness and browser/server calls, but not time spent answering the permission
+prompt. Expiry releases the caller with an actionable error and makes the
+operation stale, so a late result cannot upload, mark enabled, or delete a newer
+binding. It cannot cancel the browser's promise, so the lock stays held until
+that promise settles and the tab then re-reads actual state; other tabs'
+actions wait meanwhile and time out themselves. Each locked operation also
+leaves a pending record in storage while it runs. A record found by the next
+lock holder means its tab was closed or reloaded mid-operation, so conflicting
+work is refused with a retry message until the record is a minute old. Without
+Web Locks no record is kept, and explicit actions stay fenced by the shared
+generation and server revisions. Automatic repair remains disabled.

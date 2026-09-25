@@ -4,7 +4,8 @@ import { enablePushSlot, getPushSlotState, releaseSupersededSlot, rememberPushDi
 import type { PushSlotSummary } from '../../shared/push-slot'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
-import { pushCoordinator, type PushCoordinator, type PushMutationOutcome } from '../lib/push-coordinator'
+import { COORDINATION_TIMEOUT, pushCoordinator, type PushClaim, type PushCoordinator, type PushDeadline,
+  type PushMutationOutcome } from '../lib/push-coordinator'
 
 function pushApisAvailable(): boolean {
   return 'serviceWorker' in navigator && typeof window.PushManager !== 'undefined' && typeof Notification !== 'undefined'
@@ -16,6 +17,8 @@ interface PushAttempt {
   token: string
   supported: boolean
   isStale: () => boolean
+  // Stale because a newer action or identity took over, not merely expired.
+  isReplaced?: () => boolean
   // Set once the operation has explained a failure in its own words, so the
   // generic conflict message does not talk over it.
   reported: boolean
@@ -23,8 +26,9 @@ interface PushAttempt {
 
 // Keep the per-hook queue/generation contract, and run every mutation through
 // the origin's coordinator so other tabs cannot own the same subscription at
-// the same time. Session start only reads owned state; automatic uploads and
-// repair remain disabled until #85 lands bounded waiting.
+// the same time. Each action is bounded by a deadline that starts before it
+// queues (#85). Session start only reads owned state; automatic uploads and
+// repair remain disabled.
 export function usePushSubscription(token: string | null, address: string | null, coordinator?: PushCoordinator) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
@@ -66,8 +70,32 @@ export function usePushSubscription(token: string | null, address: string | null
 
   // Claim this tab's next mutation generation. The coordinator adds the shared
   // one; both must be current for the attempt to commit anything.
-  const beginAttempt = (activeAddress: string, activeToken: string): PushAttempt =>
-    ({ address: activeAddress, token: activeToken, supported, isStale: claimGeneration(generationRef), reported: false })
+  const beginAttempt = (activeAddress: string, activeToken: string, deadline: PushDeadline): PushAttempt => {
+    const isReplaced = claimGeneration(generationRef)
+    return { address: activeAddress, token: activeToken, supported, reported: false,
+      isReplaced, isStale: () => isReplaced() || deadline.isExpired() }
+  }
+
+  // Queue one coordinated mutation and release the caller at its deadline.
+  // Expiry makes the attempt stale, so whatever the work is still waiting on
+  // cannot commit when it settles; the coordinator keeps the lock until then.
+  const coordinate = <T>(attempt: PushAttempt, deadline: PushDeadline, fallback: T,
+    run: (stale: () => boolean, claim: PushClaim) => Promise<T>): Promise<T> => {
+    const work = queueRef.current.enqueue(async () => {
+      const outcome = await tabs.mutate({
+        kind: 'explicit',
+        deadline,
+        run: (claim) => run(() => attempt.isStale() || claim.isSuperseded(), claim),
+      })
+      await finish(attempt, outcome)
+      return outcome.status === 'ran' ? outcome.value : fallback
+    })
+    const timedOut = deadline.expired.then(() => {
+      if (!attempt.isReplaced?.()) setError(COORDINATION_TIMEOUT)
+      return fallback
+    })
+    return Promise.race([work, timedOut]).finally(deadline.stop)
+  }
 
   // Apply a coordinated mutation's outcome: converge on authoritative state,
   // then surface a conflict the operation itself did not explain. A conflict is
@@ -88,6 +116,7 @@ export function usePushSubscription(token: string | null, address: string | null
     setSubscribed(false)
     setRemovable(false)
     setSlots([])
+    setError(null) // an old identity's failure says nothing about this one
     if (!token || !address) return
     const activeToken = token
     const activeAddress = address
@@ -111,55 +140,41 @@ export function usePushSubscription(token: string | null, address: string | null
   const subscribe = async (): Promise<boolean> => {
     if (!supported || !token || !address) return false
     setError(null)
-    const attempt = beginAttempt(address, token)
+    const deadline = tabs.startDeadline()
+    const attempt = beginAttempt(address, token, deadline)
 
-    return queueRef.current.enqueue(async () => {
-      const outcome = await tabs.mutate({
-        kind: 'explicit',
-        run: (claim) => {
-          const stale = () => attempt.isStale() || claim.isSuperseded()
-          return runSubscribeOp({
-            isStale: stale,
-            ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
-            requestPermission: () => Notification.requestPermission(),
-            getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
-            upload: (sub) => enablePushSlot(attempt.address, attempt.token, sub, stale),
-            releaseIfOwned: (written) => releaseSupersededSlot(attempt.address, attempt.token, written, () => claim.serialized || !claim.isSupersededElsewhere()),
-            mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
-            setPermission,
-            setSubscribed,
-            setError: (message) => { attempt.reported = true; setError(message) },
-          })
-        },
-      })
-      await finish(attempt, outcome)
-      return outcome.status === 'ran' && outcome.value
-    })
+    return coordinate(attempt, deadline, false, (stale, claim) => runSubscribeOp({
+      isStale: stale,
+      ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+      // Time spent answering the prompt does not count against the deadline.
+      requestPermission: () => deadline.untimed(() => Notification.requestPermission()),
+      getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
+      upload: (sub) => enablePushSlot(attempt.address, attempt.token, sub, stale),
+      releaseIfOwned: (written) => releaseSupersededSlot(attempt.address, attempt.token, written, () => claim.serialized || !claim.isSupersededElsewhere()),
+      mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
+      setPermission,
+      setSubscribed,
+      setError: (message) => { attempt.reported = true; setError(message) },
+    }))
   }
 
   const removeSlot = async (slot: PushSlotSummary): Promise<void> => {
     if (!token || !address) return
     setError(null)
-    const attempt = beginAttempt(address, token)
-    return queueRef.current.enqueue(async () => {
-      const outcome = await tabs.mutate({
-        kind: 'explicit',
-        run: async (claim) => {
-          const stale = () => attempt.isStale() || claim.isSuperseded()
-          if (stale()) return
-          try {
-            const removedCurrentInstallation = await removeRemotePushSlot(attempt.address, attempt.token, slot)
-            if (stale()) return
-            setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
-            if (removedCurrentInstallation) setSubscribed(false)
-          } catch {
-            if (stale()) return
-            attempt.reported = true
-            setError('Could not remove this notification slot. Refresh and try again.')
-          }
-        },
-      })
-      await finish(attempt, outcome)
+    const deadline = tabs.startDeadline()
+    const attempt = beginAttempt(address, token, deadline)
+    return coordinate(attempt, deadline, undefined, async (stale) => {
+      if (stale()) return
+      try {
+        const removedCurrentInstallation = await removeRemotePushSlot(attempt.address, attempt.token, slot)
+        if (stale()) return
+        setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
+        if (removedCurrentInstallation) setSubscribed(false)
+      } catch {
+        if (stale()) return
+        attempt.reported = true
+        setError('Could not remove this notification slot. Refresh and try again.')
+      }
     })
   }
 
@@ -172,25 +187,17 @@ export function usePushSubscription(token: string | null, address: string | null
       setError('Could not remember notifications are off. Check browser storage and retry disabling.')
     }
     setSubscribed(false)
-    const attempt = beginAttempt(address, token)
+    const deadline = tabs.startDeadline()
+    const attempt = beginAttempt(address, token, deadline)
 
-    return queueRef.current.enqueue(async () => {
-      const outcome = await tabs.mutate({
-        kind: 'explicit',
-        run: (claim) => {
-          const stale = () => attempt.isStale() || claim.isSuperseded()
-          return runUnsubscribeOp({
-            isStale: stale,
-            ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
-            removeSlot: () => removePushSlot(attempt.address, attempt.token, stale),
-            mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
-            setSubscribed,
-            setError: (message) => { attempt.reported = true; setError(message) },
-          })
-        },
-      })
-      await finish(attempt, outcome)
-    })
+    return coordinate(attempt, deadline, undefined, (stale, claim) => runUnsubscribeOp({
+      isStale: stale,
+      ready: () => navigator.serviceWorker.ready.then((reg) => reg.pushManager),
+      removeSlot: () => removePushSlot(attempt.address, attempt.token, stale),
+      mayRemoveBrowser: () => claim.serialized || !claim.isSupersededElsewhere(),
+      setSubscribed,
+      setError: (message) => { attempt.reported = true; setError(message) },
+    }))
   }
 
   return { supported, subscribed, removable, slots, permission, error, subscribe, unsubscribe, removeSlot }
