@@ -38,23 +38,26 @@ export function rememberPushDisabled(address: string): void {
  * Read-only server confirmation. Never upload, adopt legacy bindings, or repair on a visit.
  * `repairNeeded` means the push service rejected this browser's endpoint; only Enable fixes it.
  */
-export async function getPushSlotState(address: string, token: string): Promise<{ enabled: boolean; repairNeeded: boolean;
-  slots: PushSlotSummary[] }> {
+export async function getPushSlotState(address: string, token: string):
+  Promise<{ enabled: boolean; repairNeeded: boolean; slots: PushSlotSummary[] }> {
   const installation = installationId()
   const listed: PushSlotList = await api.listPushSlots(token)
   const current = preference(address)
-  const slot = listed.slots.find(slot => slot.installation_id === installation)
+  const slot = ownSlot(listed)
   const revoked = listed.revocations.find(slot => slot.installation_id === installation)
   if (revoked) save(address, { enabled: false, handle: revoked })
-  return { enabled: !!(current.enabled && slot?.state === 'active'), repairNeeded: slot?.state === 'repair_needed',
-    slots: listed.slots }
+  const state = slot?.state
+  return { enabled: !!(current.enabled && state === 'active'), repairNeeded: state === 'repair_needed', slots: listed.slots }
 }
 
 /** Whether this browser's slot is dead, so Enable must subscribe fresh instead of re-uploading. */
 export async function pushSlotNeedsRepair(token: string): Promise<boolean> {
+  return ownSlot(await api.listPushSlots(token))?.state === 'repair_needed'
+}
+
+function ownSlot(listed: PushSlotList): PushSlotSummary | undefined {
   const installation = installationId()
-  const listed = await api.listPushSlots(token)
-  return listed.slots.some(slot => slot.installation_id === installation && slot.state === 'repair_needed')
+  return listed.slots.find(slot => slot.installation_id === installation)
 }
 
 /** Called only by an explicit enable gesture. Refresh once; never retry a stale write. */

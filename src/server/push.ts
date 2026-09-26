@@ -43,11 +43,11 @@ export type PushFailureKind = 'temporary' | 'dead' | 'non_temporary';
 /**
  * Explicit delivery-result classification. Only 408, 429, 5xx, and untagged
  * transport failures marked temporary by the outbound boundary (network
- * errors and timeouts) are temporary. Dead endpoints (404/410, and 401/403,
- * which almost always mean the subscription was made with other VAPID keys,
- * so only a new browser subscription fixes it) and everything else — other rejections and local
- * configuration errors without a provider status — never enter the temporary
- * retry schedule.
+ * errors and timeouts) are temporary. Dead endpoints and everything else —
+ * other rejections and local configuration errors without a provider status —
+ * never enter the temporary retry schedule. Dead means 404/410, and 401/403
+ * (#90): those almost always mean the subscription was made with other VAPID
+ * keys, so only a new browser subscription fixes it.
  */
 export function classifyPushFailure(error: unknown): PushFailureKind {
   const statusCode = (error as { statusCode?: unknown; temporary?: unknown })?.statusCode;
@@ -83,6 +83,15 @@ function recordFailure(work: PendingPushWork, claimToken: string, providerRetryA
   // The claim already incremented attempt_count, so the failed attempt is #attempt_count + 1.
   const { dueAt, notBefore } = temporaryRetrySchedule(work.attempt_count + 1, providerRetryAfterMs);
   recordPushTemporaryFailure(work, claimToken, dueAt, notBefore);
+}
+
+/**
+ * Error messages can embed the endpoint URL (a capability). Redact it but keep
+ * the rest, which is the only diagnostic for configuration errors.
+ */
+function redactedMessage(caught: unknown, endpoint: string): string {
+  const message = String((caught as Error | null)?.message ?? caught);
+  return message.replaceAll(endpoint, '[endpoint]');
 }
 
 function timeout<T>(promise: Promise<T>, duration: number, controller: AbortController): Promise<T> {
@@ -155,11 +164,8 @@ async function deliver(work: PendingPushWork, activeEpoch: number): Promise<void
       } else {
         // Other rejections and configuration failures are not temporary:
         // complete the observed generation without scheduling a retry.
-        // Error messages can embed the endpoint URL (a capability); redact it
-        // but keep the rest, which is the only diagnostic for configuration errors.
         completePushWork(observed, claimToken);
-        const detail = statusCode ?? String((caught as Error | null)?.message ?? caught).replaceAll(work.endpoint, '[endpoint]');
-        error('[push] send failed, not retryable', work.address, detail);
+        error('[push] send failed, not retryable', work.address, statusCode ?? redactedMessage(caught, work.endpoint));
       }
     }
   } finally {

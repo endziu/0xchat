@@ -213,6 +213,11 @@ when an old browser or device is no longer accessible.
 
 ### Q16: Pause push delivery on authentication or configuration failure
 
+> **Superseded (#90, #73 amendment 2026-09-26).** There is no pause state. A
+> 401/403 is a dead endpoint like 404/410: the slot becomes `repair_needed` and
+> explicit Enable replaces its endpoint in place. Other non-retryable failures
+> drop the attempted wake-up without a retry. See `docs/push-slots-api.md`.
+
 Authentication or configuration failures pause push delivery until repaired
 rather than causing endless retries. Keep the subscription and notification
 opt-in preference, expose that delivery needs repair, and resume after

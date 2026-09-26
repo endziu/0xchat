@@ -193,8 +193,8 @@ different VAPID key. If the upload fails with `ownership_conflict` — typically
 the endpoint is still bound to a previous identity whose switch cleanup failed —
 it unsubscribes locally, subscribes fresh, and uploads once more; a second
 failure is reported, never retried. No endpoint is transferred: the old one dies
-at the push service, and its slot becomes `repair_needed` on the next dead-endpoint response.
-The same code also covers an endpoint held by another slot of the same identity
+at the push service, and its slot becomes `repair_needed` on the next
+dead-endpoint response. The same code also covers an endpoint held by another slot of the same identity
 (this browser lost its installation id). The retry applies there too; that old
 slot was already unreachable from this browser and stays listed, counting toward
 the five-slot cap, until it is removed.
@@ -217,3 +217,9 @@ matches, because re-uploading it would revive the rejected endpoint. It then
 subscribes fresh and replaces the endpoint in the same slot, so repair works at
 the five-slot cap. Nothing repairs a slot without a click; a subscription that
 breaks while no page is open stays broken until the user enables it again.
+
+Enable checks the slot once, before subscribing. If an auth failure kills the
+slot between that check and the upload, reconcile writes the rejected endpoint
+back as active. The next delivery fails the same way and marks it dead again,
+so the slot recovers on the following Enable. A legacy slot killed this way
+cannot be repaired in place; like any dead legacy slot, remove it first.

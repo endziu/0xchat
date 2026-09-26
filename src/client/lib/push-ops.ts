@@ -89,10 +89,13 @@ export async function runSubscribeOp<Written>(deps: SubscribeOpDeps<Written>): P
     // one behind a slot the server marked dead would just be uploaded again.
     const existing = await push.getSubscription()
     if (deps.isStale()) return false
-    const mustReplaceExisting = existing && (!matchesVapidKey(existing.options?.applicationServerKey, options.applicationServerKey)
-      || await deps.slotNeedsRepair())
-    if (deps.isStale()) return false
-    if (mustReplaceExisting) {
+    let mustReplaceExisting = false
+    if (existing) {
+      mustReplaceExisting = !matchesVapidKey(existing.options?.applicationServerKey, options.applicationServerKey)
+      if (!mustReplaceExisting) mustReplaceExisting = await deps.slotNeedsRepair()
+      if (deps.isStale()) return false
+    }
+    if (existing && mustReplaceExisting) {
       if (!mayReplace()) return false
       await removeBrowserSubscription(existing)
       if (deps.isStale()) return false
