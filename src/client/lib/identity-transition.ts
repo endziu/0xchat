@@ -2,7 +2,10 @@ import type { Keypair } from './burner'
 
 export interface IdentityTransitionDeps {
   setTransitioning: (value: boolean) => void
-  unsubscribePush: () => Promise<void>
+  // Resolves whether the old identity's alerts have stopped on this browser.
+  unsubscribePush: () => Promise<boolean>
+  // Called once the switch commits if the old identity's alerts may continue.
+  reportPushCleanupFailed: () => void
   revokeSession: () => Promise<void>
   clearSession: () => void
   prepareIdentity: (keypair: Keypair) => Promise<void>
@@ -18,8 +21,9 @@ export function createIdentityTransition(deps: IdentityTransitionDeps) {
     deps.setTransitioning(true)
 
     try {
+      let pushCleared = false
       try {
-        await deps.unsubscribePush()
+        pushCleared = await deps.unsubscribePush()
       } catch {
         // Losing a browser/provider subscription must not retain old auth.
       }
@@ -42,6 +46,7 @@ export function createIdentityTransition(deps: IdentityTransitionDeps) {
       // Invalidate any old-identity login that completed during preparation.
       deps.clearSession()
       deps.commit(keypair, token)
+      if (!pushCleared) deps.reportPushCleanupFailed()
     } catch (error) {
       if (attempt === latestAttempt) deps.clearSession()
       throw error

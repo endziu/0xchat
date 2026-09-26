@@ -22,6 +22,17 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
 }
 
+// A browser that does not report the key cannot be judged stale by it.
+function matchesVapidKey(subscriptionKey: ArrayBuffer | null | undefined, currentKey: Uint8Array): boolean {
+  if (!subscriptionKey) return true
+  const bytes = new Uint8Array(subscriptionKey)
+  return bytes.length === currentKey.length && bytes.every((byte, i) => byte === currentKey[i])
+}
+
+async function removeBrowserSubscription(sub: PushSubscription): Promise<void> {
+  if (!(await sub.unsubscribe())) throw new Error('Browser subscription was not removed')
+}
+
 // Minimal push-manager surface the ops need (keeps fakes light in tests; the
 // real PushManager is structurally assignable).
 export interface PushManagerLike {
@@ -68,17 +79,40 @@ export async function runSubscribeOp<Written>(deps: SubscribeOpDeps<Written>): P
     if (deps.isStale()) return false
     const publicKey = await deps.getVapidPublicKey()
     if (deps.isStale()) return false
-    const sub = await push.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    })
+    const options = { userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) }
+    // Only a live, unexpired attempt may drop a subscription to replace it (#86).
+    const mayReplace = () => !deps.isStale() && deps.mayRemoveBrowser()
+
+    // A subscription made with another VAPID key makes subscribe() throw.
+    const existing = await push.getSubscription()
+    if (deps.isStale()) return false
+    if (existing && !matchesVapidKey(existing.options?.applicationServerKey, options.applicationServerKey)) {
+      if (!mayReplace()) return false
+      await removeBrowserSubscription(existing)
+      if (deps.isStale()) return false
+    }
+
+    let sub = await push.subscribe(options)
     // From here the browser subscription exists. Every supersession path from
     // this point down must remove it once it is confirmed still ours — it was
     // never uploaded (or is no longer owned here), and leaving it lets the next
     // identity's re-upload push it under a different token.
     if (deps.isStale()) return await abandonSubscribeOp(deps, sub, undefined)
 
-    const written = await deps.upload(sub.toJSON() as PushSubscriptionJSON)
+    let written: Written
+    try {
+      written = await deps.upload(sub.toJSON() as PushSubscriptionJSON)
+    } catch (err) {
+      // The endpoint is still bound elsewhere, typically to a previous identity
+      // whose cleanup failed. Never transfer it: drop it locally, subscribe
+      // fresh, and upload once more. The old endpoint dies at the push service.
+      if (!(err instanceof ApiError && err.code === 'ownership_conflict') || !mayReplace()) throw err
+      await removeBrowserSubscription(sub)
+      if (deps.isStale()) return false
+      sub = await push.subscribe(options)
+      if (deps.isStale()) return await abandonSubscribeOp(deps, sub, undefined)
+      written = await deps.upload(sub.toJSON() as PushSubscriptionJSON)
+    }
     if (deps.isStale()) return await abandonSubscribeOp(deps, sub, written)
 
     deps.setSubscribed(true)
@@ -107,20 +141,30 @@ export interface UnsubscribeOpDeps {
   setError: (message: string) => void
 }
 
-export async function runUnsubscribeOp(deps: UnsubscribeOpDeps): Promise<void> {
+// Resolves whether this browser has stopped receiving the identity's alerts:
+// either the server slot or the browser subscription is confirmed gone.
+export async function runUnsubscribeOp(deps: UnsubscribeOpDeps): Promise<boolean> {
+  let serverCleared = false
   try {
     const push = await deps.ready()
     const sub = await push.getSubscription()
     let removalFailed = false
     // Even a missing browser subscription can leave an owned server slot.
-    if (!deps.isStale()) await deps.removeSlot().catch(() => { removalFailed = true })
-    if (sub && deps.mayRemoveBrowser() && !(await sub.unsubscribe())) throw new Error('Browser subscription was not removed')
+    // A removal that went stale may have returned without writing anything.
+    if (!deps.isStale()) await deps.removeSlot().then(() => { serverCleared = !deps.isStale() }, () => { removalFailed = true })
+    let browserCleared = !sub
+    if (sub && deps.mayRemoveBrowser()) {
+      await removeBrowserSubscription(sub)
+      browserCleared = true
+    }
     if (!deps.isStale()) {
       deps.setSubscribed(false)
       if (removalFailed) deps.setError('Notifications are off here, but server cleanup failed. Old alerts may continue. Retry disabling before enabling another identity.')
     }
+    return serverCleared || browserCleared
   } catch (err) {
     if (!deps.isStale()) deps.setError('Could not disable notifications. Please try again.')
     console.error('Push unsubscribe failed:', err)
+    return serverCleared
   }
 }

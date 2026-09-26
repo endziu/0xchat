@@ -185,8 +185,10 @@ export function usePushSubscription(token: string | null, address: string | null
     })
   }
 
-  const unsubscribe = async (): Promise<void> => {
-    if (!supported || !token || !address) return
+  // Resolves whether this browser has stopped receiving the identity's alerts.
+  const unsubscribe = async (): Promise<boolean> => {
+    if (!supported) return true // no browser subscription can exist here
+    if (!token || !address) return false
     setError(null)
     try {
       rememberPushDisabled(address)
@@ -197,7 +199,7 @@ export function usePushSubscription(token: string | null, address: string | null
     const deadline = tabs.startDeadline()
     const attempt = beginAttempt(address, token, deadline)
 
-    return coordinate(attempt, deadline, undefined, (stale, claim) => runUnsubscribeOp({
+    return coordinate(attempt, deadline, false, (stale, claim) => runUnsubscribeOp({
       isStale: stale,
       ready: pushManager,
       removeSlot: () => removePushSlot(attempt.address, attempt.token, stale),
