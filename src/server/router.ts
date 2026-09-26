@@ -54,13 +54,13 @@ function re(pattern: RegExp) {
   return (path: string) => pattern.test(path);
 }
 
-export function createFetch(options: { lifecycleGate?: LifecycleGate } = {}) {
+export function createFetch(options: { lifecycleGate?: LifecycleGate; trustedProxies?: ReadonlySet<string> } = {}) {
   const lifecycleGate = options.lifecycleGate ?? new LifecycleGate(RECIPIENT_OPENING);
   return async (req: Request, server: { requestIP: (r: Request) => { address: string } | null }): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/$/, '') || '/';
     const { method } = req;
-    const ip = getClientIp(req, server);
+    const ip = getClientIp(req, server, options.trustedProxies);
 
     log(`[req] ${method} ${path} [${ip}]`);
 

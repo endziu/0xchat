@@ -25,9 +25,10 @@ export function json(body: unknown, status = 200): Response {
 export function getClientIp(
   req: Request,
   server: { requestIP: (req: Request) => { address: string } | null },
+  trustedProxies: ReadonlySet<string> = TRUSTED_PROXY_IPS,
 ): string {
   const peer = server.requestIP(req)?.address ?? 'unknown';
-  return resolveClientIp(peer, req.headers.get('x-forwarded-for'), TRUSTED_PROXY_IPS);
+  return resolveClientIp(peer, req.headers.get('x-forwarded-for'), trustedProxies);
 }
 
 export function getSessionAddress(req: Request): string | null {
