@@ -7,7 +7,7 @@ import { ToastProvider } from '../components/Toast'
 import { createFetch } from '../../server/router'
 import * as limiters from '../../server/rate-limiters'
 import type { PushCoordinator, PushCoordinatorEnv, PushLockManager } from '../lib/push-coordinator'
-import { createClock, createLockManager, deferred, isSettled, loadPushWorker } from '../lib/push-coordination.test-utils'
+import { createClock, createLockManager, deferred, isSettled } from '../lib/push-coordination.test-utils'
 import type { PushSlotSummary } from '../../shared/push-slot'
 
 const originalFetch = globalThis.fetch
@@ -27,10 +27,7 @@ let subscribeBarrier: Promise<void> | undefined
 let vapidBarrier: Promise<void> | undefined
 let nativeBarrier: Promise<void> | undefined
 let lookupBarrier: Promise<void> | undefined
-let unsubscribeBarrier: Promise<void> | undefined
 let nativeSubscribes = 0
-// The service worker's clock; tests with a controlled clock point it there.
-let workerNow: () => number
 const keys = { p256dh: Buffer.alloc(65, 1).toString('base64url'), auth: Buffer.alloc(16, 2).toString('base64url') }
 
 // One browser, several tabs: they share this origin's lock manager, storage and
@@ -53,7 +50,7 @@ beforeAll(async () => {
   coordinator = await import('../lib/push-coordinator')
 })
 afterAll(() => GlobalRegistrator.unregister())
-beforeEach(async () => {
+beforeEach(() => {
   initDb(':memory:')
   for (const address of [alice, bob]) {
     registerPubkey(address, 'test-key')
@@ -69,16 +66,20 @@ beforeEach(async () => {
   vapidBarrier = undefined
   nativeBarrier = undefined
   lookupBarrier = undefined
-  unsubscribeBarrier = undefined
   nativeSubscribes = 0
-  workerNow = () => Date.now()
   channelName = `push-tabs-${crypto.randomUUID()}`
   locks = createLockManager()
   openTabs = []
   Object.defineProperty(globalThis, 'Notification', { configurable: true, value: { permission: 'granted', requestPermission: async () => 'granted' } })
   Object.defineProperty(window, 'PushManager', { configurable: true, value: class {} })
   const pushManager = {
-    getSubscription: async () => browserSub,
+    // A lookup stall holds only the next lookup, not later state reads.
+    getSubscription: async () => {
+      const barrier = lookupBarrier
+      lookupBarrier = undefined
+      await barrier
+      return browserSub
+    },
     subscribe: async () => {
       nativeSubscribes++
       await nativeBarrier
@@ -87,7 +88,6 @@ beforeEach(async () => {
         browserSub = { endpoint, expirationTime: null, options: { applicationServerKey: null, userVisibleOnly: true },
           getKey: () => null, toJSON: () => ({ endpoint, keys }),
           unsubscribe: async () => {
-            await unsubscribeBarrier
             if (browserSub?.endpoint === endpoint) browserSub = null
             return true
           } }
@@ -95,17 +95,8 @@ beforeEach(async () => {
       return browserSub
     },
   } as unknown as PushManager
-  // The real worker script makes the native calls; its lock survives a page
-  // reload, so it never shares the pages' lock manager.
-  // A lookup stall applies to the worker's lookup, not the page's state read.
-  const workerPush = { subscribe: pushManager.subscribe, getSubscription: async () => {
-    await lookupBarrier
-    return browserSub
-  } } as unknown as PushManager
-  const { active } = await loadPushWorker({ pushManager: workerPush, locks: createLockManager(), channelName,
-    now: () => workerNow() })
   Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
-    ready: Promise.resolve({ pushManager, active }),
+    ready: Promise.resolve({ pushManager }),
   } })
   globalThis.fetch = Object.assign(async (input: string | URL | Request, options?: RequestInit) => {
     const path = String(input)
@@ -625,7 +616,6 @@ async function reload(old: Tab, clock: ReturnType<typeof createClock>): Promise<
 
 test('a stalled service worker times out enabling, and late readiness neither uploads nor enables', async () => {
   const clock = createClock()
-  workerNow = clock.now
   const timed = openTab({ clock })
   mountTab(timed, alice, true)
   await settle()
@@ -653,7 +643,6 @@ test('a stalled service worker times out enabling, and late readiness neither up
 
 test('time spent answering the permission prompt does not count toward the timeout', async () => {
   const clock = createClock()
-  workerNow = clock.now
   const timed = openTab({ clock })
   mountTab(timed)
   await settle()
@@ -669,9 +658,8 @@ test('time spent answering the permission prompt does not count toward the timeo
   expect((await list()).slots).toHaveLength(1)
 })
 
-test('a stalled browser subscription holds off other tabs and reloads until it settles, and expired requests never start', async () => {
+test('a stalled browser subscription holds off other tabs until it settles, and expired work never starts', async () => {
   const clock = createClock()
-  workerNow = clock.now
   const stalled = openTab({ clock })
   const waiting = openTab({ clock })
   mountTab(stalled, alice, true)
@@ -685,21 +673,14 @@ test('a stalled browser subscription holds off other tabs and reloads until it s
   clock.advance(30_000)
   expect(await first).toBe(false)
 
-  // The native call still holds the page lock, so another tab's enable waits.
+  // The native call still holds the lock, so another tab's enable waits and
+  // times out without ever reaching the browser.
   const second = waiting.push.subscribe()
   await settle()
   expect(await isSettled(second)).toBe(false)
-
-  // A reload drops the page lock, not the worker's: the reloaded tab's native
-  // call queues behind the stalled one instead of racing it.
-  const reloaded = await reload(stalled, clock)
-  const third = reloaded.push.subscribe()
-  await settle()
   clock.advance(30_000)
-  expect(await third).toBe(false)
   expect(await second).toBe(false)
   await settle()
-  expect(reloaded.container.textContent).toContain(TIMED_OUT)
   expect(waiting.container.textContent).toContain(TIMED_OUT)
 
   nativeBarrier = undefined
@@ -709,50 +690,10 @@ test('a stalled browser subscription holds off other tabs and reloads until it s
   expect(nativeSubscribes).toBe(1)
   expect((await list()).slots).toEqual([])
 
-  expect(await reloaded.push.subscribe()).toBe(true)
+  expect(await waiting.push.subscribe()).toBe(true)
   expect((await list()).slots).toEqual([expect.objectContaining({ state: 'active' })])
-  expect(browserSub).not.toBeNull()
-  expect(toggleState(reloaded, 'Disable notifications')).toBe('true')
+  expect(toggleState(waiting, 'Disable notifications')).toBe('true')
 })
-
-test.each(['succeeds', 'fails'] as const)(
-  'an enable after reloading mid-disable waits for the browser removal, which %s late, and keeps its binding',
-  async (outcome) => {
-    const clock = createClock()
-    workerNow = clock.now
-    const closing = openTab({ clock })
-    mountTab(closing, alice, true)
-    await settle()
-    expect(await closing.push.subscribe()).toBe(true)
-    const doomed = browserSub!.endpoint
-    const removal = deferred()
-    unsubscribeBarrier = removal.promise.then(() => { if (outcome === 'fails') throw new Error('push service unavailable') })
-
-    const disabling = closing.push.unsubscribe()
-    await settle()
-    clock.advance(30_000)
-    expect(await disabling).toBeUndefined()
-    expect((await list()).slots).toEqual([])
-
-    // Well past any fixed grace period: only the removal settling may let the
-    // next enable touch the browser subscription.
-    const reloaded = await reload(closing, clock)
-    clock.advance(5 * 60_000)
-    const enabling = reloaded.push.subscribe()
-    await settle()
-    expect(await isSettled(enabling)).toBe(false)
-    expect((await list()).slots).toEqual([])
-
-    unsubscribeBarrier = undefined
-    removal.resolve()
-    expect(await enabling).toBe(true)
-    await settle()
-    expect(browserSub).not.toBeNull()
-    if (outcome === 'succeeds') expect(browserSub!.endpoint).not.toBe(doomed)
-    else expect(browserSub!.endpoint).toBe(doomed)
-    expect((await list()).slots).toEqual([expect.objectContaining({ state: 'active' })])
-    expect(toggleState(reloaded, 'Disable notifications')).toBe('true')
-  })
 
 test.each([
   ['VAPID key retrieval', 'succeeds', '/vapid-public-key'],
@@ -764,8 +705,7 @@ test.each([
 ] as const)('an enable stalled in %s times out, and a request that %s late leaves the newer binding alone',
   async (_phase, outcome, suffix) => {
     const clock = createClock()
-    workerNow = clock.now
-    const timed = openTab({ clock })
+      const timed = openTab({ clock })
     mountTab(timed, alice, true)
     await settle()
     const held = holdNext(suffix)
@@ -793,7 +733,6 @@ test.each([
 
 async function disableStalledIn(suffix: string | undefined, outcome: 'succeeds' | 'fails') {
   const clock = createClock()
-  workerNow = clock.now
   const timed = openTab({ clock })
   mountTab(timed, alice, true)
   await settle()
@@ -811,22 +750,13 @@ async function disableStalledIn(suffix: string | undefined, outcome: 'succeeds' 
   expect(timed.container.textContent).toContain(TIMED_OUT)
 
   const reloaded = await reload(timed, clock)
-  const enabling = reloaded.push.subscribe()
-  // A browser lookup still holds the worker's queue; server calls do not.
-  if (!suffix) {
-    await settle()
-    expect(await isSettled(enabling)).toBe(false)
-    lookupBarrier = undefined
-    lookup.resolve()
-  }
-  expect(await enabling).toBe(true)
+  expect(await reloaded.push.subscribe()).toBe(true)
   const winner = (await list()).slots[0]
   const endpoint = browserSub!.endpoint
 
-  if (held) {
-    if (outcome === 'succeeds') held.release()
-    else held.fail()
-  }
+  if (!held) lookup.resolve()
+  else if (outcome === 'succeeds') held.release()
+  else held.fail()
   await settle()
   expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: winner.slot_id, revision: winner.revision, state: 'active' })])
   expect(browserSub?.endpoint).toBe(endpoint)
@@ -846,7 +776,6 @@ test.each([
 
 test('a disable stuck behind another tab times out so the identity can still switch', async () => {
   const clock = createClock()
-  workerNow = clock.now
   const holder = openTab({ clock })
   const switching = openTab({ clock })
   mountTab(holder, alice, true)

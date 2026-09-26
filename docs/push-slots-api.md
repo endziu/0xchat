@@ -154,16 +154,14 @@ binding. It cannot cancel the browser's promise, so the lock stays held until
 that promise settles and the tab then re-reads actual state; other tabs'
 actions wait meanwhile and time out themselves.
 
-A reload drops the page's lock, so the native calls themselves (`subscribe`,
-`getSubscription`, `unsubscribe`) run in the service worker, which outlives the
-page. The worker makes them one at a time under its own Web Lock (or an
-in-worker queue without Web Locks), so a call started by a closed tab keeps
-every later call waiting until the browser actually settles it; no elapsed-time
-grace period stands in for settlement. Each request carries its page's
-remaining budget, and the worker never starts one still queued when that runs
-out, including late cleanup from a timed-out operation. It removes only the
-subscription endpoint the page saw, and announces each settled removal to every
-tab so they re-read state. Server requests a reloaded page already sent are
-fenced by revisions: re-enabling advances the slot revision even when the
-subscription is unchanged, so a removal that lands afterwards fails instead of
-revoking the newer binding. Automatic repair remains disabled.
+A reload drops the page's lock with the page, and nothing in the browser can
+observe a native call that a closed page started. Two fences cover what such a
+page may still have in flight. Expired work never removes a browser
+subscription, so a stale cleanup cannot drop one a newer tab has reused.
+Server requests are fenced by revisions: re-enabling advances the slot revision
+even when the subscription is unchanged, so a removal that lands afterwards
+fails instead of revoking the newer binding. The remaining gap: a native
+`unsubscribe()` that the browser had already started for a closed page can
+still complete after a newer tab reused that subscription. The binding then
+points at a dead endpoint, delivery gets 404/410, the slot's endpoint is cleared, and
+the user enables notifications again. Automatic repair remains disabled.

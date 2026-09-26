@@ -23,15 +23,10 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 }
 
 // Minimal push-manager surface the ops need (keeps fakes light in tests; the
-// real PushManager is structurally assignable, and so is the service-worker
-// client in push-native.ts that production uses).
-export interface PushSubscriptionLike {
-  toJSON(): PushSubscriptionJSON
-  unsubscribe(): Promise<boolean>
-}
+// real PushManager is structurally assignable).
 export interface PushManagerLike {
-  subscribe(options: PushSubscriptionOptionsInit): Promise<PushSubscriptionLike>
-  getSubscription(): Promise<PushSubscriptionLike | null>
+  subscribe(options: PushSubscriptionOptionsInit): Promise<PushSubscription>
+  getSubscription(): Promise<PushSubscription | null>
 }
 
 // `Written` is whatever the upload hands back to identify what reached the
@@ -51,7 +46,7 @@ export interface SubscribeOpDeps<Written = unknown> {
   setError: (message: string) => void
 }
 
-async function abandonSubscribeOp<Written>(deps: SubscribeOpDeps<Written>, sub: PushSubscriptionLike,
+async function abandonSubscribeOp<Written>(deps: SubscribeOpDeps<Written>, sub: PushSubscription,
   written: Written | undefined): Promise<false> {
   const owned = await deps.releaseIfOwned(written).catch(() => false)
   if (owned && deps.mayRemoveBrowser()) await sub.unsubscribe().catch(() => {})
@@ -83,7 +78,7 @@ export async function runSubscribeOp<Written>(deps: SubscribeOpDeps<Written>): P
     // identity's re-upload push it under a different token.
     if (deps.isStale()) return await abandonSubscribeOp(deps, sub, undefined)
 
-    const written = await deps.upload(sub.toJSON())
+    const written = await deps.upload(sub.toJSON() as PushSubscriptionJSON)
     if (deps.isStale()) return await abandonSubscribeOp(deps, sub, written)
 
     deps.setSubscribed(true)

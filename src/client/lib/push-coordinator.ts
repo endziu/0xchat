@@ -18,8 +18,7 @@
 // requested releases the caller after 30 seconds, not counting time spent in
 // the permission prompt. Expiry invalidates the operation but cannot cancel a
 // browser promise, so the lock stays held until the work actually settles. A
-// reload drops this lock, so the native calls themselves run in the service
-// worker under a lock of its own that outlives the page (push-native.ts).
+// reload drops the lock with the page; see docs/push-slots-api.md for that gap.
 
 const GENERATION_KEY = '0xchat.push.generation'
 const LOCK_NAME = '0xchat.push.subscription'
