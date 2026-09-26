@@ -22,6 +22,8 @@ const alice = `0x${'a'.repeat(40)}`
 const bob = `0x${'b'.repeat(40)}`
 let browserSub: PushSubscription | null
 let failRemoval = false
+let failBrowserUnsubscribe = false
+let vapidKey = 'A'.repeat(44)
 const listBarriers = new Map<string, Promise<void>>()
 let subscribeBarrier: Promise<void> | undefined
 let vapidBarrier: Promise<void> | undefined
@@ -62,6 +64,8 @@ beforeEach(() => {
   localStorage.clear()
   browserSub = null
   failRemoval = false
+  failBrowserUnsubscribe = false
+  vapidKey = 'A'.repeat(44)
   listBarriers.clear()
   subscribeBarrier = undefined
   vapidBarrier = undefined
@@ -82,15 +86,21 @@ beforeEach(() => {
       await barrier
       return browserSub
     },
-    subscribe: async () => {
+    subscribe: async (options: PushSubscriptionOptionsInit) => {
       nativeSubscribes++
       await nativeBarrier
+      const applicationServerKey = (options.applicationServerKey as Uint8Array<ArrayBuffer>).buffer
+      // Like a real browser, refuse to reuse a subscription made with another key.
+      if (browserSub && Buffer.compare(Buffer.from(browserSub.options.applicationServerKey!), Buffer.from(applicationServerKey))) {
+        throw new DOMException('A subscription with a different applicationServerKey already exists.', 'InvalidStateError')
+      }
       if (!browserSub) {
         const endpoint = `https://fcm.googleapis.com/fcm/send/${crypto.randomUUID()}`
-        browserSub = { endpoint, expirationTime: null, options: { applicationServerKey: null, userVisibleOnly: true },
+        browserSub = { endpoint, expirationTime: null, options: { applicationServerKey, userVisibleOnly: true },
           getKey: () => null, toJSON: () => ({ endpoint, keys }),
           unsubscribe: async () => {
             await unsubscribeBarrier
+            if (failBrowserUnsubscribe) return false
             if (browserSub?.endpoint === endpoint) browserSub = null
             return true
           } }
@@ -104,7 +114,7 @@ beforeEach(() => {
   globalThis.fetch = Object.assign(async (input: string | URL | Request, options?: RequestInit) => {
     const path = String(input)
     if (path.endsWith('/vapid-public-key')) await vapidBarrier
-    if (path.endsWith('/vapid-public-key')) return Response.json({ publicKey: 'A'.repeat(44) })
+    if (path.endsWith('/vapid-public-key')) return Response.json({ publicKey: vapidKey })
     if (failRemoval && path.endsWith('/unsubscribe')) throw new Error('offline')
     if (path.endsWith('/push/subscribe')) await subscribeBarrier
     if (path.endsWith('/subscriptions')) {
@@ -299,20 +309,48 @@ test('settings explicitly repair a dead slot without consuming another slot', as
   })])
 })
 
-test('new identity never auto-uploads a surviving subscription and ownership conflict gives an action', async () => {
+test('after failed switch cleanup, the new identity stays off until Enable replaces the subscription with a fresh endpoint', async () => {
   mount()
   await settle()
   expect(await tab.push.subscribe()).toBe(true)
   const before = await list()
+  const oldEndpoint = browserSub!.endpoint
+  failRemoval = true
+  failBrowserUnsubscribe = true
+  expect(await tab.push.unsubscribe()).toBe(false)
+  failRemoval = false
+  failBrowserUnsubscribe = false
   render(null, tab.container)
   mount(bob)
   await settle()
   expect((await list(bob)).slots).toEqual([])
   expect(tab.container.textContent).toContain('off')
-  expect(await tab.push.subscribe()).toBe(false)
+
+  expect(await tab.push.subscribe()).toBe(true)
   await settle()
-  expect(tab.container.textContent).toContain('previous identity')
+  expect(tab.container.textContent).toContain('on')
+  expect(tab.container.textContent).not.toContain('previous identity')
+  expect(browserSub!.endpoint).not.toBe(oldEndpoint)
+  expect((await list(bob)).slots).toEqual([expect.objectContaining({ state: 'active' })])
+  // The old endpoint was never transferred; its slot dies on the provider's next 404/410.
   expect(await list()).toEqual(before)
+})
+
+test('Enable replaces a browser subscription made with a rotated VAPID key in the same slot', async () => {
+  mount()
+  await settle()
+  expect(await tab.push.subscribe()).toBe(true)
+  const [slot] = (await list()).slots
+  const oldEndpoint = browserSub!.endpoint
+  vapidKey = 'B'.repeat(44)
+
+  expect(await tab.push.subscribe()).toBe(true)
+  await settle()
+  expect(tab.container.textContent).toContain('on')
+  expect(browserSub!.endpoint).not.toBe(oldEndpoint)
+  expect((await list()).slots).toEqual([expect.objectContaining({
+    slot_id: slot.slot_id, state: 'active', revision: slot.revision + 1,
+  })])
 })
 
 test('remote revocation survives reload until fresh explicit enable; cleanup failures remain off and actionable', async () => {
@@ -447,7 +485,7 @@ test('without a lock API, explicit enabling works and concurrent tabs still leav
   const [staleTab, newerTab] = await Promise.all([first.push.unsubscribe(), second.push.subscribe()])
   await settle()
 
-  expect([staleTab, newerTab]).toEqual([undefined, true])
+  expect([staleTab, newerTab]).toEqual([false, true])
   expect((await list()).slots).toHaveLength(1)
   expect(browserSub).not.toBeNull()
   expect(first.container.textContent).toContain('Another 0xChat tab changed notifications')
@@ -761,7 +799,7 @@ async function disableStalledIn(suffix: string | undefined, outcome: 'succeeds' 
   if (held) await held.reached
   else await settle()
   clock.advance(30_000)
-  expect(await disabling).toBeUndefined()
+  expect(await disabling).toBe(false)
   await settle()
   expect(timed.container.textContent).toContain(TIMED_OUT)
 
@@ -809,7 +847,7 @@ test.each(['succeeds', 'fails'] as const)(
     const disabling = holder.push.unsubscribe()
     await settle()
     clock.advance(30_000)
-    expect(await disabling).toBeUndefined()
+    expect(await disabling).toBe(false)
     await settle()
     expect(holder.container.textContent).toContain(TIMED_OUT)
 
@@ -892,7 +930,7 @@ test('a disable stuck behind another tab times out so the identity can still swi
   const disabling = switching.push.unsubscribe()
   await settle()
   clock.advance(30_000)
-  expect(await disabling).toBeUndefined()
+  expect(await disabling).toBe(false)
 
   // The next identity loads its own state while the old operation is unresolved.
   const bobSlot = await (await originalFetch(new URL('/api/push/subscribe', server.url), { method: 'POST',

@@ -11,7 +11,7 @@ interface ToastMessage {
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (message: string, type?: ToastType, durationMs?: number) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -27,10 +27,10 @@ const borderColor = { success: 'border-green-900', error: 'border-red-900', info
 export const ToastProvider = ({ children }: { children: any }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const toast = (message: string, type: ToastType = 'info'): void => {
+  const toast = (message: string, type: ToastType = 'info', durationMs = 3000): void => {
     const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), durationMs);
   };
 
   return (

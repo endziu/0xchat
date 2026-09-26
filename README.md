@@ -93,7 +93,7 @@ Generate a VAPID pair with:
 bunx web-push generate-vapid-keys
 ```
 
-Copy the generated values into `.env`. Rotating the pair invalidates existing browser push subscriptions. Missing keys do not stop the server; they soft-disable push support.
+Copy the generated values into `.env`. Rotating the pair invalidates existing browser push subscriptions; each browser recovers when its user clicks **Enable notifications** again. Missing keys do not stop the server; they soft-disable push support.
 
 ## Build and run
 

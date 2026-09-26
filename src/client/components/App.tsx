@@ -5,18 +5,23 @@ import { usePushSubscription } from '../hooks/usePushSubscription'
 import { useIdentityTransition } from '../hooks/useIdentityTransition'
 import { Layout } from './Layout'
 import { ChatView } from './ChatView'
-import { ToastProvider } from './Toast'
+import { ToastProvider, useToast } from './Toast'
+
+// Identity-switch cleanup failed and the browser subscription may survive (#86).
+const PUSH_CLEANUP_FAILED = "Your previous identity's notifications may continue on this browser until you enable notifications here or clear site data."
 
 function AppContent() {
   const { identity, isRegistered, loading: idLoading, error: idError, logout: idLogout, prepareIdentity, commitIdentity } = useIdentity()
   const { token, loading: sessionLoading, error: loginError, login, logout: sessionLogout, revokeSession, createSession, commitSession } = useSession(identity)
   const push = usePushSubscription(token, identity?.address ?? null)
+  const { toast } = useToast()
   const [path, setPath] = useState(window.location.pathname)
   const [sseConnected, setSseConnected] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const importIdentity = useIdentityTransition({
     setTransitioning,
     unsubscribePush: push.unsubscribe,
+    reportPushCleanupFailed: () => toast(PUSH_CLEANUP_FAILED, 'error', 10_000),
     revokeSession,
     clearSession: sessionLogout,
     prepareIdentity,

@@ -165,3 +165,16 @@ fails instead of revoking the newer binding. The remaining gap: a native
 still complete after a newer tab reused that subscription. The binding then
 points at a dead endpoint, delivery gets 404/410, the slot's endpoint is cleared, and
 the user enables notifications again. Automatic repair remains disabled.
+
+## Explicit enable recovers a stale browser subscription (#86)
+
+Before subscribing, the client unsubscribes a browser subscription made with a
+different VAPID key. If the upload fails with `ownership_conflict` — typically
+the endpoint is still bound to a previous identity whose switch cleanup failed —
+it unsubscribes locally, subscribes fresh, and uploads once more; a second
+failure is reported, never retried. No endpoint is transferred: the old one dies
+at the push service, and its slot becomes `repair_needed` on the next 404/410.
+Only a current, unexpired action may unsubscribe, so late work cannot remove a
+newer subscription. When switch cleanup fails, the switch still completes and
+the new identity is told the previous identity's alerts may continue on this
+browser until notifications are enabled here or site data is cleared.

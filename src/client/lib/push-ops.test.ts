@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { ApiError } from './api'
-import { runSubscribeOp, runUnsubscribeOp, type SubscribeOpDeps, type UnsubscribeOpDeps } from './push-ops'
+import { runSubscribeOp, urlBase64ToUint8Array, runUnsubscribeOp, type SubscribeOpDeps, type UnsubscribeOpDeps } from './push-ops'
 
 interface State {
   permission: NotificationPermission | null
@@ -9,6 +9,7 @@ interface State {
   uploads: PushSubscriptionJSON[]
   deletes: string[]
   unsubscribed: number
+  subscribes: number
   releases: number
   // What the authoritative server state says a superseded op still owns.
   ownsArtifacts: boolean
@@ -16,13 +17,16 @@ interface State {
 
 function makeState(): State {
   return { permission: null, subscribed: false, errors: [], uploads: [], deletes: [], unsubscribed: 0,
-    releases: 0, ownsArtifacts: true }
+    subscribes: 0, releases: 0, ownsArtifacts: true }
 }
 
-function makeSub(state: State, endpoint = 'ep-sub'): PushSubscription {
+const CURRENT_KEY = 'A'.repeat(44)
+
+function makeSub(state: State, endpoint = 'ep-sub', key = CURRENT_KEY): PushSubscription {
   const json: PushSubscriptionJSON = { endpoint, expirationTime: null, keys: {} }
   return {
     endpoint,
+    options: { applicationServerKey: urlBase64ToUint8Array(key).buffer, userVisibleOnly: true },
     toJSON: () => json,
     unsubscribe: async () => {
       state.unsubscribed++
@@ -39,26 +43,42 @@ function subscribeDeps(
     beforeSubscribe?: () => void | Promise<void>
     duringUpload?: () => void | Promise<void>
     beforeReady?: () => void | Promise<void>
+    beforeGetSubscription?: () => void | Promise<void>
     permission?: NotificationPermission
+    // A browser subscription that already exists before this op runs.
+    existing?: PushSubscription
   },
 ): SubscribeOpDeps {
-  const sub = makeSub(state)
+  let existing: PushSubscription | null = null
+  // The browser holds one subscription; unsubscribing clears it.
+  const hold = (sub: PushSubscription) => {
+    const unsubscribe = sub.unsubscribe.bind(sub)
+    existing = Object.assign(sub, { unsubscribe: async () => { existing = null; return unsubscribe() } })
+    return existing
+  }
+  if (hooks.existing) hold(hooks.existing)
   return {
     isStale: hooks.stale,
     ready: async () => {
       await hooks.beforeReady?.()
       return {
+        // Each native subscribe after an unsubscribe yields a fresh endpoint.
         subscribe: async () => {
           await hooks.beforeSubscribe?.()
-          return sub
+          if (existing) return existing
+          state.subscribes++
+          return hold(makeSub(state, state.subscribes === 1 ? 'ep-sub' : `ep-sub-${state.subscribes}`))
         },
-        getSubscription: async () => sub,
+        getSubscription: async () => {
+          await hooks.beforeGetSubscription?.()
+          return existing
+        },
       }
     },
     requestPermission: async () => hooks.permission ?? 'granted',
     getVapidPublicKey: async () => {
       await hooks.beforeVapid?.()
-      return 'A'.repeat(44)
+      return CURRENT_KEY
     },
     upload: async (s) => {
       state.uploads.push(s)
@@ -208,6 +228,98 @@ describe('runSubscribeOp', () => {
     ])
   })
 
+  test('an existing subscription made with another VAPID key is replaced before subscribing', async () => {
+    const state = makeState()
+    const old = makeSub(state, 'ep-old', 'B'.repeat(44))
+    const ok = await runSubscribeOp(subscribeDeps(state, { stale: () => false, existing: old }))
+    expect(ok).toBe(true)
+    expect(state.unsubscribed).toBe(1)
+    expect(state.uploads.map((s) => s.endpoint)).toEqual(['ep-sub'])
+    expect(state.errors).toEqual([])
+  })
+
+  test('an existing subscription with the current VAPID key is reused', async () => {
+    const state = makeState()
+    const current = makeSub(state, 'ep-current')
+    const ok = await runSubscribeOp(subscribeDeps(state, { stale: () => false, existing: current }))
+    expect(ok).toBe(true)
+    expect(state.unsubscribed).toBe(0)
+    expect(state.uploads.map((s) => s.endpoint)).toEqual(['ep-current'])
+  })
+
+  test('an expired attempt leaves a mismatched subscription alone', async () => {
+    const state = makeState()
+    const gen = makeStale()
+    const old = makeSub(state, 'ep-old', 'B'.repeat(44))
+    const ok = await runSubscribeOp(subscribeDeps(state, { stale: gen.stale, existing: old, beforeGetSubscription: gen.go }))
+    expect(ok).toBe(false)
+    expect(state.unsubscribed).toBe(0)
+    expect(state.uploads).toEqual([])
+  })
+
+  const conflict = () => new ApiError('Remove this browser subscription from its previous identity before enabling it here.',
+    'ownership_conflict')
+
+  test('an ownership conflict resubscribes with a fresh endpoint and uploads once more', async () => {
+    const state = makeState()
+    const deps = subscribeDeps(state, { stale: () => false })
+    deps.upload = async (s) => {
+      state.uploads.push(s)
+      if (state.uploads.length === 1) throw conflict()
+    }
+    const ok = await runSubscribeOp(deps)
+    expect(ok).toBe(true)
+    expect(state.uploads.map((s) => s.endpoint)).toEqual(['ep-sub', 'ep-sub-2'])
+    expect(state.unsubscribed).toBe(1)
+    expect(state.subscribed).toBe(true)
+    expect(state.errors).toEqual([])
+  })
+
+  test('a second ownership conflict is surfaced without another retry', async () => {
+    const state = makeState()
+    const deps = subscribeDeps(state, { stale: () => false })
+    deps.upload = async (s) => {
+      state.uploads.push(s)
+      throw conflict()
+    }
+    const ok = await runSubscribeOp(deps)
+    expect(ok).toBe(false)
+    expect(state.uploads).toHaveLength(2)
+    expect(state.subscribes).toBe(2)
+    expect(state.errors).toEqual([conflict().message])
+  })
+
+  test('an attempt that expires during a conflicting upload leaves the browser subscription alone', async () => {
+    const state = makeState()
+    const gen = makeStale()
+    const deps = subscribeDeps(state, { stale: gen.stale })
+    deps.upload = async (s) => {
+      state.uploads.push(s)
+      gen.go()
+      throw conflict()
+    }
+    const ok = await runSubscribeOp(deps)
+    expect(ok).toBe(false)
+    expect(state.uploads).toHaveLength(1)
+    expect(state.unsubscribed).toBe(0)
+    expect(state.errors).toEqual([])
+  })
+
+  test('a conflict is reported, not retried, when the browser subscription is not ours to remove', async () => {
+    const state = makeState()
+    const deps = subscribeDeps(state, { stale: () => false })
+    deps.mayRemoveBrowser = () => false
+    deps.upload = async (s) => {
+      state.uploads.push(s)
+      throw conflict()
+    }
+    const ok = await runSubscribeOp(deps)
+    expect(ok).toBe(false)
+    expect(state.uploads).toHaveLength(1)
+    expect(state.unsubscribed).toBe(0)
+    expect(state.errors).toEqual([conflict().message])
+  })
+
   test('transport and generic server failures keep the retry message', async () => {
     const state = makeState()
     const deps = subscribeDeps(state, { stale: () => false })
@@ -221,6 +333,22 @@ describe('runSubscribeOp', () => {
 })
 
 describe('runUnsubscribeOp', () => {
+  test('reports whether alerts for the identity have stopped on this browser', async () => {
+    const offline = (state: State, hooks: Parameters<typeof unsubscribeDeps>[1]) => {
+      const deps = unsubscribeDeps(state, hooks)
+      deps.removeSlot = async () => { throw new Error('offline') }
+      return deps
+    }
+    const stuck = { endpoint: 'ep-sub', unsubscribe: async () => false } as unknown as PushSubscription
+
+    expect(await runUnsubscribeOp(unsubscribeDeps(makeState(), { stale: () => false }))).toBe(true)
+    expect(await runUnsubscribeOp(unsubscribeDeps(makeState(), { stale: () => false, sub: stuck }))).toBe(true)
+    expect(await runUnsubscribeOp(offline(makeState(), { stale: () => false }))).toBe(true)
+    expect(await runUnsubscribeOp(offline(makeState(), { stale: () => false, sub: null }))).toBe(true)
+    expect(await runUnsubscribeOp(offline(makeState(), { stale: () => false, sub: stuck }))).toBe(false)
+  })
+
+
   test('happy path: server delete + browser unsubscribe + state cleared', async () => {
     const state = makeState()
     state.subscribed = true
