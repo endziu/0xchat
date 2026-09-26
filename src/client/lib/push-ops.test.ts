@@ -289,6 +289,20 @@ describe('runSubscribeOp', () => {
     expect(state.errors).toEqual([conflict().message])
   })
 
+  test('a conflict whose browser subscription refuses to unsubscribe fails without re-uploading it', async () => {
+    const state = makeState()
+    const stuck = Object.assign(makeSub(state), { unsubscribe: async () => false })
+    const deps = subscribeDeps(state, { stale: () => false, existing: stuck })
+    deps.upload = async (s) => {
+      state.uploads.push(s)
+      throw conflict()
+    }
+    const ok = await runSubscribeOp(deps)
+    expect(ok).toBe(false)
+    expect(state.uploads).toHaveLength(1)
+    expect(state.errors).toEqual(['Could not enable notifications. Please try again.'])
+  })
+
   test('an attempt that expires during a conflicting upload leaves the browser subscription alone', async () => {
     const state = makeState()
     const gen = makeStale()

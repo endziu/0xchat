@@ -174,6 +174,10 @@ the endpoint is still bound to a previous identity whose switch cleanup failed â
 it unsubscribes locally, subscribes fresh, and uploads once more; a second
 failure is reported, never retried. No endpoint is transferred: the old one dies
 at the push service, and its slot becomes `repair_needed` on the next 404/410.
+The same code also covers an endpoint held by another slot of the same identity
+(this browser lost its installation id). The retry applies there too; that old
+slot was already unreachable from this browser and stays listed, counting toward
+the five-slot cap, until it is removed.
 Only a current, unexpired action may unsubscribe, so late work cannot remove a
 newer subscription. When switch cleanup fails, the switch still completes and
 the new identity is told the previous identity's alerts may continue on this
