@@ -171,8 +171,10 @@ Push bindings use authenticated, revision-gated notification slots with a five-s
 limit and durable removal. See [the push-slot API contract](docs/push-slots-api.md).
 Subscription mutations are serialized across the origin's tabs by a shared
 generation and an exclusive browser lock, and superseded operations can only
-remove what they still own. Automatic browser repair remains disabled pending
-bounded waiting; enabling remains explicit. Existing legacy bindings are
+remove what they still own. Each notification action is bounded to 30 seconds
+(excluding the permission prompt) without releasing ownership of a browser call
+still in flight. Automatic browser repair remains disabled; enabling remains
+explicit. Existing legacy bindings are
 preserved, including identities above the limit.
 
 Public-key registrations are pruned after 30 days without a new session or a sent

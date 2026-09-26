@@ -73,10 +73,11 @@ export async function enablePushSlot(address: string, token: string, subscriptio
  */
 export async function releaseSupersededSlot(address: string, token: string,
   written: PushSlotHandle | undefined, canClean: boolean | (() => boolean)): Promise<boolean> {
-  // A newer tab can accept the same browser subscription without advancing the
-  // slot revision. Without the origin lock, even a matching revision cannot
-  // prove it is still ours if another tab has claimed since. Same-tab changes
-  // are ordered by the local queue, so their cleanup remains safe.
+  // Every accepted write advances the slot revision (#85), so a newer tab's
+  // write never leaves ours matching. Without the origin lock, cleanup still
+  // stands down once another tab has claimed: absent server state proves
+  // nothing while that tab may be mid-write. Same-tab changes are ordered by
+  // the local queue, so their cleanup remains safe.
   const safe = () => typeof canClean === 'function' ? canClean() : canClean
   if (!safe()) return false
   const installation = installationId()
@@ -87,7 +88,8 @@ export async function releaseSupersededSlot(address: string, token: string,
   if (!written) return !active
   if (active?.slot_id !== written.slot_id || active.revision !== written.revision) return false
   const handle = await api.unsubscribePush(condition(installation, written), token)
-  save(address, { enabled: false, handle })
+  // Another tab may have enabled again while this response was in flight.
+  if (safe()) save(address, { enabled: false, handle })
   return true
 }
 
@@ -104,9 +106,11 @@ export async function removePushSlot(address: string, token: string, isStale: ()
 }
 
 /** Remote removal deliberately leaves the local browser subscription untouched. */
-export async function removeRemotePushSlot(address: string, token: string, slot: PushSlotHandle): Promise<boolean> {
+export async function removeRemotePushSlot(address: string, token: string, slot: PushSlotHandle,
+  isStale: () => boolean): Promise<boolean> {
   const removesCurrentInstallation = slot.installation_id === installationId()
   const handle = await api.unsubscribePush(condition(slot.installation_id, slot), token)
-  if (removesCurrentInstallation) save(address, { enabled: false, handle })
+  // As in removePushSlot: a late response must not overwrite a newer enable.
+  if (removesCurrentInstallation && !isStale()) save(address, { enabled: false, handle })
   return removesCurrentInstallation
 }

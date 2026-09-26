@@ -83,15 +83,19 @@ export function enablePushSlot(address: string, input: PushEnableRequest, reconc
       if (replacingEndpoint && endpointOwners.some(owner => owner.slot_id !== slot.slot_id)) {
         fail('ownership_conflict', 'This endpoint already belongs to another browser slot. Remove that binding first.');
       }
+      const revision = slot.revision + 1;
       if (replacingEndpoint) {
-        const revision = slot.revision + 1;
         db.query(`UPDATE push_slots SET endpoint = ?, p256dh = ?, auth = ?, legacy = 0, state = 'active',
           revision = ?, updated_at = ? WHERE slot_id = ? AND revision = ?`)
           .run(canonical, keys.p256dh, keys.auth, revision, Date.now(), slot.slot_id, slot.revision);
-        transferPushWorkRevision(slot.slot_id, slot.revision, revision);
-        return { ...toHandle(slot), revision };
+      } else {
+        // Confirming an unchanged binding still advances the revision, so a
+        // removal sent before this confirmation cannot match it afterwards (#85).
+        db.query('UPDATE push_slots SET revision = ?, updated_at = ? WHERE slot_id = ? AND revision = ?')
+          .run(revision, Date.now(), slot.slot_id, slot.revision);
       }
-      return toHandle(slot);
+      transferPushWorkRevision(slot.slot_id, slot.revision, revision);
+      return { ...toHandle(slot), revision };
     }
     if (reconcile || (input.slot_id && !revoked)) fail('repair_needed', 'Ownership is unknown. Explicitly enable notifications again.');
     if (!revoked && input.expected_revision !== 0) fail('revision_conflict', 'Refresh notification state before enabling.');
