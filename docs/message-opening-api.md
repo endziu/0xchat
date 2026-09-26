@@ -104,8 +104,11 @@ worker cache version `v3` deletes app shells cached before this release, so a
 cached old client cannot boot again offline. Old browser tabs that predate the
 gate display the error text, which tells users to reload.
 
-Push notification deadlines still use the signed lifetime; retention-based push
-scheduling is issue #91.
+Push notification deadlines follow the policy fixed at acceptance: a legacy
+message keeps its stored expiry, and a `recipient-opening` message uses its
+unopened retention deadline (acceptance + 24 hours) regardless of its signed
+lifetime or a later opening (#91). See
+[durable wake-up dispatch](push-slots-api.md#durable-wake-up-dispatch).
 
 ### Staged enablement
 

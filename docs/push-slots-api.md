@@ -81,17 +81,26 @@ before enabling; endpoint-only removal is rejected, not treated as authority.
 
 Message acceptance stores one content-free wake-up per active slot in the same
 transaction as the message. Work records contain only slot/revision ownership,
-a generation, the legacy message deadline, attempt count, due time, and optional
+a generation, the notification deadline, attempt count, due time, and optional
 provider not-before time. They contain no message ID, ciphertext, conversation
 hint, session token, endpoint, or push key. Multiple accepted messages coalesce
 per slot while preserving newer in-flight generations and the latest applicable
 deadline.
 
-The dispatcher sends an empty payload with the remaining lifetime floored to
-whole seconds. Work with less than one second remaining is discarded. Delivery
-has bounded concurrency, one in-flight attempt per slot, and a finite provider
-wait. A leased SQLite claim serializes attempts across server processes; the
-transport is aborted at an absolute deadline, not merely on socket inactivity.
+The notification deadline is fixed at acceptance. A legacy message uses its
+stored expiry. A `recipient-opening` message uses its unopened retention
+deadline, acceptance + 24 hours, so a five-second message can still wake an
+offline recipient hours later. Opening neither shortens nor cancels that
+deadline, even when the message lifetime ends sooner, and a message opened just
+before the unopened retention limit does not extend it to the longer lifetime.
+Work queued before this rule keeps the deadline it was queued with.
+
+The dispatcher sends an empty payload with the time remaining to that deadline
+floored to whole seconds; retries and restarts never start a fresh window. Work
+with less than one second remaining is discarded. Delivery has bounded
+concurrency, one in-flight attempt per slot, and a finite provider wait. A
+leased SQLite claim serializes attempts across server processes; the transport
+is aborted at an absolute deadline, not merely on socket inactivity.
 Provider response bodies are discarded after reading the status. Injected adapters
 must honor the abort signal and settle after cancellation; a non-conforming adapter
 retains local ownership rather than permitting overlapping attempts. Any live
@@ -99,6 +108,10 @@ terminal stream or attentive browser stream for the identity suppresses and
 consumes the observed generation, reclaiming
 an expired lease first when recovering work after restart. The
 service worker retains its generic `0xchat-message` notification tag.
+
+Server-side suppression happens only before an attempt. Once the provider
+accepts an alert, it can arrive after the message was opened on another device
+or has expired, and removing a slot stops future attempts but cannot retract it.
 
 Pending work survives restart and respects stored due/provider times. Provider
 acceptance followed by a crash before local completion can therefore deliver
