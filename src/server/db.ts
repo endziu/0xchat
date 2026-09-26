@@ -284,9 +284,9 @@ export function createMessage(
     // Bun includes the acceptance trigger's updates in changes; only zero means an ignored insert.
     if (result.changes === 0) return null;
     markAddressesActive([envelope.sender, envelope.recipient], createdAt);
-    // Until lifecycle activation reaches push delivery (#91), wake-ups retain
-    // the signed legacy message lifetime even for dormant new-policy tests.
-    const pushDeadline = createdAt + envelope.ttl * 1000;
+    // The wake-up deadline is fixed at acceptance: the stored legacy expiry, or
+    // the unopened retention deadline for recipient-opening. Opening never
+    // shortens it, even when the opened lifetime ends sooner.
     const slots = db.query("SELECT slot_id, revision FROM push_slots WHERE address = ? AND state = 'active'")
       .all(envelope.recipient.toLowerCase()) as Array<{ slot_id: string; revision: number }>;
     const enqueue = db.query(`INSERT INTO push_work
@@ -296,7 +296,7 @@ export function createMessage(
         revision = excluded.revision,
         generation = push_work.generation + 1,
         deadline = MAX(push_work.deadline, excluded.deadline)`);
-    for (const slot of slots) enqueue.run(slot.slot_id, slot.revision, pushDeadline, createdAt);
+    for (const slot of slots) enqueue.run(slot.slot_id, slot.revision, expiresAt, createdAt);
     return { delivery_policy: policy, created_at: createdAt, opened_at: null, expires_at: expiresAt };
   }).immediate();
 }
