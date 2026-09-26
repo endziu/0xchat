@@ -347,6 +347,32 @@ test('replacement repairs slots at the cap and above it after legacy migration',
   initDb(path);
 });
 
+test('explicit enable repairs its own dead slot in place at the cap, but not a live or foreign one', async () => {
+  const installation = crypto.randomUUID();
+  const own = await (await request('subscribe', enable(installation, 'own-dead'))).json();
+  for (let i = 0; i < 4; i++) expect((await request('subscribe', enable())).status).toBe(201);
+  const other = (await (await request('subscriptions')).json()).slots
+    .find((slot: PushSlotHandle) => slot.slot_id !== own.slot_id);
+
+  // A live slot with a different endpoint still needs removal first.
+  const live = await request('subscribe', { ...enable(installation, 'live-replacement'), ...condition(own) });
+  expect((await live.json()).code).toBe('repair_needed');
+
+  markPushSubscriptionDead(own.slot_id, own.revision);
+  const dead = { ...own, revision: own.revision + 1 };
+  // Another installation cannot claim this installation's dead slot.
+  const foreign = { ...enable(other.installation_id, 'foreign'), ...condition(dead), installation_id: other.installation_id };
+  expect((await request('subscribe', foreign)).status).toBe(409);
+  const response = await request('subscribe', { ...enable(installation, 'own-repaired'), ...condition(dead) });
+  expect(response.status).toBe(201);
+  expect(await response.json()).toEqual({ ...own, revision: own.revision + 2 });
+  const slots = (await (await request('subscriptions')).json()).slots;
+  expect(slots).toHaveLength(5);
+  expect(slots.find((slot: PushSlotHandle) => slot.slot_id === own.slot_id).state).toBe('active');
+  // The repair is conditional: replaying it against the old revision fails.
+  expect((await request('subscribe', { ...enable(installation, 'own-repaired'), ...condition(dead) })).status).toBe(409);
+});
+
 test('replacement refuses another owned slot and races safely with removal', async () => {
   const firstRequest = enable();
   const first = await (await request('subscribe', firstRequest)).json();

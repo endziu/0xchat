@@ -541,8 +541,7 @@ test('suppression discards a waiting retry and never schedules catch-up after di
 const nonTemporaryFailures = [
   { name: 'configuration error', fail: () => new Error('VAPID private key not configured') },
   { name: 'status 400', fail: () => Object.assign(new Error('rejected'), { statusCode: 400 }) },
-  { name: 'status 401', fail: () => Object.assign(new Error('rejected'), { statusCode: 401 }) },
-  { name: 'status 403', fail: () => Object.assign(new Error('rejected'), { statusCode: 403 }) },
+  { name: 'status 413', fail: () => Object.assign(new Error('rejected'), { statusCode: 413 }) },
 ];
 
 test.each(nonTemporaryFailures)('$name is not temporary and never enters the retry schedule', async scenario => {
@@ -606,6 +605,72 @@ test.each([404, 410])('confirmed-dead status %s stops retrying, stays repairable
     subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/repaired-endpoint-${status}`, keys },
   });
   expect(replacement.status).toBe(200);
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => { attempts++; } });
+  await sendMessage(3600);
+  await waitFor(() => attempts === 2);
+  expect(attempts).toBe(2);
+});
+
+test('a non-retryable failure is logged without the endpoint', async () => {
+  await subscribe('secret-capability-token');
+  const logged = spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    let attempts = 0;
+    startPushDispatcher({ pollIntervalMs: 5, send: async subscription => {
+      attempts++;
+      // Bun's rejected-redirect error carries the full endpoint URL.
+      throw Object.assign(new TypeError(`UnexpectedRedirect fetching "${subscription.endpoint}"`),
+        { code: 'UnexpectedRedirect', path: subscription.endpoint });
+    } });
+    await sendMessage(3600);
+    await waitFor(() => attempts === 1 && logged.mock.calls.length > 0);
+    const output = logged.mock.calls.map(args => args.map(arg => arg instanceof Error ? `${arg} ${JSON.stringify(arg)}` : String(arg)).join(' ')).join('\n');
+    expect(output).toContain('not retryable');
+    expect(output).toContain('UnexpectedRedirect');
+    expect(output).not.toContain('secret-capability-token');
+  } finally {
+    logged.mockRestore();
+  }
+});
+
+test.each([401, 403])('auth failure %s marks the slot dead, and explicit enable repairs it in place', async status => {
+  const installationId = crypto.randomUUID();
+  const created = await request('/api/push/subscribe', bob.address, {
+    installation_id: installationId,
+    expected_revision: 0,
+    subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/old-vapid-${status}`, keys },
+  });
+  expect(created.status).toBe(201);
+  const handle = await created.json() as { slot_id: string; installation_id: string; revision: number };
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  let attempts = 0;
+  startPushDispatcher({ pollIntervalMs: 5, send: async () => {
+    attempts++;
+    throw Object.assign(new Error('unauthorized'), { statusCode: status });
+  } });
+
+  await sendMessage(3600);
+  await waitFor(() => attempts === 1);
+  // No retry, and later messages enqueue nothing for the dead slot.
+  clock.mockReturnValue(base + 60_000);
+  extendSession(alice.address, base + 600_000);
+  extendSession(bob.address, base + 600_000);
+  await sendMessage(3600);
+  await Bun.sleep(25);
+  expect(attempts).toBe(1);
+  expect(getDb().query('SELECT COUNT(*) AS count FROM push_work').get()).toEqual({ count: 0 });
+  expect(getDb().query('SELECT state, endpoint, p256dh, auth FROM push_slots').get())
+    .toEqual({ state: 'repair_needed', endpoint: null, p256dh: null, auth: null });
+
+  const repaired = await request('/api/push/subscribe', bob.address, {
+    slot_id: handle.slot_id,
+    installation_id: installationId,
+    expected_revision: handle.revision + 1,
+    subscription: { endpoint: `https://fcm.googleapis.com/fcm/send/new-vapid-${status}`, keys },
+  });
+  expect(repaired.status).toBe(201);
+  expect(await repaired.json()).toEqual({ ...handle, revision: handle.revision + 2 });
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { attempts++; } });
   await sendMessage(3600);
   await waitFor(() => attempts === 2);

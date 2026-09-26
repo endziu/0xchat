@@ -288,12 +288,15 @@ test('identity changes reject stale slot refreshes and queued removals', async (
   expect((await list()).slots).toEqual([expect.objectContaining({ slot_id: slot.slot_id })])
 })
 
+const NEEDS_REENABLE = 'Notifications stopped working on this browser. Enable them again.'
+
 test('settings explicitly repair a dead slot without consuming another slot', async () => {
   mount(alice, true)
   await settle()
   await clickNotification(tab, 'Enable notifications')
   const slot = (await list()).slots[0]
-  // The production transition used for provider 404/410, not a fabricated browser response.
+  const deadEndpoint = browserSub!.endpoint
+  // The production transition used for provider 404/410/401/403, not a fabricated browser response.
   markPushSubscriptionDead(slot.slot_id, slot.revision)
   const dead = await list()
   expect(dead.slots[0].state).toBe('repair_needed')
@@ -302,8 +305,12 @@ test('settings explicitly repair a dead slot without consuming another slot', as
   await settle()
   expect(await list()).toEqual(dead)
   expect(tab.container.querySelector('[aria-label="Enable notifications"]')?.getAttribute('aria-pressed')).toBe('false')
+  expect(tab.container.textContent).toContain(NEEDS_REENABLE)
   await clickNotification(tab, 'Enable notifications')
   expect(tab.container.querySelector('[aria-label="Disable notifications"]')?.getAttribute('aria-pressed')).toBe('true')
+  expect(tab.container.textContent).not.toContain(NEEDS_REENABLE)
+  // The browser still held the dead endpoint with the current key; it is replaced, not re-uploaded.
+  expect(browserSub!.endpoint).not.toBe(deadEndpoint)
   expect((await list()).slots).toEqual([expect.objectContaining({
     slot_id: slot.slot_id, state: 'active', revision: dead.slots[0].revision + 1,
   })])

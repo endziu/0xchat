@@ -8,6 +8,7 @@ import type { PushSlotSummary } from '../../shared/push-slot'
 export interface PushSettings {
   supported?: boolean
   subscribed?: boolean
+  repairNeeded?: boolean
   removable?: boolean
   slots?: PushSlotSummary[]
   permission?: NotificationPermission | null
@@ -33,6 +34,7 @@ export function SettingsModal({
   const {
     supported: pushSupported,
     subscribed: pushSubscribed,
+    repairNeeded: pushRepairNeeded,
     removable: pushRemovable,
     slots: pushSlots,
     permission: pushPermission,
@@ -103,6 +105,9 @@ export function SettingsModal({
                   </div>
                 )}
               </div>
+              {pushSupported && pushRepairNeeded && !pushSubscribed && pushPermission !== 'denied' && (
+                <p className="mt-2 text-sm text-neutral-400">Notifications stopped working on this browser. Enable them again.</p>
+              )}
               {pushSlots && pushSlots.length > 0 && (
                 <div className="mt-3 border-t border-neutral-800 pt-3">
                   <h4 className="text-sm">Notification subscriptions</h4>
