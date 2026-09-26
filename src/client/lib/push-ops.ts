@@ -47,6 +47,8 @@ export interface SubscribeOpDeps<Written = unknown> {
   ready: () => Promise<PushManagerLike>
   requestPermission: () => Promise<NotificationPermission>
   getVapidPublicKey: () => Promise<string>
+  // Whether the server marked this browser's slot dead (#90).
+  slotNeedsRepair: () => Promise<boolean>
   upload: (sub: PushSubscriptionJSON) => Promise<Written>
   // Release the server slot this op wrote, if it is still the owned one, and
   // report whether the browser subscription is also this op's to remove.
@@ -83,10 +85,17 @@ export async function runSubscribeOp<Written>(deps: SubscribeOpDeps<Written>): P
     // Only a live, unexpired attempt may drop a subscription to replace it (#86).
     const mayReplace = () => !deps.isStale() && deps.mayRemoveBrowser()
 
-    // A subscription made with another VAPID key makes subscribe() throw.
+    // A subscription made with another VAPID key makes subscribe() throw, and
+    // one behind a slot the server marked dead would just be uploaded again.
     const existing = await push.getSubscription()
     if (deps.isStale()) return false
-    if (existing && !matchesVapidKey(existing.options?.applicationServerKey, options.applicationServerKey)) {
+    let mustReplaceExisting = false
+    if (existing) {
+      mustReplaceExisting = !matchesVapidKey(existing.options?.applicationServerKey, options.applicationServerKey)
+      if (!mustReplaceExisting) mustReplaceExisting = await deps.slotNeedsRepair()
+      if (deps.isStale()) return false
+    }
+    if (existing && mustReplaceExisting) {
       if (!mayReplace()) return false
       await removeBrowserSubscription(existing)
       if (deps.isStale()) return false

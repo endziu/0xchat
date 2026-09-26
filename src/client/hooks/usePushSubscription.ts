@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
-import { enablePushSlot, getPushSlotState, releaseSupersededSlot, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
+import { enablePushSlot, getPushSlotState, pushSlotNeedsRepair, releaseSupersededSlot, rememberPushDisabled, removePushSlot, removeRemotePushSlot } from '../lib/push-slots'
 import type { PushSlotSummary } from '../../shared/push-slot'
 import { runSubscribeOp, runUnsubscribeOp } from '../lib/push-ops'
 import { createSerialQueue, claimGeneration } from '../lib/push-queue'
@@ -34,6 +34,8 @@ export function usePushSubscription(token: string | null, address: string | null
   const [subscribed, setSubscribed] = useState(false)
   const [removable, setRemovable] = useState(false)
   const [slots, setSlots] = useState<PushSlotSummary[]>([])
+  // The push service rejected this browser's endpoint; Enable subscribes fresh.
+  const [repairNeeded, setRepairNeeded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | null>(
     typeof Notification === 'undefined' ? null : Notification.permission,
@@ -58,11 +60,13 @@ export function usePushSubscription(token: string | null, address: string | null
       if (attempt.isStale()) return
       setSubscribed(!!sub && state.enabled)
       setSlots(state.slots)
+      setRepairNeeded(state.repairNeeded)
       setRemovable(attempt.supported)
     } catch {
       if (attempt.isStale()) return
       setSubscribed(false)
       setSlots([])
+      setRepairNeeded(false)
       setRemovable(true)
       setError('Could not connect notifications. Try enabling them again.')
     }
@@ -123,6 +127,7 @@ export function usePushSubscription(token: string | null, address: string | null
     setSubscribed(false)
     setRemovable(false)
     setSlots([])
+    setRepairNeeded(false)
     setError(null) // an old identity's failure says nothing about this one
     if (!token || !address) return
     const activeToken = token
@@ -156,6 +161,7 @@ export function usePushSubscription(token: string | null, address: string | null
       // Time spent answering the prompt does not count against the deadline.
       requestPermission: () => deadline.untimed(() => Notification.requestPermission()),
       getVapidPublicKey: async () => (await api.getVapidPublicKey()).publicKey,
+      slotNeedsRepair: () => pushSlotNeedsRepair(attempt.token),
       upload: (sub) => enablePushSlot(attempt.address, attempt.token, sub, stale),
       releaseIfOwned: (written) => releaseSupersededSlot(attempt.address, attempt.token, written, () => claim.serialized || !claim.isSupersededElsewhere()),
       mayRemoveBrowser: mayRemoveBrowser(deadline, claim),
@@ -176,7 +182,10 @@ export function usePushSubscription(token: string | null, address: string | null
         const removedCurrentInstallation = await removeRemotePushSlot(attempt.address, attempt.token, slot, stale)
         if (stale()) return
         setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
-        if (removedCurrentInstallation) setSubscribed(false)
+        if (removedCurrentInstallation) {
+          setSubscribed(false)
+          setRepairNeeded(false)
+        }
       } catch {
         if (stale()) return
         attempt.reported = true
@@ -209,5 +218,5 @@ export function usePushSubscription(token: string | null, address: string | null
     }))
   }
 
-  return { supported, subscribed, removable, slots, permission, error, subscribe, unsubscribe, removeSlot }
+  return { supported, subscribed, repairNeeded, removable, slots, permission, error, subscribe, unsubscribe, removeSlot }
 }

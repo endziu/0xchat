@@ -47,6 +47,8 @@ function subscribeDeps(
     permission?: NotificationPermission
     // A browser subscription that already exists before this op runs.
     existing?: PushSubscription
+    // The server marked this browser's slot dead (404/410/401/403).
+    slotNeedsRepair?: boolean
   },
 ): SubscribeOpDeps {
   let existing: PushSubscription | null = null
@@ -80,6 +82,7 @@ function subscribeDeps(
       await hooks.beforeVapid?.()
       return CURRENT_KEY
     },
+    slotNeedsRepair: async () => hooks.slotNeedsRepair ?? false,
     upload: async (s) => {
       state.uploads.push(s)
       await hooks.duringUpload?.()
@@ -245,6 +248,16 @@ describe('runSubscribeOp', () => {
     expect(ok).toBe(true)
     expect(state.unsubscribed).toBe(0)
     expect(state.uploads.map((s) => s.endpoint)).toEqual(['ep-current'])
+  })
+
+  test("a subscription behind this browser's dead slot is replaced even with the current VAPID key", async () => {
+    const state = makeState()
+    const dead = makeSub(state, 'ep-dead')
+    const ok = await runSubscribeOp(subscribeDeps(state, { stale: () => false, existing: dead, slotNeedsRepair: true }))
+    expect(ok).toBe(true)
+    expect(state.unsubscribed).toBe(1)
+    expect(state.uploads.map((s) => s.endpoint)).toEqual(['ep-sub'])
+    expect(state.errors).toEqual([])
   })
 
   test('an expired attempt leaves a mismatched subscription alone', async () => {

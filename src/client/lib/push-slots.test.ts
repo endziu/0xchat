@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
-import { createSession, getDb, initDb, registerPubkey } from '../../server/db'
+import { createSession, getDb, initDb, markPushSubscriptionDead, registerPubkey } from '../../server/db'
 import { createFetch } from '../../server/router'
 import * as limiters from '../../server/rate-limiters'
 import type { PushSlotHandle, PushSlotList } from '../../shared/push-slot'
@@ -52,6 +52,20 @@ async function list(): Promise<PushSlotList> {
     headers: { Authorization: `Bearer ${alice}` },
   })).json()
 }
+
+test("this browser's dead slot reads as needing repair until Enable replaces its endpoint", async () => {
+  const written = (await slots.enablePushSlot(alice, alice, subscription('before-rotation'), fresh))!
+  expect(await slots.getPushSlotState(alice, alice)).toMatchObject({ enabled: true, repairNeeded: false })
+  expect(await slots.pushSlotNeedsRepair(alice)).toBe(false)
+
+  markPushSubscriptionDead(written.slot_id, written.revision)
+  expect(await slots.getPushSlotState(alice, alice)).toMatchObject({ enabled: false, repairNeeded: true })
+  expect(await slots.pushSlotNeedsRepair(alice)).toBe(true)
+
+  const repaired = await slots.enablePushSlot(alice, alice, subscription('after-rotation'), fresh)
+  expect(repaired).toEqual({ ...written, revision: written.revision + 2 })
+  expect(await slots.getPushSlotState(alice, alice)).toMatchObject({ enabled: true, repairNeeded: false })
+})
 
 test('superseded cleanup removes exactly the slot that operation wrote', async () => {
   const written = await slots.enablePushSlot(alice, alice, subscription('own-write'), fresh)

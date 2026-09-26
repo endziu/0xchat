@@ -43,8 +43,8 @@ attentive browser stream suppresses new push attempts for that identity.
 
 Notification opt-in remains explicit for a new identity and survives reloads for
 the same identity. Recovery respects ownership, deliberate disabling, and remote
-removal. Temporary delivery failures retry durably; authentication and
-configuration failures pause until repaired. Settings allow removal of old
+removal. Temporary delivery failures retry durably; authentication failures
+mark the endpoint dead until explicit Enable replaces it (#90). Settings allow removal of old
 subscriptions within a five-subscription limit.
 
 ## User Stories
@@ -85,7 +85,7 @@ subscriptions within a five-subscription limit.
 34. As an identity removing an old subscription, I want that browser to require explicit enabling when it returns, so that automatic repair does not undo removal.
 35. As a recipient, I want temporary push failures retried without another message, so that a single message still has another notification opportunity.
 36. As a recipient, I want pending retries to survive a server restart, so that deployment does not lose the remaining attempt.
-37. As an identity whose push delivery needs repair, I want an actionable paused state without losing opt-in, so that configuration failures do not silently disable my preference.
+37. As an identity whose push delivery needs repair, I want an actionable paused state without losing opt-in, so that configuration failures do not silently disable my preference. (Superseded by #90: no pause state; settings say re-enable is needed.)
 38. As a browser participant, I want notification setup to stop waiting after 30 seconds, excluding permission-prompt time, so that a stalled browser service does not block other actions.
 39. As a browser participant using multiple tabs, I want stale or timed-out operations unable to overwrite newer subscription state, so that concurrent actions remain safe.
 40. As a notification recipient, I want a generic alert whose click focuses an existing chat client without switching its conversation, so that alerts preserve privacy and my current context.
@@ -424,8 +424,13 @@ an attempt already accepted by a provider.
 | Successful provider acceptance | Complete only the attempted work generation |
 | Confirmed-dead endpoint, including 404/410 | Delete endpoint/key material and pending work; retain repairable ownership distinct from revocation |
 | Network/timeout, 408, 429, or 5xx | Durable temporary retry with applicable provider delay |
-| Authentication failure, including 401/403 | Persist delivery pause; preserve subscription and opt-in; surface repair |
-| Missing/invalid VAPID configuration or other non-retryable request rejection | Pause affected delivery, expose an operator/client repair reason, and avoid repeated attempts |
+| Authentication failure, including 401/403 | Same as a confirmed-dead endpoint; explicit Enable replaces it in place (#90) |
+| Missing/invalid VAPID configuration or other non-retryable request rejection | Drop the attempted wake-up without a retry; log without endpoint secrets (#90) |
+
+> **Superseded (#90, #73 amendment 2026-09-26).** The pause and resume design
+> below was dropped, along with the global and per-slot pause. Nothing pauses:
+> auth failures follow the dead-endpoint path, and other non-retryable failures
+> drop the attempted generation. See `docs/push-slots-api.md`.
 
 Do not treat every error as temporary or discard opt-in on failure. Global
 configuration failure pauses affected delivery globally; an endpoint-specific

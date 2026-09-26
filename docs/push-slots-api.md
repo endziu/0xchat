@@ -14,6 +14,10 @@ IDs are opaque identifiers, not credentials. Endpoint URLs never authorize a tra
   New installation: revision `0`, omit slot ID. Existing slot or revocation:
   send its ID and latest revision. Returns `{slot_id, installation_id, revision}`.
   Only a fresh explicit enable with the current revocation revision supersedes it.
+  Naming this installation's own `repair_needed` slot at its latest revision
+  replaces the endpoint in place, as reconcile does, even at the cap (#90). A
+  live slot with a different endpoint and quarantined legacy reservations still
+  fail with `repair_needed`.
 - `POST /api/push/reconcile`: same body, slot ID required. Never creates or
   supersedes revocation. Confirms an unchanged live binding, or atomically replaces
   an owned slot's endpoint and keys when its expected revision matches. Both
@@ -30,7 +34,8 @@ Every creation, adoption, removal and replacement is serialized by an SQLite imm
 increments its revision. Confirmations of an unchanged binding increment it too,
 so a removal or write sent before a confirmation cannot match afterwards;
 pending wake-ups move to the new revision. Provider
-404/410 clears endpoint/key data, retains the slot, and increments its revision;
+404/410, and 401/403 (#90), clear endpoint/key data and pending work, retain the
+slot as `repair_needed`, and increment its revision;
 completion is conditional on the attempted ID/revision. All retained slots,
 including repair-needed slots, count toward five. Legacy excess is preserved.
 
@@ -117,7 +122,9 @@ Pending work survives restart and respects stored due/provider times. Provider
 acceptance followed by a crash before local completion can therefore deliver
 again: dispatch is intentionally at-least-once for ambiguous outcomes, not
 exactly-once. This slice makes one bounded attempt during normal operation;
-#89 adds durable retry/backoff policy and #90 adds paused failure states.
+#89 adds durable retry/backoff policy. Other non-temporary failures drop the
+attempted generation without a retry and are logged by status, or by error
+message with the endpoint redacted, since a message can embed it.
 
 Registration pruning/deletion and slot removal clear associated work
 transactionally. Session expiry/revocation leaves slots and work intact. Same-slot
@@ -186,8 +193,8 @@ different VAPID key. If the upload fails with `ownership_conflict` — typically
 the endpoint is still bound to a previous identity whose switch cleanup failed —
 it unsubscribes locally, subscribes fresh, and uploads once more; a second
 failure is reported, never retried. No endpoint is transferred: the old one dies
-at the push service, and its slot becomes `repair_needed` on the next 404/410.
-The same code also covers an endpoint held by another slot of the same identity
+at the push service, and its slot becomes `repair_needed` on the next
+dead-endpoint response. The same code also covers an endpoint held by another slot of the same identity
 (this browser lost its installation id). The retry applies there too; that old
 slot was already unreachable from this browser and stays listed, counting toward
 the five-slot cap, until it is removed.
@@ -195,3 +202,24 @@ Only a current, unexpired action may unsubscribe, so late work cannot remove a
 newer subscription. When switch cleanup fails, the switch still completes and
 the new identity is told the previous identity's alerts may continue on this
 browser until notifications are enabled here or site data is cleared.
+
+## Auth failures are dead endpoints (#90)
+
+A 401/403 from a push service almost always means the subscription was made with
+other VAPID keys, and only a new browser subscription fixes it. It follows the
+404/410 path: the slot becomes `repair_needed`, its endpoint, keys and pending
+work are removed, and new messages enqueue nothing for it. There is no pause or
+resume state.
+
+When this browser's slot is `repair_needed`, settings says notifications stopped
+working here. Enable drops the browser subscription even when its VAPID key
+matches, because re-uploading it would revive the rejected endpoint. It then
+subscribes fresh and replaces the endpoint in the same slot, so repair works at
+the five-slot cap. Nothing repairs a slot without a click; a subscription that
+breaks while no page is open stays broken until the user enables it again.
+
+Enable checks the slot once, before subscribing. If an auth failure kills the
+slot between that check and the upload, reconcile writes the rejected endpoint
+back as active. The next delivery fails the same way and marks it dead again,
+so the slot recovers on the following Enable. A legacy slot killed this way
+cannot be repaired in place; like any dead legacy slot, remove it first.
