@@ -1194,3 +1194,35 @@ test('a server requiring a newer client stops live reconnects and offers a reloa
     await waitFor(() => reload.mock.calls.length === 1)
   } finally { reload.mockRestore() }
 })
+
+test('a conversation cleared by the partner disappears from the open view live', async () => {
+  await alice.send(bobKey.address, 'before the clear', 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('before the clear'))
+  await waitFor(streamReady)
+
+  const response = await bunFetch(`${origin}/api/messages/${bobKey.address.toLowerCase()}`, {
+    method: 'DELETE', headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
+  })
+  expect(response.status).toBe(200)
+  await waitFor(() => !view.text().includes('before the clear'))
+
+  await alice.send(bobKey.address, 'after the clear', 300)
+  await waitFor(() => view.text().includes('after the clear'))
+})
+
+test('the clear button takes two taps and clears the conversation for both participants', async () => {
+  const sent = await alice.send(bobKey.address, 'to be cleared', 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('to be cleared'))
+  const button = () => view.container.querySelector<HTMLButtonElement>('button[aria-label$="lear conversation"]')!
+
+  button().click()
+  await Bun.sleep(50)
+  expect(button().getAttribute('aria-label')).toBe('Confirm clear conversation')
+  expect(await lifecycle(sent.id)).toMatchObject({ status: 'available' })
+
+  button().click()
+  await waitFor(() => !view.text().includes('to be cleared') && view.text().includes('Conversation cleared'))
+  expect(await lifecycle(sent.id)).toMatchObject({ status: 'unavailable' })
+})

@@ -85,3 +85,18 @@ test('stale unopened state preserves the final deadline and later samples never 
   elapsed = 5_100
   expect(store.display(store.now(), conditions)).toEqual([])
 })
+
+test('clearing removes messages accepted through the clear time, including ones that load later', () => {
+  const store = new ConversationMessages('alice')
+  const later = { ...message, id: 'later', created_at: 3_000 }
+  store.add([message, later])
+  store.clear(2_000)
+  expect(store.ids()).toEqual(['later'])
+  // An in-flight history or recovery page can still deliver a cleared message.
+  store.add([{ ...message, id: 'late-page', created_at: 1_500 }, message])
+  expect(store.ids()).toEqual(['later'])
+  // A stale, earlier clear never widens or narrows what was already cleared.
+  store.clear(1_000)
+  store.add([{ ...message, id: 'after', created_at: 2_500 }])
+  expect(store.ids()).toEqual(['later', 'after'])
+})

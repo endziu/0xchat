@@ -31,6 +31,10 @@ _Avoid_: Delete conversation, delete contact
 The removal of messages, including when they expire, rather than merely hiding their conversation from view.
 _Avoid_: Hide conversation
 
+**Clear conversation**:
+Message deletion of every message in a conversation, for both identities, before their lifetimes end. The conversation itself remains.
+_Avoid_: Delete conversation, hide conversation
+
 **Message lifetime**:
 The sender-selected duration a message remains available once the recipient opens that message in its conversation.
 _Avoid_: Retention period, time since sending

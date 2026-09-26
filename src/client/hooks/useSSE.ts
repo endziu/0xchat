@@ -16,6 +16,7 @@ export function useSSE(
   onMessage: (data: unknown) => void,
   onDisconnect?: (address: string) => void,
   onExpiryUpdate?: (data: unknown) => void,
+  onConversationCleared?: (data: unknown) => void,
 ) {
   const [connected, setConnected] = useState<ConnectionEpoch | null>(null)
   // Updated synchronously at the transport boundary, before Preact renders.
@@ -74,6 +75,7 @@ export function useSSE(
       onMessage,
       onExpiryUpdate,
       onUserDisconnected: onDisconnect,
+      onConversationCleared,
     })
     const update = () => {
       conn.setActive(document.visibilityState === 'visible')
@@ -100,7 +102,7 @@ export function useSSE(
       conn.close()
       setConnected(null)
     }
-  }, [token, onMessage, onDisconnect, onExpiryUpdate])
+  }, [token, onMessage, onDisconnect, onExpiryUpdate, onConversationCleared])
 
   return { connected: connected !== null, connection }
 }

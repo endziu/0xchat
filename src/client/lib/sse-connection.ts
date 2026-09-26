@@ -31,6 +31,8 @@ export interface SseConnectionOptions {
   /** A message's authoritative lifecycle changed (its first opening). */
   onExpiryUpdate?: (data: unknown) => void
   onUserDisconnected?: (address: string) => void
+  /** A conversation's messages were deleted through `cleared_at`. */
+  onConversationCleared?: (data: unknown) => void
   /** A socket that was open has been lost (fires before the reconnect delay). */
   onDisconnect?: () => void
   // --- test seams (defaults are the production behavior) ---
@@ -46,6 +48,7 @@ export class SseConnection {
   private readonly onMessage: ((data: unknown) => void) | undefined
   private readonly onExpiryUpdate: ((data: unknown) => void) | undefined
   private readonly onUserDisconnected: ((address: string) => void) | undefined
+  private readonly onConversationCleared: ((data: unknown) => void) | undefined
   private readonly onDisconnect: (() => void) | undefined
   private readonly createEventSource: (url: string) => EventSource
   private readonly setTimer: (fn: () => void, ms: number) => unknown
@@ -68,6 +71,7 @@ export class SseConnection {
     this.onMessage = options.onMessage
     this.onExpiryUpdate = options.onExpiryUpdate
     this.onUserDisconnected = options.onUserDisconnected
+    this.onConversationCleared = options.onConversationCleared
     this.onDisconnect = options.onDisconnect
     this.createEventSource = options.createEventSource ?? ((url) => new EventSource(url))
     this.setTimer = options.setTimeout ?? ((fn, ms) => setTimeout(fn, ms))
@@ -170,6 +174,15 @@ export class SseConnection {
         this.onUserDisconnected?.((JSON.parse(e.data) as { address: string }).address)
       } catch (err) {
         console.error('SSE: failed to parse disconnect data:', err)
+      }
+    })
+
+    es.addEventListener('conversation-cleared', (e: MessageEvent) => {
+      if (this.es !== es || this.closed || this.suspended) return
+      try {
+        this.onConversationCleared?.(JSON.parse(e.data))
+      } catch (err) {
+        console.error('SSE: failed to parse conversation clear:', err)
       }
     })
 

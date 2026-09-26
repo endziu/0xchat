@@ -1,7 +1,7 @@
 import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
-import { createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
+import { clearConversation, createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
+import { clearIpLimiter, clearLimiter, recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { clientUpdateRequired } from '../lifecycle-gate.ts';
 import { requestPushDispatch } from '../push.ts';
@@ -157,6 +157,26 @@ export async function handleGetConversations({ req, ip, lifecycleGate }: Context
   return json({
     conversations: convs.map((c) => ({ address: c.counterparty, last_message_at: c.last_message_at })),
   });
+}
+
+export async function handleClearConversation({ req, path, ip, lifecycleGate }: Context): Promise<Response> {
+  const address = getSessionAddress(req);
+  if (!address) {
+    warn('[unauth] clear conversation no session', ip);
+    return json({ error: 'Unauthorized' }, 401);
+  }
+  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
+  if (clearIpLimiter.hit(ip) || clearLimiter.hit(address)) {
+    warn('[rate-limit] clear conversation', address, ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
+  const counterparty = path.split('/')[3]!.toLowerCase();
+  const { cleared_at, deleted } = clearConversation(address, counterparty);
+  // Each side hears which conversation was cleared, named by its partner.
+  notify(address, 'conversation-cleared', { address: counterparty, cleared_at });
+  notify(counterparty, 'conversation-cleared', { address, cleared_at });
+  log('[clear]', address, counterparty, `deleted=${deleted}`);
+  return json({ cleared_at });
 }
 
 export async function handleOpenMessages({ req, path, ip, lifecycleGate }: Context): Promise<Response> {

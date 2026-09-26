@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
-import { ArrowLeft, Send, Copy, Check, Plus, X } from 'lucide-preact'
+import { ArrowLeft, Send, Copy, Check, Plus, X, Trash2 } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { compressImageFile, ImageTooLargeError } from '../lib/image'
 import { rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
@@ -23,13 +23,15 @@ interface MessagePaneProps {
   openingFailed?: boolean
   onRetryOpening?: () => void
   onSendMessage: (plaintext: string, ttl: number) => Promise<any>
+  // Deletes every message in the conversation, for both participants.
+  onClear: () => Promise<void>
   onBack: () => void
 }
 
 const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
 const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function MessagePane({ recipientAddress, messages, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, messages, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onClear, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   // Resolved per conversation (the pane is keyed by recipient) and again
@@ -39,6 +41,11 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
   useEffect(() => subscribeDefaultLifetimeSetting(() => setTtl(resolveComposerLifetime())), [])
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Clearing is irreversible for both sides, so it takes two taps.
+  const [clearConfirm, setClearConfirm] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const clearConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(clearConfirmTimeout.current), [])
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [compressingImage, setCompressingImage] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -165,6 +172,23 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
     } finally { setSending(false) }
   }
 
+  const handleClear = async () => {
+    clearTimeout(clearConfirmTimeout.current)
+    if (!clearConfirm) {
+      setClearConfirm(true)
+      clearConfirmTimeout.current = setTimeout(() => setClearConfirm(false), 3000)
+      return
+    }
+    setClearConfirm(false)
+    setClearing(true)
+    try {
+      await onClear()
+      toast('Conversation cleared', 'success')
+    } catch (err: any) {
+      toast(err.message || 'Failed to clear conversation', 'error')
+    } finally { setClearing(false) }
+  }
+
   return (
     <div className="flex flex-col h-full" onPaste={handlePaste}>
       <div className="flex items-center gap-2 p-2 border-b border-neutral-800">
@@ -175,6 +199,15 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
         </span>
         <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" aria-label="Copy address" className="border-0">
           {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+        <button
+          onClick={handleClear}
+          disabled={clearing}
+          title={clearConfirm ? 'Tap again to clear for both of you' : 'Clear conversation'}
+          aria-label={clearConfirm ? 'Confirm clear conversation' : 'Clear conversation'}
+          className={`border-0 ${clearConfirm ? 'text-red-400' : ''}`}
+        >
+          {clearConfirm ? <Check size={14} /> : <Trash2 size={14} />}
         </button>
       </div>
 
