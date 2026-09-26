@@ -53,8 +53,6 @@ export interface PushClock {
 /** Time budget for one action, started before it queues for anything. */
 export interface PushDeadline {
   isExpired: () => boolean
-  /** Milliseconds left, frozen while `untimed` runs. */
-  remaining: () => number
   /** Resolves once the budget is spent. */
   expired: Promise<void>
   /** Run `wait` with the clock stopped — for time the user spends in a prompt. */
@@ -130,7 +128,6 @@ function createDeadline(clock: PushClock, ms: number): PushDeadline {
   arm()
   return {
     isExpired: () => done,
-    remaining: () => done ? 0 : Math.max(0, paused ? remaining : remaining - (clock.now() - since)),
     expired,
     async untimed(wait) {
       if (!done && paused++ === 0) {

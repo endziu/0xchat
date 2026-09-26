@@ -349,10 +349,14 @@ Late completion must not upload, mark enabled, or delete a newer subscription.
 Use server revision checks and browser operation ownership together; a local
 generation alone cannot reject a server request already in flight. Cleanup
 may remove only an artifact still demonstrably owned by that stale operation.
-While an unresolved native mutation could affect a shared subscription, defer
-conflicting subscription mutation and offer recovery without blocking identity
-switching. Reconcile actual browser/server state after it settles. Persist
-enough unresolved-operation state to handle reload and another tab taking over.
+While an unresolved native mutation could affect a shared subscription, hold the
+origin lock until it settles so other tabs defer conflicting mutation, without
+blocking identity switching. Reconcile actual browser/server state after it
+settles. A reload drops the lock, and a browser cannot observe a closed page's
+native promise. Expired work therefore never removes a browser subscription,
+and server revisions reject what the closed page already sent. The residual gap
+(a native unsubscribe already started by a closed page) is accepted; see
+[the push-slot API contract](push-slots-api.md).
 
 ### 8. Deliver and retry one content-free wake-up per endpoint
 

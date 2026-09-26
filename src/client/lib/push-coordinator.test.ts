@@ -255,20 +255,20 @@ test('time spent in the permission prompt does not count toward the deadline', a
   native.resolve()
 })
 
-test('a deadline reports the budget left, frozen while the permission prompt is open', async () => {
+test('a deadline stops while the permission prompt is open', async () => {
   const origin = createOrigin()
   const deadline = origin.open().startDeadline()
   const prompt = deferred()
 
   origin.clock.advance(10_000)
-  expect(deadline.remaining()).toBe(PUSH_TIMEOUT_MS - 10_000)
   const answering = deadline.untimed(() => prompt.promise)
   origin.clock.advance(5 * 60_000)
-  expect(deadline.remaining()).toBe(PUSH_TIMEOUT_MS - 10_000)
+  expect(deadline.isExpired()).toBe(false)
 
   prompt.resolve()
   await answering
-  origin.clock.advance(PUSH_TIMEOUT_MS)
-  expect(deadline.remaining()).toBe(0)
+  origin.clock.advance(PUSH_TIMEOUT_MS - 10_001)
+  expect(deadline.isExpired()).toBe(false)
+  origin.clock.advance(1)
   expect(deadline.isExpired()).toBe(true)
 })

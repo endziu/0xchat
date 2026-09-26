@@ -88,7 +88,8 @@ export async function releaseSupersededSlot(address: string, token: string,
   if (!written) return !active
   if (active?.slot_id !== written.slot_id || active.revision !== written.revision) return false
   const handle = await api.unsubscribePush(condition(installation, written), token)
-  save(address, { enabled: false, handle })
+  // Another tab may have enabled again while this response was in flight.
+  if (safe()) save(address, { enabled: false, handle })
   return true
 }
 
@@ -105,9 +106,11 @@ export async function removePushSlot(address: string, token: string, isStale: ()
 }
 
 /** Remote removal deliberately leaves the local browser subscription untouched. */
-export async function removeRemotePushSlot(address: string, token: string, slot: PushSlotHandle): Promise<boolean> {
+export async function removeRemotePushSlot(address: string, token: string, slot: PushSlotHandle,
+  isStale: () => boolean): Promise<boolean> {
   const removesCurrentInstallation = slot.installation_id === installationId()
   const handle = await api.unsubscribePush(condition(slot.installation_id, slot), token)
-  if (removesCurrentInstallation) save(address, { enabled: false, handle })
+  // As in removePushSlot: a late response must not overwrite a newer enable.
+  if (removesCurrentInstallation && !isStale()) save(address, { enabled: false, handle })
   return removesCurrentInstallation
 }

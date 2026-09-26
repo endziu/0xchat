@@ -173,7 +173,7 @@ export function usePushSubscription(token: string | null, address: string | null
     return coordinate(attempt, deadline, undefined, async (stale) => {
       if (stale()) return
       try {
-        const removedCurrentInstallation = await removeRemotePushSlot(attempt.address, attempt.token, slot)
+        const removedCurrentInstallation = await removeRemotePushSlot(attempt.address, attempt.token, slot, stale)
         if (stale()) return
         setSlots(slots => slots.filter(current => current.slot_id !== slot.slot_id))
         if (removedCurrentInstallation) setSubscribed(false)

@@ -702,12 +702,16 @@ test.each([
   ['the server slot lookup', 'fails', '/push/subscriptions'],
   ['the server write', 'succeeds', '/push/subscribe'],
   ['the server write', 'fails', '/push/subscribe'],
+  // Enabling again over an existing binding confirms it through reconcile.
+  ['the server reconciliation', 'succeeds', '/push/reconcile'],
+  ['the server reconciliation', 'fails', '/push/reconcile'],
 ] as const)('an enable stalled in %s times out, and a request that %s late leaves the newer binding alone',
   async (_phase, outcome, suffix) => {
     const clock = createClock()
-      const timed = openTab({ clock })
+    const timed = openTab({ clock })
     mountTab(timed, alice, true)
     await settle()
+    if (suffix === '/push/reconcile') expect(await timed.push.subscribe()).toBe(true)
     const held = holdNext(suffix)
 
     const enabling = timed.push.subscribe()
@@ -773,6 +777,48 @@ test.each([
   ['the server removal', 'fails', '/push/unsubscribe'],
 ] as const)('a disable stalled in %s times out, and a request that %s late leaves the newer binding alone',
   (_phase, outcome, suffix) => disableStalledIn(suffix, outcome))
+
+test('a timed-out slot removal whose response lands late cannot turn off a newer enable', async () => {
+  const clock = createClock()
+  const timed = openTab({ clock })
+  mountTab(timed, alice, true)
+  await settle()
+  expect(await timed.push.subscribe()).toBe(true)
+  const slot = (await list()).slots[0]
+
+  // The removal commits on the server, but its response stalls.
+  const committed = deferred()
+  const respond = deferred()
+  const normalFetch = globalThis.fetch
+  let hold = true
+  globalThis.fetch = Object.assign(async (input: string | URL | Request, options?: RequestInit) => {
+    const response = await normalFetch(input, options)
+    if (hold && String(input).endsWith('/push/unsubscribe')) {
+      hold = false
+      committed.resolve()
+      await respond.promise
+    }
+    return response
+  }, { preconnect: normalFetch.preconnect })
+
+  const removing = timed.push.removeSlot(slot)
+  await committed.promise
+  clock.advance(30_000)
+  await removing
+  await settle()
+  expect(timed.container.textContent).toContain(TIMED_OUT)
+
+  const reloaded = await reload(timed, clock)
+  expect(await reloaded.push.subscribe()).toBe(true)
+  respond.resolve()
+  await settle()
+
+  // A fresh visit still reads notifications as on for this identity.
+  const visiting = openTab({ clock })
+  mountTab(visiting, alice, true)
+  await settle()
+  expect(toggleState(visiting, 'Disable notifications')).toBe('true')
+})
 
 test('a disable stuck behind another tab times out so the identity can still switch', async () => {
   const clock = createClock()
