@@ -2,12 +2,13 @@ import { useState, useEffect } from 'preact/hooks'
 import { ConversationList } from './ConversationList'
 import { MessagePane } from './MessagePane'
 import { useConversations } from '../hooks/useConversations'
-import { useMessages } from '../hooks/useMessages'
+import { parseConversationCleared, useMessages } from '../hooks/useMessages'
 import { useSSE } from '../hooks/useSSE'
 import { useLatest } from '../hooks/useLatest'
 import { reloadForUpdate, useClientUpdateRequired } from '../hooks/useClientUpdate'
 import { Keypair } from '../lib/burner'
 import { api } from '../lib/api'
+import { markConversationSeen } from '../lib/contacts'
 import { Plus, X, QrCode } from 'lucide-preact'
 import { QRModal } from './QRModal'
 
@@ -37,6 +38,15 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     if (recipientAddress) applyExpiryUpdate(data)
   })
 
+  // Nothing is left to read in a cleared conversation, open or not.
+  const handleConversationCleared = useLatest((data: unknown) => {
+    const cleared = parseConversationCleared(data)
+    if (!cleared) return
+    markConversationSeen(cleared.address, cleared.cleared_at)
+    refreshConversations()
+    applyConversationCleared(data)
+  })
+
   const handleDisconnect = useLatest((address: string) => {
     refreshConversations()
     if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
@@ -46,10 +56,17 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
 
   // Reconnecting cannot succeed once the server requires a newer client.
   const updateRequired = useClientUpdateRequired()
-  const { connected, connection } = useSSE(updateRequired ? null : token, handleSSE, handleDisconnect, handleExpiryUpdate)
-  const { messages, recovering, sendMessage, addMessage, applyExpiryUpdate, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
+  const { connected, connection } = useSSE(updateRequired ? null : token, handleSSE, handleDisconnect, handleExpiryUpdate, handleConversationCleared)
+  const { messages, recovering, sendMessage, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
+
+  const handleClearConversation = async () => {
+    if (!recipientAddress) return
+    const clearedAt = await clearConversation()
+    markConversationSeen(recipientAddress, clearedAt)
+    refreshConversations()
+  }
 
   const handleDeleteConversation = (address: string) => {
     deleteConversation(address)
@@ -154,6 +171,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
               openingFailed={openingFailed}
               onRetryOpening={retryOpening}
               onSendMessage={sendMessage}
+              onClear={handleClearConversation}
               onBack={() => navigate('/chat')}
             />
           ) : (

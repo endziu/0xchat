@@ -140,6 +140,17 @@ async function follow(
             const message = seen.get(input.id)
             if (!signal.aborted && message && applyExpiryUpdate(message, input)) lifecycle(message)
           } catch { /* Invalid lifecycle events never alter displayed messages. */ }
+        } else if (event.event === 'conversation-cleared') {
+          try {
+            const input: unknown = JSON.parse(event.data)
+            if (!input || typeof input !== 'object' || !('address' in input) || input.address !== partner
+              || !('cleared_at' in input) || !Number.isSafeInteger(input.cleared_at)) continue
+            const clearedAt = input.cleared_at as number
+            for (const [id, message] of seen) {
+              if (message.created_at <= clearedAt) { seen.delete(id); unavailable(id) }
+            }
+            status('Conversation cleared')
+          } catch { /* Invalid clear events never alter displayed messages. */ }
         }
       }
       if (!signal.aborted) throw new Error('Live connection closed')

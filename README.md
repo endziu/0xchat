@@ -12,7 +12,7 @@ Open the app and it creates a fresh **burner identity** in your browser. Share i
 - Lets people contact each other directly by address or QR code.
 - Encrypts and signs messages in the browser before sending them.
 - Delivers messages live and can send optional, content-free push alerts.
-- Deletes messages after the sender-selected expiry time.
+- Deletes messages after the sender-selected expiry time, or right away when either side clears the conversation.
 - Supports text and encrypted image attachments.
 - Works as an installable PWA on mobile and desktop.
 - Lets you export/import your identity and delete your account.
@@ -160,6 +160,10 @@ identity cycling. Message opening is limited separately to 120 requests per minu
 per recipient address across devices and networks, and 240 per minute per IP
 across recipients. Opening accepts 1–100 distinct IDs per batch with an 8 KiB
 body limit, including streamed bodies. Registration writes are limited to 10 per minute per IP.
+
+Clearing a conversation (`DELETE /api/messages/:address`) deletes every message in
+it for both identities and is limited to 10 per minute per identity and 20 per
+minute per IP.
 
 Message recovery and lifecycle lookup each have separate budgets of 120 requests
 per minute per identity and 240 per minute per IP. Recovery counts both initial

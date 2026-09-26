@@ -42,6 +42,15 @@ function sameWork(left: MessageWork | null, right: MessageWork): boolean {
     && left.attentionEpoch === right.attentionEpoch
 }
 
+/** A `conversation-cleared` event: the partner's address and the clear time, or null if malformed. */
+export function parseConversationCleared(input: unknown): { address: string; cleared_at: number } | null {
+  if (typeof input !== 'object' || input === null) return null
+  const { address, cleared_at } = input as { address?: unknown; cleared_at?: unknown }
+  if (typeof address !== 'string' || !/^0x[0-9a-f]{40}$/.test(address)) return null
+  if (!Number.isSafeInteger(cleared_at) || (cleared_at as number) < 0) return null
+  return { address, cleared_at: cleared_at as number }
+}
+
 /** Drain a bounded recovery interval, checking validity at each async boundary. */
 async function recoverInterval(
   page: RecoveryPage,
@@ -510,6 +519,28 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     rerender()
   }, [identity, recipientAddress, rerender])
 
+  // Clearing is a removal, so it applies whether or not the view is
+  // synchronized; the store also rejects cleared messages that load later.
+  const applyConversationCleared = useCallback((input: unknown) => {
+    const cleared = parseConversationCleared(input)
+    if (!cleared || cleared.address !== recipientAddress?.toLowerCase()) return
+    storeRef.current.clear(cleared.cleared_at)
+    rerender()
+  }, [recipientAddress, rerender])
+
+  /** Deletes every message in this conversation for both participants; returns the clear time. */
+  const clearConversation = useCallback(async (): Promise<number> => {
+    if (!recipientAddress || !token) throw new Error('Not ready to clear the conversation')
+    const generation = loadGenRef.current
+    const { cleared_at } = await api.clearConversation(recipientAddress, token)
+    // Another conversation's store must not be cleared by a late response.
+    if (generation === loadGenRef.current) {
+      storeRef.current.clear(cleared_at)
+      rerender()
+    }
+    return cleared_at
+  }, [recipientAddress, token, rerender])
+
   // A failed initial load retries the load; after that, a failed refresh
   // retries synchronization without discarding loaded history.
   const retry = useCallback(() => {
@@ -526,5 +557,5 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     .filter(message => message.delivery_policy === 'legacy' || message.opened_at !== null).map(message => message.id))
   const openingFailed = storeRef.current.hasFailedOpenings()
 
-  return { messages, recovering: !isSynchronized(), loading, error, olderError, hasMore, loadingOlder, fetchOlder, sendMessage, recipientPubkey, addMessage, applyExpiryUpdate, refresh: retry, openingFailed, retryOpening }
+  return { messages, recovering: !isSynchronized(), loading, error, olderError, hasMore, loadingOlder, fetchOlder, sendMessage, recipientPubkey, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, refresh: retry, openingFailed, retryOpening }
 }

@@ -178,6 +178,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
+  clearConversation: (address: string, token: string): Promise<{ cleared_at: number }> =>
+    request(`/api/messages/${address}`, { method: 'DELETE' }, token),
+
   getConversations: (token: string): Promise<{ conversations: Conversation[] }> =>
     request('/api/conversations', {}, token),
 

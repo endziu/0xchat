@@ -428,6 +428,20 @@ export function deleteExpiredMessages(): void {
   db.query('DELETE FROM messages WHERE expires_at <= ?').run(Date.now());
 }
 
+/**
+ * Deletes every message between two identities accepted up to now, in both
+ * directions. Clients drop what they hold through the returned time.
+ */
+export function clearConversation(address: string, counterparty: string): { cleared_at: number; deleted: number } {
+  return db.transaction(() => {
+    const now = Date.now();
+    const { changes } = db.query(`DELETE FROM messages WHERE created_at <= ?
+      AND ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))`)
+      .run(now, address, counterparty, counterparty, address);
+    return { cleared_at: now, deleted: changes };
+  }).immediate();
+}
+
 export function deleteAddressSessions(address: string): void {
   const normalized = address.toLowerCase();
   db.query('DELETE FROM sessions WHERE address = ?').run(normalized);

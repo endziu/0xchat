@@ -51,7 +51,7 @@ terminal width. Chat shows recent messages that fit the terminal; use `read --al
 to retrieve the rest.
 
 Chat uses the terminal's alternate screen, removes expired messages from its
-display, and restores the previous screen on exit. Message input history is not
+display (and all of them when the conversation is cleared from the browser), and restores the previous screen on exit. Message input history is not
 saved. Incoming control sequences are escaped before rendering.
 
 ## Two identities on one machine

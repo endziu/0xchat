@@ -85,6 +85,7 @@ export class ConversationMessages {
   private readonly updatesBeforeLoad = new Map<string, MessageLifecycle>()
   private readonly self: string
   private serverOffset: number | null = null
+  private clearedThrough = -Infinity
 
   constructor(identityAddress: string) {
     this.self = identityAddress.toLowerCase()
@@ -107,6 +108,10 @@ export class ConversationMessages {
   add(messages: DecryptedMessage[], options: { staged?: boolean } = {}): void {
     for (const message of messages) {
       if (this.removed.has(message.id)) continue
+      if (message.created_at <= this.clearedThrough) {
+        this.remove(message.id)
+        continue
+      }
       const existing = this.entries.get(message.id)
       if (existing) {
         this.applyTo(existing, message)
@@ -141,6 +146,17 @@ export class ConversationMessages {
     }
     const prior = this.updatesBeforeLoad.get(id)
     this.updatesBeforeLoad.set(id, prior ? mergeLifecycle(prior, lifecycle) : pickLifecycle(lifecycle))
+  }
+
+  /**
+   * Removes every message accepted through `clearedAt`, including ones a
+   * recovery or history request still in flight delivers later.
+   */
+  clear(clearedAt: number): void {
+    this.clearedThrough = Math.max(this.clearedThrough, clearedAt)
+    for (const [id, entry] of this.entries) {
+      if (entry.message.created_at <= this.clearedThrough) this.remove(id)
+    }
   }
 
   ids(): string[] {

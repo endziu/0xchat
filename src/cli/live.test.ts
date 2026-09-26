@@ -347,3 +347,15 @@ test('chat exits with the update action when sending requires a newer client', a
   expect(cli.output()).not.toContain('Send failed')
   expect(rejections).toBe(1)
 })
+
+test('chat drops messages when the partner clears the conversation', async () => {
+  await alice.send(bob.identity.address, 'cleared by partner', 300)
+  const cli = start('chat')
+  await until(() => cli.screen().includes('cleared by partner'), 'initial message')
+  await alice['request'](`/api/messages/${bob.identity.address.toLowerCase()}`, 'DELETE')
+  await until(() => cli.screen().includes('Conversation cleared'), 'clear event')
+  expect(cli.screen()).not.toContain('cleared by partner')
+  clock.mockReturnValue(accepted + 1)
+  await alice.send(bob.identity.address, 'sent after clearing', 300)
+  await until(() => cli.screen().includes('sent after clearing'), 'later message')
+}, 10_000)

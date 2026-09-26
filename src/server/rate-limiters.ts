@@ -42,6 +42,10 @@ export const openingIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });
 export const stateLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
 export const stateIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });
 
+/** Clearing a conversation is a rare, deliberate action. */
+export const clearLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+export const clearIpLimiter = new RateLimiter({ max: 20, windowMs: MINUTE });
+
 /** Recovery pages have their own budget so catching up does not block other operations. */
 export const recoveryLimiter = new RateLimiter({ max: 120, windowMs: MINUTE });
 export const recoveryIpLimiter = new RateLimiter({ max: 240, windowMs: MINUTE });

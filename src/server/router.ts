@@ -5,7 +5,7 @@ import { TRUSTED_PROXY_IPS } from './trusted-proxy.ts';
 import { handleRegisterChallenge, handleRegister, regStore } from './routes/register.ts';
 import { handleAuthChallenge, handleAuthSession, authStore } from './routes/auth.ts';
 import { handleGetPubkey } from './routes/pubkey.ts';
-import { handleMessageStates, handleRecoverMessages, handleOpenMessages, handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
+import { handleClearConversation, handleMessageStates, handleRecoverMessages, handleOpenMessages, handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
 import { handleGetSSEToken, handleSSE, handleSSEAttention, cleanupSseTokens } from './routes/events.ts';
 import { handleListPush, handleReconcilePush, handleGetVapidPublicKey, handleSubscribePush, handleUnsubscribePush } from './routes/push.ts';
 import { handleDeleteAddress } from './routes/account.ts';
@@ -35,6 +35,7 @@ const routes: Route[] = [
   { method: 'POST',   test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}\/state$/), handler: handleMessageStates },
   { method: 'POST',   test: eq('/api/messages'),                        handler: handleSendMessage },
   { method: 'GET',    test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}$/), handler: handleGetMessages },
+  { method: 'DELETE', test: re(/^\/api\/messages\/0x[0-9a-fA-F]{40}$/), handler: handleClearConversation },
   { method: 'GET',    test: eq('/api/conversations'),                   handler: handleGetConversations },
   { method: 'DELETE', test: re(/^\/api\/addresses\/.+$/),               handler: handleDeleteAddress },
   { method: 'POST',   test: eq('/api/events/token'),                    handler: handleGetSSEToken },
