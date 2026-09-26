@@ -286,7 +286,7 @@ export function createMessage(
     markAddressesActive([envelope.sender, envelope.recipient], createdAt);
     // The wake-up deadline is fixed at acceptance: the stored legacy expiry, or
     // the unopened retention deadline for recipient-opening. Opening never
-    // shortens it, even when the opened lifetime ends sooner.
+    // shortens it, even when the message lifetime ends sooner.
     const slots = db.query("SELECT slot_id, revision FROM push_slots WHERE address = ? AND state = 'active'")
       .all(envelope.recipient.toLowerCase()) as Array<{ slot_id: string; revision: number }>;
     const enqueue = db.query(`INSERT INTO push_work

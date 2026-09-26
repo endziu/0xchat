@@ -8,6 +8,7 @@ import { startPushDispatcher, stopPushDispatcher } from './push.ts';
 import { sendPushNotification } from './push-provider.ts';
 import { createFetch } from './router.ts';
 import { LifecycleGate } from './lifecycle-gate.ts';
+import { UNOPENED_RETENTION_MS } from '../shared/message-envelope.ts';
 import * as limiters from './rate-limiters.ts';
 import { identity } from './test-identity.ts';
 
@@ -78,6 +79,55 @@ async function sendMessage(ttl = 300) {
   const response = await request('/api/messages', alice.address, envelope);
   expect(response.status).toBe(201);
   return envelope.id;
+}
+
+const HOUR_MS = 3_600_000;
+
+// Replaces only the HTTP side; with no gate it serves the legacy policy.
+function serveWithGate(lifecycleGate?: LifecycleGate) {
+  server.stop(true);
+  server = Bun.serve({ port: 0, fetch: createFetch(lifecycleGate ? { lifecycleGate } : {}) });
+}
+
+function extendSessions(expiresAt: number) {
+  for (const person of [alice, bob]) extendSession(person.address, expiresAt);
+}
+
+// Subscribes Bob, activates recipient-opening and freezes the clock; returns that time.
+async function startRecipientOpening(endpoint: string) {
+  await subscribe(endpoint);
+  serveWithGate(new LifecycleGate(true));
+  const base = Date.now();
+  clock = spyOn(Date, 'now').mockReturnValue(base);
+  extendSessions(base + 2 * UNOPENED_RETENTION_MS);
+  return base;
+}
+
+function startTtlRecordingDispatcher(): number[] {
+  const ttls: number[] = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async (_subscription, _payload, options) => {
+    ttls.push(options.TTL);
+  } });
+  return ttls;
+}
+
+async function openAsBob(id: string) {
+  const response = await request(`/api/messages/${alice.address}/open`, bob.address, { ids: [id] });
+  expect(response.status).toBe(200);
+  const { results } = await response.json() as { results: Array<{ status: string; expires_at: number }> };
+  expect(results[0].status).toBe('available');
+  return results[0];
+}
+
+async function openBobEventStream(headers: Record<string, string> = {}) {
+  const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, ...headers },
+  });
+  const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
+  const stream = await fetch(new URL(`/api/events?token=${token}`, server.url));
+  const reader = stream.body!.getReader();
+  await reader.read();
+  return reader;
 }
 
 test('accepted messages durably fan out empty wake-ups with the remaining legacy deadline', async () => {
@@ -448,13 +498,7 @@ test('a live identity-wide SSE stream suppresses and discards its observed wake-
   let deliveries = 0;
   startPushDispatcher({ pollIntervalMs: 5, send: async () => { deliveries++; } });
 
-  const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
-  });
-  const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
-  const stream = await fetch(new URL(`/api/events?token=${token}`, server.url));
-  const reader = stream.body!.getReader();
-  await reader.read();
+  const reader = await openBobEventStream({ 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' });
 
   await sendMessage();
   await Bun.sleep(25);
@@ -480,13 +524,7 @@ test('suppression discards a waiting retry and never schedules catch-up after di
   await sendMessage(3600);
   await waitFor(() => failures === 1);
 
-  const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${bob.address}` },
-  });
-  const { sse_token: token } = await tokenResponse.json() as { sse_token: string };
-  const stream = await fetch(new URL(`/api/events?token=${token}`, server.url));
-  const reader = stream.body!.getReader();
-  await reader.read();
+  const reader = await openBobEventStream();
 
   clock.mockReturnValue(base + 60_000);
   await Bun.sleep(25);
@@ -839,85 +877,43 @@ test('restart preserves future due time and provider not-before without extendin
   expect(deliveries).toBe(1);
 });
 
-const HOUR_MS = 3_600_000;
-const RETENTION_MS = 24 * HOUR_MS;
-
-function restartServer(lifecycleGate?: LifecycleGate) {
-  server.stop(true);
-  server = Bun.serve({ port: 0, fetch: createFetch(lifecycleGate ? { lifecycleGate } : {}) });
-}
-
-function extendSessions(expiresAt: number) {
-  for (const person of [alice, bob]) extendSession(person.address, expiresAt);
-}
-
-function startTtlRecordingDispatcher(): number[] {
-  const ttls: number[] = [];
-  startPushDispatcher({ pollIntervalMs: 5, send: async (_subscription, _payload, options) => {
-    ttls.push(options.TTL);
-  } });
-  return ttls;
-}
-
-async function openAsBob(id: string) {
-  const response = await request(`/api/messages/${alice.address}/open`, bob.address, { ids: [id] });
-  expect(response.status).toBe(200);
-  const { results } = await response.json() as { results: Array<{ status: string; expires_at: number }> };
-  expect(results[0].status).toBe('available');
-  return results[0];
-}
-
-test('a five-second recipient-opening message wakes the recipient hours later with floored remaining retention', async () => {
-  await subscribe('retention-hours');
-  restartServer(new LifecycleGate(true));
-  const base = Date.now();
-  clock = spyOn(Date, 'now').mockReturnValue(base);
+test('a five-second recipient-opening message wakes the recipient hours later with the floored time to its unopened retention limit', async () => {
+  const base = await startRecipientOpening('retention-hours');
   await sendMessage(5);
 
   clock.mockReturnValue(base + 3 * HOUR_MS + 500);
   const ttls = startTtlRecordingDispatcher();
   await waitFor(() => ttls.length === 1);
-  expect(ttls).toEqual([21 * 3600 - 1]);
+  expect(ttls).toEqual([21 * HOUR_MS / 1000 - 1]);
 });
 
 test.each([
   { remainingMs: 1_000, expected: [1] as number[] },
   { remainingMs: 999, expected: [] as number[] },
-])('recipient-opening work with $remainingMs ms of retention left sends $expected', async ({ remainingMs, expected }) => {
-  await subscribe('retention-edge');
-  restartServer(new LifecycleGate(true));
-  const base = Date.now();
-  clock = spyOn(Date, 'now').mockReturnValue(base);
+])('recipient-opening work $remainingMs ms before its unopened retention limit sends $expected', async ({ remainingMs, expected }) => {
+  const base = await startRecipientOpening('retention-edge');
   await sendMessage(5);
 
-  clock.mockReturnValue(base + RETENTION_MS - remainingMs);
+  clock.mockReturnValue(base + UNOPENED_RETENTION_MS - remainingMs);
   const ttls = startTtlRecordingDispatcher();
   if (expected.length > 0) await waitFor(() => ttls.length === expected.length);
   await Bun.sleep(15);
   expect(ttls).toEqual(expected);
 });
 
-test('opening near the retention limit keeps the retention deadline despite a longer lifetime', async () => {
-  await subscribe('open-near-limit');
-  restartServer(new LifecycleGate(true));
-  const base = Date.now();
-  clock = spyOn(Date, 'now').mockReturnValue(base);
-  extendSessions(base + 2 * RETENTION_MS);
+test('opening near the retention limit keeps the retention deadline despite a longer message lifetime', async () => {
+  const base = await startRecipientOpening('open-near-limit');
   const id = await sendMessage(86400);
 
-  clock.mockReturnValue(base + RETENTION_MS - 2_500);
-  expect((await openAsBob(id)).expires_at).toBe(base + 2 * RETENTION_MS - 2_500);
+  clock.mockReturnValue(base + UNOPENED_RETENTION_MS - 2_500);
+  expect((await openAsBob(id)).expires_at).toBe(base + 2 * UNOPENED_RETENTION_MS - 2_500);
   const ttls = startTtlRecordingDispatcher();
   await waitFor(() => ttls.length === 1);
   expect(ttls).toEqual([2]);
 });
 
 test('opening a five-second message does not shorten or cancel its notification deadline', async () => {
-  await subscribe('open-early');
-  restartServer(new LifecycleGate(true));
-  const base = Date.now();
-  clock = spyOn(Date, 'now').mockReturnValue(base);
-  extendSessions(base + 2 * RETENTION_MS);
+  const base = await startRecipientOpening('open-early');
   const id = await sendMessage(5);
 
   clock.mockReturnValue(base + 1_000);
@@ -925,21 +921,21 @@ test('opening a five-second message does not shorten or cancel its notification 
   clock.mockReturnValue(base + HOUR_MS);
   const ttls = startTtlRecordingDispatcher();
   await waitFor(() => ttls.length === 1);
-  expect(ttls).toEqual([23 * 3600]);
+  expect(ttls).toEqual([23 * HOUR_MS / 1000]);
 });
 
 test('mixed legacy and recipient-opening work coalesces to the latest absolute deadline', async () => {
   await subscribe('mixed-policy');
   const base = Date.now();
   clock = spyOn(Date, 'now').mockReturnValue(base);
-  extendSessions(base + 2 * RETENTION_MS);
+  extendSessions(base + 2 * UNOPENED_RETENTION_MS);
   await sendMessage(300);
-  restartServer(new LifecycleGate(true));
+  serveWithGate(new LifecycleGate(true));
   clock.mockReturnValue(base + 1_000);
   await sendMessage(5);
   // Rolling acceptance back makes a later legacy message; its shorter
   // deadline cannot pull the retained retention deadline earlier.
-  restartServer();
+  serveWithGate();
   clock.mockReturnValue(base + 2_000);
   await sendMessage(300);
 
@@ -947,16 +943,31 @@ test('mixed legacy and recipient-opening work coalesces to the latest absolute d
   const ttls = startTtlRecordingDispatcher();
   await waitFor(() => ttls.length === 1);
   await Bun.sleep(15);
-  expect(ttls).toEqual([23 * 3600 + 1]);
+  expect(ttls).toEqual([23 * HOUR_MS / 1000 + 1]);
+});
+
+test('recipient-opening wake-ups stay content-free and yield to a live identity-wide stream', async () => {
+  const base = await startRecipientOpening('retention-suppressed');
+  const deliveries: Array<{ payload: string | undefined; ttl: number }> = [];
+  startPushDispatcher({ pollIntervalMs: 5, send: async (_subscription, payload, options) => {
+    deliveries.push({ payload, ttl: options.TTL });
+  } });
+  const reader = await openBobEventStream({ 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' });
+
+  await sendMessage(5);
+  await Bun.sleep(25);
+  expect(deliveries).toEqual([]);
+  await reader.cancel();
+
+  clock.mockReturnValue(base + HOUR_MS);
+  await sendMessage(5);
+  await waitFor(() => deliveries.length === 1);
+  expect(deliveries).toEqual([{ payload: undefined, ttl: UNOPENED_RETENTION_MS / 1000 }]);
 });
 
 test('recipient-opening retries and restarts use the remaining latest retention deadline without resetting backoff', async () => {
-  await subscribe('retention-retry');
+  const base = await startRecipientOpening('retention-retry');
   const path = join(directory, 'chat.db');
-  restartServer(new LifecycleGate(true));
-  const base = Date.now();
-  clock = spyOn(Date, 'now').mockReturnValue(base);
-  extendSessions(base + 2 * RETENTION_MS);
   let failures = 0;
   startPushDispatcher({ pollIntervalMs: 5, send: async () => {
     failures++;
@@ -972,14 +983,14 @@ test('recipient-opening retries and restarts use the remaining latest retention 
   stopPushDispatcher();
   getDb().close();
   initDb(path);
-  restartServer(new LifecycleGate(true));
+  serveWithGate(new LifecycleGate(true));
   const ttls = startTtlRecordingDispatcher();
   clock.mockReturnValue(base + 59_999);
   await Bun.sleep(15);
   expect(ttls).toEqual([]);
   clock.mockReturnValue(base + 60_000);
   await waitFor(() => ttls.length === 1);
-  expect(ttls).toEqual([(RETENTION_MS - 30_000) / 1000]);
+  expect(ttls).toEqual([(UNOPENED_RETENTION_MS - 30_000) / 1000]);
 });
 
 test('work with less than one second remaining is discarded instead of sent past its deadline', async () => {
