@@ -13,7 +13,7 @@ describe('getClientIp', () => {
     const req = new Request('https://chat.example/api/auth/challenge', {
       headers: { 'X-Forwarded-For': '203.0.113.7' },
     });
-    expect(getClientIp(req, fakeServer(null))).toBe('unknown');
+    expect(getClientIp(req, fakeServer(null), new Set())).toBe('unknown');
   });
 });
 
