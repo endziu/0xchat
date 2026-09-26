@@ -626,7 +626,7 @@ test('a non-retryable failure is logged without the endpoint', async () => {
     await waitFor(() => attempts === 1 && logged.mock.calls.length > 0);
     const output = logged.mock.calls.map(args => args.map(arg => arg instanceof Error ? `${arg} ${JSON.stringify(arg)}` : String(arg)).join(' ')).join('\n');
     expect(output).toContain('not retryable');
-    expect(output).toContain('UnexpectedRedirect');
+    expect(output).toContain('UnexpectedRedirect fetching "[endpoint]"');
     expect(output).not.toContain('secret-capability-token');
   } finally {
     logged.mockRestore();

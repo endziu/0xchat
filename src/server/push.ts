@@ -43,16 +43,15 @@ export type PushFailureKind = 'temporary' | 'dead' | 'non_temporary';
 /**
  * Explicit delivery-result classification. Only 408, 429, 5xx, and untagged
  * transport failures marked temporary by the outbound boundary (network
- * errors and timeouts) are temporary. Dead endpoints (404/410, and 401/403
- * authentication failures) and everything else — other rejections and local
+ * errors and timeouts) are temporary. Dead endpoints (404/410, and 401/403,
+ * which almost always mean the subscription was made with other VAPID keys,
+ * so only a new browser subscription fixes it) and everything else — other rejections and local
  * configuration errors without a provider status — never enter the temporary
  * retry schedule.
  */
 export function classifyPushFailure(error: unknown): PushFailureKind {
   const statusCode = (error as { statusCode?: unknown; temporary?: unknown })?.statusCode;
   if (typeof statusCode === 'number') {
-    // 401/403 almost always means the subscription was made with other VAPID
-    // keys; only a new browser subscription fixes it, as with a gone endpoint.
     if (statusCode === 401 || statusCode === 403 || statusCode === 404 || statusCode === 410) return 'dead';
     if (statusCode === 408 || statusCode === 429 || (statusCode >= 500 && statusCode <= 599)) return 'temporary';
     return 'non_temporary';
@@ -156,11 +155,11 @@ async function deliver(work: PendingPushWork, activeEpoch: number): Promise<void
       } else {
         // Other rejections and configuration failures are not temporary:
         // complete the observed generation without scheduling a retry.
-        // Error messages can embed the endpoint URL (a capability), so log
-        // only the status or the error's code/name.
+        // Error messages can embed the endpoint URL (a capability); redact it
+        // but keep the rest, which is the only diagnostic for configuration errors.
         completePushWork(observed, claimToken);
-        const { code, name } = (caught ?? {}) as { code?: unknown; name?: unknown };
-        error('[push] send failed, not retryable', work.address, statusCode ?? code ?? name);
+        const detail = statusCode ?? String((caught as Error | null)?.message ?? caught).replaceAll(work.endpoint, '[endpoint]');
+        error('[push] send failed, not retryable', work.address, detail);
       }
     }
   } finally {

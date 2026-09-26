@@ -123,8 +123,8 @@ acceptance followed by a crash before local completion can therefore deliver
 again: dispatch is intentionally at-least-once for ambiguous outcomes, not
 exactly-once. This slice makes one bounded attempt during normal operation;
 #89 adds durable retry/backoff policy. Other non-temporary failures drop the
-attempted generation without a retry and are logged by status or error code,
-never by message, since that can embed the endpoint.
+attempted generation without a retry and are logged by status, or by error
+message with the endpoint redacted, since a message can embed it.
 
 Registration pruning/deletion and slot removal clear associated work
 transactionally. Session expiry/revocation leaves slots and work intact. Same-slot
@@ -193,7 +193,7 @@ different VAPID key. If the upload fails with `ownership_conflict` — typically
 the endpoint is still bound to a previous identity whose switch cleanup failed —
 it unsubscribes locally, subscribes fresh, and uploads once more; a second
 failure is reported, never retried. No endpoint is transferred: the old one dies
-at the push service, and its slot becomes `repair_needed` on the next 404/410.
+at the push service, and its slot becomes `repair_needed` on the next dead-endpoint response.
 The same code also covers an endpoint held by another slot of the same identity
 (this browser lost its installation id). The retry applies there too; that old
 slot was already unreachable from this browser and stays listed, counting toward
