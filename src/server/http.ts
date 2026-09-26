@@ -1,6 +1,6 @@
 import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
-import { TRUSTED_PROXY_IPS, resolveClientIp } from './trusted-proxy.ts';
+import { resolveClientIp } from './trusted-proxy.ts';
 import type { LifecycleGate } from './lifecycle-gate.ts';
 
 export interface Context {
@@ -25,9 +25,10 @@ export function json(body: unknown, status = 200): Response {
 export function getClientIp(
   req: Request,
   server: { requestIP: (req: Request) => { address: string } | null },
+  trustedProxies: ReadonlySet<string>,
 ): string {
   const peer = server.requestIP(req)?.address ?? 'unknown';
-  return resolveClientIp(peer, req.headers.get('x-forwarded-for'), TRUSTED_PROXY_IPS);
+  return resolveClientIp(peer, req.headers.get('x-forwarded-for'), trustedProxies);
 }
 
 export function getSessionAddress(req: Request): string | null {
