@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
-import { ArrowLeft, Send, Copy, Check, Plus, X, Trash2 } from 'lucide-preact'
+import { ArrowLeft, Send, Copy, Check, Plus, X, Trash2, Timer } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { compressImageFile, ImageTooLargeError } from '../lib/image'
-import { rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
+import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
 import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
@@ -191,13 +191,15 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
 
   return (
     <div className="flex flex-col h-full" onPaste={handlePaste}>
-      <div className="flex items-center gap-2 p-2 border-b border-neutral-800">
-        <button onClick={onBack} aria-label="Back to conversations" className="border-0"><ArrowLeft size={18} /></button>
+      {/* Same height and edges as the app bar above: on phones both are just
+          their 44px targets, and the back arrow sits on the logo's left edge. */}
+      <div className="flex items-center gap-2 min-h-11 px-2 sm:py-2 border-b border-neutral-800">
+        <button onClick={onBack} aria-label="Back to conversations" className="border-0 justify-start px-0"><ArrowLeft size={18} /></button>
         <span className="flex-1 min-w-0 text-sm text-neutral-500 truncate">
           <span className="max-sm:hidden">{recipientAddress}</span>
           <span className="sm:hidden">{recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}</span>
         </span>
-        <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" aria-label="Copy address" className="border-0">
+        <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" aria-label="Copy address" className="border-0 header-action">
           {copied ? <Check size={14} /> : <Copy size={14} />}
         </button>
         <button
@@ -205,7 +207,7 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
           disabled={clearing}
           title={clearConfirm ? 'Tap again to clear for both of you' : 'Clear conversation'}
           aria-label={clearConfirm ? 'Confirm clear conversation' : 'Clear conversation'}
-          className={`border-0 ${clearConfirm ? 'text-red-400' : ''}`}
+          className={`border-0 header-action ${clearConfirm ? 'text-red-400' : ''}`}
         >
           {clearConfirm ? <Check size={14} /> : <Trash2 size={14} />}
         </button>
@@ -284,18 +286,26 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
           </div>
         )}
         <div className="flex items-center border border-neutral-800 rounded-lg bg-neutral-950">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-400 hover:text-neutral-200">
             <Plus size={18} />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleImageFile(f) }} hidden />
-          <select
-            value={ttl}
-            onChange={(e: any) => { const seconds = Number(e.target.value); setTtl(seconds); rememberLifetimeSelection(seconds) }}
-            aria-label="Message expiry"
-            className="border-0 bg-transparent text-xs text-neutral-600 py-0 pl-1 pr-0 cursor-pointer"
-          >
-            <LifetimeOptions />
-          </select>
+          {/* The pill is what shows; the real select lies invisibly on top of
+              it, so taps still open the native picker. */}
+          <label className="relative flex items-center self-stretch shrink-0 px-1">
+            <select
+              value={ttl}
+              onChange={(e: any) => { const seconds = Number(e.target.value); setTtl(seconds); rememberLifetimeSelection(seconds) }}
+              aria-label="Message expiry"
+              className="peer absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            >
+              <LifetimeOptions />
+            </select>
+            <span aria-hidden="true" className="flex items-center gap-1 border border-neutral-800 rounded-full px-2 py-0.5 text-xs text-neutral-400 peer-focus-visible:border-neutral-500">
+              <Timer size={12} />
+              {MESSAGE_LIFETIMES.find((o) => o.seconds === ttl)?.label}
+            </span>
+          </label>
           <textarea
             ref={textareaRef}
             value={inputText}
@@ -306,7 +316,7 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
             rows={1}
             className="flex-1 border-0 bg-transparent py-2.5 px-2"
           />
-          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} aria-label="Send" title="Send" className="border-0 p-0 px-2 text-neutral-600 hover:text-neutral-300">
+          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} aria-label="Send" title="Send" className="border-0 p-0 px-2 text-neutral-200 hover:text-white">
             <Send size={18} />
           </button>
         </div>
