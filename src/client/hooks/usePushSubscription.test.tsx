@@ -208,6 +208,18 @@ test('an unsupported push service is reported and leaves no browser subscription
   expect(push.subscribed).toBe(false)
 })
 
+test('an unanswered permission prompt does not block disabling', async () => {
+  await mount()
+  await click('Enable notifications')
+  Object.defineProperty(globalThis, 'Notification', { configurable: true, value: {
+    permission: 'default', requestPermission: () => new Promise<NotificationPermission>(() => {}),
+  } })
+
+  void push.subscribe()
+  expect(await Promise.race([push.unsubscribe(), Bun.sleep(200).then(() => 'blocked')])).toBe(true)
+  expect(browserSub).toBeNull()
+})
+
 test('denied permission is reported without subscribing', async () => {
   permission = 'denied'
   await mount()

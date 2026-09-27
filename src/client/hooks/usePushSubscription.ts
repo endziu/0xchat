@@ -123,16 +123,22 @@ export function usePushSubscription(token: string | null, address: string | null
     return () => { active = false }
   }, [token, address])
 
-  const subscribe = (): Promise<boolean> => run(async () => {
+  const subscribe = async (): Promise<boolean> => {
     if (!supported || !token || !address) return false
     setError(null)
-    // The permission prompt waits on the user, so it is outside the timeout.
+    // Ask before queueing: the prompt runs straight from the click, and an
+    // unanswered one blocks neither the timeout nor a queued identity switch.
     const granted = await Notification.requestPermission()
     setPermission(granted)
     if (granted !== 'granted') {
       setError('Notification permission was not granted.')
       return false
     }
+    return run(enable)
+  }
+
+  const enable = async (): Promise<boolean> => {
+    if (!token || !address) return false
     try {
       await withTimeout(async () => {
         const push = await pushManager()
@@ -157,7 +163,7 @@ export function usePushSubscription(token: string | null, address: string | null
       setError(enableErrorMessage(err))
       return false
     }
-  })
+  }
 
   // Resolves whether this browser has stopped receiving the identity's alerts.
   // Removing the browser subscription is what stops them: the push service then

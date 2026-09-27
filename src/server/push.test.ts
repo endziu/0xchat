@@ -112,7 +112,7 @@ test('keeps a subscription after a temporary or unknown failure, without retryin
   expect(endpoints()).toEqual([endpoint('one')])
 })
 
-test('pruning and account deletion remove subscriptions', () => {
+test('pruning and registration deletion remove subscriptions', () => {
   savePushSubscription(alice, { endpoint: endpoint('one'), ...keys })
   getDb().run('UPDATE pubkeys SET last_active_at = 0')
   deleteInactivePubkeys(1)
