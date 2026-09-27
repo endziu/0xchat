@@ -224,10 +224,6 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
       )}
 
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
-        {/* Soaks up free space so a short conversation sits next to the
-            composer. Unlike justify-end, auto margins collapse to 0 on
-            overflow, so the top of a long history stays scrollable. */}
-        <div className="mt-auto" aria-hidden="true" />
         {loading
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
           : !error && messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
@@ -248,7 +244,7 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
           const sameMinute = sameSender && fmtTime(prev.created_at) === fmtTime(msg.created_at)
 
           return (
-            <article key={msg.id} data-message-id={msg.id} className={`flex gap-3 ${i === 0 ? '' : sameSender ? 'mt-0.5' : 'mt-3'} group hover:bg-neutral-950/50`}>
+            <article key={msg.id} data-message-id={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : 'mt-3 first:mt-0'} group hover:bg-neutral-950/50`}>
               <time className={`w-10 shrink-0 text-xs text-neutral-500 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible' : ''}`}>
                 {fmtTime(msg.created_at)}
               </time>
