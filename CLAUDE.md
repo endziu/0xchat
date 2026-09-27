@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Commands, source layout, architecture, crypto scheme, and the API table are in the README:
+Commands, environment variables, rate limits, and retention rules are in the README:
 
 @README.md
 

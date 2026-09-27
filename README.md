@@ -153,40 +153,47 @@ bun run test         # clear all, build, then run Bun tests
 
 Runtime data is stored in `chat.db` beside the project. The database, build output, dependencies, and `.env` are ignored by Git.
 
-Message submissions are limited to 120 per minute per IP/address pair and 240 per
-minute across all addresses on one IP. The aggregate cap allows two identities
-sharing an IP their full individual allowance while placing a fixed ceiling on
-identity cycling. Message opening is limited separately to 120 requests per minute
-per recipient address across devices and networks, and 240 per minute per IP
-across recipients. Opening accepts 1–100 distinct IDs per batch with an 8 KiB
-body limit, including streamed bodies. Registration writes are limited to 10 per minute per IP.
+## Rate limits
 
-Clearing a conversation (`DELETE /api/messages/:address`) deletes every message in
-it for both identities and is limited to 10 per minute per identity and 20 per
-minute per IP.
+All limits are per minute. Each operation has its own budget, so one never
+consumes another's.
 
-Message recovery and lifecycle lookup each have separate budgets of 120 requests
-per minute per identity and 240 per minute per IP. Recovery counts both initial
-and continuation pages; neither operation consumes the sending or opening budget.
-See [the recovery API contract](docs/message-recovery-api.md) for pagination and
-lookup request limits.
+| Operation | Per identity | Per IP |
+|---|---:|---:|
+| Send message | 120 (per IP + identity) | 240 |
+| Open messages | 120 (across devices and networks) | 240 |
+| Recover messages (initial and continuation pages) | 120 | 240 |
+| Lifecycle state lookup | 120 | 240 |
+| Clear conversation | 10 | 20 |
+| Push subscription changes | 10 (per IP + identity) | — |
+| Registration challenge, registration, auth challenge, auth session, SSE token | — | 10 each |
 
-Push bindings use authenticated, revision-gated notification slots with a five-slot
-limit and durable removal. See [the push-slot API contract](docs/push-slots-api.md).
-Subscription mutations are serialized across the origin's tabs by a shared
-generation and an exclusive browser lock, and superseded operations can only
-remove what they still own. Each notification action is bounded to 30 seconds
-(excluding the permission prompt) without releasing ownership of a browser call
-still in flight. Automatic browser repair remains disabled; enabling remains
-explicit. Existing legacy bindings are
-preserved, including identities above the limit.
+The per-IP message cap gives two identities that share an IP their full individual
+allowance while still putting a ceiling on identity cycling. Opening and state
+lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
+[the opening contract](docs/message-opening-api.md) and
+[the recovery contract](docs/message-recovery-api.md).
 
-Public-key registrations are pruned after 30 days without a new session or a sent
-or received message. Initial registration starts the retention window;
-re-registering an existing key alone does not extend it. Existing databases get
-a fresh 30-day window on migration. Cleanup runs every 30 seconds. A pruned
-recipient cannot receive messages (`Recipient not registered`) until they
-register again. New sessions store addresses in lowercase, consistently with
-public-key lookups and authenticated message addresses.
+## Retention
+
+- Messages are deleted when they expire (see
+  [domain behavior](docs/domain-behavior.md)) or when either participant clears the
+  conversation (`DELETE /api/messages/:address`).
+- Public-key registrations are pruned after 30 days without a new session or a
+  sent or received message. Re-registering an existing key alone does not extend
+  the window. A pruned recipient cannot receive messages
+  (`Recipient not registered`) until they register again.
+- Cleanup runs every 30 seconds.
+
+## Push notifications
+
+Push alerts are content-free wake-ups. Enabling is always an explicit click.
+Each identity can have up to five notification slots (one per browser). An alert
+can wake an offline recipient until a deadline fixed when the message is accepted:
+its expiry for legacy messages, or 24 hours later under recipient opening.
+When a push service reports an endpoint dead (404/410/401/403), the slot is marked
+as needing repair and the user enables notifications again in that browser. The
+endpoints are `GET /api/push/subscriptions` and `POST /api/push/{subscribe,reconcile,unsubscribe}`,
+all authenticated with the identity's session.
 
 ---

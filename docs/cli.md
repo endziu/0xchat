@@ -1,8 +1,7 @@
 # Terminal client
 
-The Bun CLI connects to the existing 0xChat API. It shares the browser's identity,
-encryption, signed envelope, and verification code. No server changes or new
-dependencies are required.
+The Bun CLI talks to the same 0xChat API as the browser and shares its identity,
+encryption, signed envelope, and verification code.
 
 ## Quick start
 
@@ -51,7 +50,8 @@ terminal width. Chat shows recent messages that fit the terminal; use `read --al
 to retrieve the rest.
 
 Chat uses the terminal's alternate screen, removes expired messages from its
-display (and all of them when the conversation is cleared from the browser), and restores the previous screen on exit. Message input history is not
+display (and all of them when either side clears the conversation), and restores
+the previous screen on exit. Message input history is not
 saved. Incoming control sequences are escaped before rendering.
 
 ## Two identities on one machine
@@ -157,14 +157,12 @@ messages that have not expired.
 ```sh
 bun run typecheck
 bun run lint
-bun test src/cli/cli.test.ts src/cli/read.test.ts
+bun test src/cli
 ```
 
-The CLI tests use isolated servers and temporary or in-memory databases. They
+The CLI tests use in-process servers and temporary or in-memory databases. They
 cover browser crypto interoperability, live events, page opening, pagination,
 expiry, identity file permissions, and command-line JSON/stdin behavior.
-The repository-wide `bun run test` still deletes the database in its working
-directory; run it only in a disposable copy if you have data to preserve.
 
 ### Message opening and expiry
 
