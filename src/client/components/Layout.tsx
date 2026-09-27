@@ -69,7 +69,8 @@ export function Layout({
     // are ours to avoid. The shell insets the top and sides; the bottom inset
     // is left to whatever sits there (composer, conversation list) so it isn't
     // stacked on top of their own padding. h-full, not h-dvh: see styles.css.
-    <div className="flex flex-col h-full max-w-[56.25rem] mx-auto border-x border-neutral-800 safe-top safe-x">
+    // No side borders on phones: they'd sit on the screen edge, clipped by its curve.
+    <div className="flex flex-col h-full max-w-[56.25rem] mx-auto border-x border-neutral-800 max-sm:border-x-0 safe-top safe-x">
       {error && <div className="p-2 text-center text-neutral-500 border-b border-neutral-800">{error}</div>}
       <header className="flex items-center justify-between min-h-11 px-2 sm:py-2 border-b border-neutral-800 shrink-0 gap-2">
         <div className="flex items-center gap-2">

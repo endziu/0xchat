@@ -36,10 +36,12 @@ export const ToastProvider = ({ children }: { children: any }) => {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed top-3 right-3 flex flex-col gap-1.5 z-50">
+      {/* Clear of the notch and the rounded screen corners: offsets start at the
+          safe area, and on phones toasts span the width instead of hugging a corner. */}
+      <div className="fixed top-[calc(env(safe-area-inset-top)+0.75rem)] right-[calc(env(safe-area-inset-right)+0.75rem)] max-sm:left-[calc(env(safe-area-inset-left)+0.75rem)] flex flex-col gap-1.5 z-50">
         {toasts.map((t) => (
           <div key={t.id} className={`flex items-center gap-2 px-3 py-2 bg-neutral-900 border ${borderColor[t.type]}`} role="alert">
-            <p className="m-0">{t.message}</p>
+            <p className="m-0 flex-1">{t.message}</p>
             <button className="border-0 p-0.5 ml-2" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close"><X size={14} /></button>
           </div>
         ))}
