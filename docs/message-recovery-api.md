@@ -1,6 +1,6 @@
 # Message recovery and lifecycle lookup
 
-Issue #76 adds authenticated conversation recovery alongside the existing
+Authenticated conversation recovery complements the
 [delivery and opening contract](message-opening-api.md). All operations use the
 participant's bearer session. Neither history, recovery, nor state lookup opens
 messages. Signed envelopes and delivery metadata retain their existing shape;
@@ -8,9 +8,9 @@ no sequence or cursor is added to SSE deliveries or sender signatures.
 
 ## Establish a checkpoint
 
-`GET /api/messages/:counterparty` still supports `limit`, `before`, and
-`before_rowid` and returns the same `messages`, `next_before`, and
-`next_before_rowid`. It additionally returns an opaque `recovery_cursor`.
+`GET /api/messages/:counterparty` supports `limit`, `before`, and
+`before_rowid` and returns `messages`, `next_before`, `next_before_rowid`, and an
+opaque `recovery_cursor`.
 History and this checkpoint are captured in one SQLite snapshot. For a new
 conversation view, establish SSE first and buffer events, then load the normal
 initial page and retain its checkpoint. Older unloaded history remains accessible
@@ -67,7 +67,7 @@ invalid sessions return 401; malformed, forged, wrong-kind, wrong-identity, or
 wrong-conversation cursors return 400. There is no client-supplied numeric upper
 bound. Keep the prior completed checkpoint until all pages have been merged by
 message ID. Never infer gap completion from the largest live sequence or from a
-new history response. Browser orchestration is implemented by #80, as described below.
+new history response.
 
 ## Refresh loaded lifecycle state
 
@@ -102,20 +102,11 @@ return 413. The independent lookup budget is 120 requests/minute per identity
 and 240/minute per IP; exceeding it returns 429. Authentication failures return
 401. Lookup consumes neither the sending nor opening budget.
 
-## Persistence and validation
+## Persistence
 
-A transactional, repeatable migration backfills acceptance sequence in existing
-`(created_at, rowid)` order while preserving message IDs, envelopes, deadlines,
-and rowids used by older-page cursors. New insertion atomically advances a
+Each message stores an acceptance sequence. Insertion atomically advances a
 persisted high-water mark, which deletion never lowers. The cursor key is also
-persisted. Legacy delivery and existing SSE/Web Push behavior remain unchanged.
-
-Real HTTP/SQLite tests cover equal timestamps, intervals over 100, concurrent
-sends beyond a captured bound, expired/deleted boundaries, deleting all rows
-then inserting after restart, repeat migration, old pagination cursors,
-authorization, state limits, and read-only deadline refresh. Run the full
-`bun run test` only in an isolated copy: it deletes the working directory's
-`chat.db` and `dist`.
+persisted.
 
 ## Browser recovery
 
@@ -140,8 +131,6 @@ still require verified envelopes and a confirmed opening in an attentive window.
 Loaded older history and its pagination cursor survive recovery; scroll position
 uses the nearest surviving message when its previous anchor disappears.
 
-Mounted browser tests exercise multi-page gaps, interleaved delivery and expiry,
-attention/token/backoff races, interrupted recovery and opening, history and
-scroll preservation, and retry without duplicate messages. Happy DOM tests use
-modeled row geometry for scroll assertions; they do not exercise native browser
-layout or mobile operating-system suspension.
+`src/client/components/ChatView.test.tsx` covers this with happy-dom against an
+in-process server. Its scroll assertions use modeled row geometry, not native
+browser layout or mobile operating-system suspension.
