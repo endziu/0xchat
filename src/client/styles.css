@@ -13,6 +13,13 @@
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
+  /* iOS 26 installed PWAs (viewport-fit=cover + black-translucent) undercount
+     100dvh and 100% by the top safe-area inset, leaving a dead strip at the
+     bottom. Only lvh reports the full screen, and standalone has no browser
+     chrome for lvh to over-reach. */
+  @media (display-mode: standalone) {
+    html { height: 100lvh; }
+  }
   body {
     @apply bg-black text-neutral-200 font-mono text-base m-0;
     height: 100%;

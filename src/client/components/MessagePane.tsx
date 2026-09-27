@@ -224,6 +224,10 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
       )}
 
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+        {/* Soaks up free space so a short conversation sits next to the
+            composer. Unlike justify-end, auto margins collapse to 0 on
+            overflow, so the top of a long history stays scrollable. */}
+        <div className="mt-auto" aria-hidden="true" />
         {loading
           ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
           : !error && messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
@@ -244,8 +248,8 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
           const sameMinute = sameSender && fmtTime(prev.created_at) === fmtTime(msg.created_at)
 
           return (
-            <article key={msg.id} data-message-id={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : 'mt-3 first:mt-0'} group hover:bg-neutral-950/50`}>
-              <time className={`w-10 shrink-0 text-xs text-neutral-700 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible' : ''}`}>
+            <article key={msg.id} data-message-id={msg.id} className={`flex gap-3 ${i === 0 ? '' : sameSender ? 'mt-0.5' : 'mt-3'} group hover:bg-neutral-950/50`}>
+              <time className={`w-10 shrink-0 text-xs text-neutral-500 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible' : ''}`}>
                 {fmtTime(msg.created_at)}
               </time>
               <div className={`min-w-0 flex-1 ${!sameSender ? `pl-2 border-l-2 ${isMine ? 'border-neutral-700' : 'border-neutral-400'}` : 'pl-2 border-l-2 border-transparent'}`}>
@@ -260,7 +264,7 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
                   <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
                 )}
                 {!sameSender && (
-                  <span className="text-xs text-neutral-700 ml-2">expires {fmtTime(msg.expires_at)}</span>
+                  <span className="block text-xs text-neutral-500">expires {fmtTime(msg.expires_at)}</span>
                 )}
               </div>
             </article>
@@ -269,7 +273,9 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="p-2 shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
+      {/* The shell leaves the bottom inset to us: clear the home indicator,
+          but don't stack our own padding on top of it. */}
+      <form className="p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
         {compressingImage && (
           <div className="mb-2 border border-neutral-800 p-2 text-xs text-neutral-500">Compressing image…</div>
         )}

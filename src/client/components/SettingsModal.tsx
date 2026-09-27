@@ -4,6 +4,7 @@ import { X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
 import type { PushSlotSummary } from '../../shared/push-slot'
+import { version } from '../../../package.json'
 
 export interface PushSettings {
   supported?: boolean
@@ -62,7 +63,10 @@ export function SettingsModal({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-neutral-800 p-2">
-          <h2 id="settings-title">Settings</h2>
+          <div className="flex items-baseline gap-2">
+            <h2 id="settings-title">Settings</h2>
+            <span className="text-xs text-neutral-700">v{version}</span>
+          </div>
           <button onClick={onClose} aria-label="Close settings" title="Close">
             <X size={16} />
           </button>

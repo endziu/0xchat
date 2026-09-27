@@ -65,9 +65,11 @@ export function Layout({
   }
 
   return (
-    // Inset the whole shell rather than each bar: index.html opts into
-    // viewport-fit=cover, so the notch and home indicator are ours to avoid.
-    <div className="flex flex-col h-dvh max-w-[56.25rem] mx-auto border-x border-neutral-800 safe-top safe-bottom safe-x">
+    // index.html opts into viewport-fit=cover, so the notch and home indicator
+    // are ours to avoid. The shell insets the top and sides; the bottom inset
+    // is left to whatever sits there (composer, conversation list) so it isn't
+    // stacked on top of their own padding. h-full, not h-dvh: see styles.css.
+    <div className="flex flex-col h-full max-w-[56.25rem] mx-auto border-x border-neutral-800 safe-top safe-x">
       {error && <div className="p-2 text-center text-neutral-500 border-b border-neutral-800">{error}</div>}
       <header className="flex items-center justify-between p-2 border-b border-neutral-800 shrink-0 gap-2">
         <div className="flex items-center gap-2">
@@ -145,7 +147,8 @@ export function Layout({
       <main className="flex-1 overflow-hidden flex flex-col">
         {children}
       </main>
-      <div className="fixed bottom-1 left-1 max-sm:bottom-auto max-sm:left-auto max-sm:top-1 max-sm:right-1 z-20 text-[0.625rem] leading-3 text-neutral-700 pointer-events-none" aria-label={`Version ${version}`}>
+      {/* On phones there is no free corner outside the safe area; Settings shows it there. */}
+      <div className="fixed bottom-1 left-1 max-sm:hidden z-20 text-[0.625rem] leading-3 text-neutral-700 pointer-events-none" aria-label={`Version ${version}`}>
         v{version}
       </div>
       {showSettings && identity && (
