@@ -5,7 +5,6 @@ import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import { buildSessionChallenge } from '../../shared/session-challenge'
 import { DELIVERY_CAPABILITY, type DeliveredMessage, type MessageEnvelope } from '../../shared/message-envelope'
 
-import type { PushSlotCondition, PushSlotHandle, PushSlotList } from '../../shared/push-slot'
 
 export type Message = DeliveredMessage
 
@@ -201,26 +200,17 @@ export const api = {
   deleteAddress: (address: string, token: string) =>
     request(`/api/addresses/${address}`, { method: 'DELETE' }, token),
 
-  listPushSlots: (token: string): Promise<PushSlotList> => request('/api/push/subscriptions', {}, token),
-
-  subscribePush: (subscription: PushSubscriptionJSON, condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
+  subscribePush: (subscription: PushSubscriptionJSON, token: string) =>
     request('/api/push/subscribe', {
       method: 'POST',
-      body: JSON.stringify({ ...condition, subscription }),
+      body: JSON.stringify(subscription),
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  reconcilePush: (subscription: PushSubscriptionJSON, condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
-    request('/api/push/reconcile', {
-      method: 'POST',
-      body: JSON.stringify({ ...condition, subscription }),
-      headers: { 'Content-Type': 'application/json' },
-    }, token),
-
-  unsubscribePush: (condition: PushSlotCondition, token: string): Promise<PushSlotHandle> =>
+  unsubscribePush: (endpoint: string, token: string) =>
     request('/api/push/unsubscribe', {
       method: 'POST',
-      body: JSON.stringify(condition),
+      body: JSON.stringify({ endpoint }),
       headers: { 'Content-Type': 'application/json' },
     }, token),
 }

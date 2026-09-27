@@ -1,6 +1,5 @@
 import { Database } from 'bun:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
-import { pushEndpointDestination } from './push-endpoint.ts';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type DeliveryPolicy, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 // Session tokens are stored as sha256 hex digests so a copy of the database
@@ -12,7 +11,7 @@ function hashToken(token: string): string {
 
 let db: Database;
 
-function tableColumns(table: 'pubkeys' | 'sessions' | 'messages' | 'push_work'): Set<string> {
+function tableColumns(table: 'pubkeys' | 'sessions' | 'messages'): Set<string> {
   const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   return new Set(columns.map((column) => column.name));
 }
@@ -56,69 +55,26 @@ export function initDb(path = 'chat.db'): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_expires
       ON sessions(expires_at);
 
-    CREATE TABLE IF NOT EXISTS push_slots (
-      slot_id TEXT PRIMARY KEY,
-      address TEXT NOT NULL,
-      installation_id TEXT NOT NULL,
-      revision INTEGER NOT NULL,
-      state TEXT NOT NULL DEFAULT 'active',
-      endpoint TEXT,
-      p256dh TEXT,
-      auth TEXT,
-      legacy INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      UNIQUE(address, installation_id)
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint   TEXT PRIMARY KEY,
+      address    TEXT NOT NULL,
+      p256dh     TEXT NOT NULL,
+      auth       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_slots(endpoint);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_push_active_endpoint ON push_slots(endpoint) WHERE state = 'active';
-    CREATE TABLE IF NOT EXISTS push_revocations (
-      slot_id TEXT PRIMARY KEY,
-      address TEXT NOT NULL,
-      installation_id TEXT NOT NULL,
-      revision INTEGER NOT NULL,
-      UNIQUE(address, installation_id)
-    );
-    CREATE TABLE IF NOT EXISTS push_work (
-      slot_id             TEXT PRIMARY KEY REFERENCES push_slots(slot_id) ON DELETE CASCADE,
-      revision            INTEGER NOT NULL,
-      generation          INTEGER NOT NULL,
-      deadline            INTEGER NOT NULL,
-      attempt_count       INTEGER NOT NULL,
-      due_at              INTEGER NOT NULL,
-      provider_not_before INTEGER,
-      claim_token         TEXT,
-      claim_until         INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_push_work_due ON push_work(due_at);
+    CREATE INDEX IF NOT EXISTS idx_push_address ON push_subscriptions(address);
   `);
 
-  const pushWorkColumns = tableColumns('push_work');
-  if (!pushWorkColumns.has('claim_token')) db.run('ALTER TABLE push_work ADD COLUMN claim_token TEXT');
-  if (!pushWorkColumns.has('claim_until')) db.run('ALTER TABLE push_work ADD COLUMN claim_until INTEGER');
-
+  // The slot/revision schema (#82–#90) collapses back to one row per endpoint;
+  // live endpoints carry over so opted-in browsers keep receiving alerts.
   db.transaction(() => {
-    if (db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'push_subscriptions'").get()) {
-      // Older pruning removed registrations without their subscriptions. Do not
-      // resurrect those reservations: there is no registered owner to retain.
-      const rows = (db.query(`SELECT s.* FROM push_subscriptions s
-        JOIN pubkeys p ON p.address = lower(s.address)`).all() as Array<{
-        address: string; endpoint: string; p256dh: string; auth: string; created_at: number;
-      }>).map(row => ({ ...row, endpoint: pushEndpointDestination(row.endpoint) }));
-      const destinations = new Map<string, number>();
-      for (const row of rows) destinations.set(row.endpoint, (destinations.get(row.endpoint) ?? 0) + 1);
-      const insert = db.query(`INSERT INTO push_slots
-        (slot_id, address, installation_id, revision, endpoint, p256dh, auth, legacy, state, created_at, updated_at)
-        VALUES (?, ?, ?, 1, ?, ?, ?, 1, ?, ?, ?)`);
-      for (const row of rows) {
-        // Preserve every conflicting legacy slot without selecting a winner or
-        // sending with ambiguous keys. All reservations must be removed before reuse.
-        const state = destinations.get(row.endpoint)! > 1 ? 'repair_needed' : 'active';
-        insert.run(crypto.randomUUID(), row.address.toLowerCase(), crypto.randomUUID(),
-          row.endpoint, row.p256dh, row.auth, state, row.created_at, row.created_at);
-      }
-      db.run('DROP TABLE push_subscriptions');
-    }
+    if (!db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'push_slots'").get()) return;
+    db.run(`INSERT OR IGNORE INTO push_subscriptions (endpoint, address, p256dh, auth, created_at)
+      SELECT endpoint, address, p256dh, auth, created_at FROM push_slots
+      WHERE state = 'active' AND endpoint IS NOT NULL AND p256dh IS NOT NULL AND auth IS NOT NULL`);
+    db.run('DROP TABLE IF EXISTS push_work');
+    db.run('DROP TABLE IF EXISTS push_revocations');
+    db.run('DROP TABLE push_slots');
   }).immediate();
 
   const messageColumns = tableColumns('messages');
@@ -214,8 +170,7 @@ export function getPubkey(address: string): string | null {
 
 export function deleteInactivePubkeys(cutoff: number): number {
   return db.transaction(() => {
-    db.query('DELETE FROM push_slots WHERE address IN (SELECT address FROM pubkeys WHERE last_active_at < ?)').run(cutoff);
-    db.query('DELETE FROM push_revocations WHERE address IN (SELECT address FROM pubkeys WHERE last_active_at < ?)').run(cutoff);
+    db.query('DELETE FROM push_subscriptions WHERE address IN (SELECT address FROM pubkeys WHERE last_active_at < ?)').run(cutoff);
     return db.query('DELETE FROM pubkeys WHERE last_active_at < ?').run(cutoff).changes;
   }).immediate();
 }
@@ -284,19 +239,6 @@ export function createMessage(
     // Bun includes the acceptance trigger's updates in changes; only zero means an ignored insert.
     if (result.changes === 0) return null;
     markAddressesActive([envelope.sender, envelope.recipient], createdAt);
-    // The wake-up deadline is fixed at acceptance: the stored legacy expiry, or
-    // the unopened retention deadline for recipient-opening. Opening never
-    // shortens it, even when the message lifetime ends sooner.
-    const slots = db.query("SELECT slot_id, revision FROM push_slots WHERE address = ? AND state = 'active'")
-      .all(envelope.recipient.toLowerCase()) as Array<{ slot_id: string; revision: number }>;
-    const enqueue = db.query(`INSERT INTO push_work
-      (slot_id, revision, generation, deadline, attempt_count, due_at, provider_not_before)
-      VALUES (?, ?, 1, ?, 0, ?, NULL)
-      ON CONFLICT(slot_id) DO UPDATE SET
-        revision = excluded.revision,
-        generation = push_work.generation + 1,
-        deadline = MAX(push_work.deadline, excluded.deadline)`);
-    for (const slot of slots) enqueue.run(slot.slot_id, slot.revision, expiresAt, createdAt);
     return { delivery_policy: policy, created_at: createdAt, opened_at: null, expires_at: expiresAt };
   }).immediate();
 }
@@ -469,118 +411,42 @@ export function deleteRegistration(address: string): void {
 }
 
 function deletePushSubscriptionsForAddress(address: string): void {
-  const normalized = address.toLowerCase();
-  db.query('DELETE FROM push_slots WHERE address = ?').run(normalized);
-  db.query('DELETE FROM push_revocations WHERE address = ?').run(normalized);
-}
-
-export function markPushSubscriptionDead(slotId: string, revision: number): void {
-  db.transaction(() => {
-    const changed = db.query(`UPDATE push_slots SET state = 'repair_needed', endpoint = NULL, p256dh = NULL,
-      auth = NULL, revision = revision + 1, updated_at = ? WHERE slot_id = ? AND revision = ?`)
-      .run(Date.now(), slotId, revision).changes;
-    if (changed > 0) db.query('DELETE FROM push_work WHERE slot_id = ? AND revision = ?').run(slotId, revision);
-  }).immediate();
-}
-
-export interface PendingPushWork extends PushSubscriptionRow {
-  address: string;
-  generation: number;
-  deadline: number;
-  attempt_count: number;
-  due_at: number;
-  provider_not_before: number | null;
-}
-
-export function cleanupInvalidPushWork(now: number): void {
-  db.query(`DELETE FROM push_work WHERE deadline <= ? OR NOT EXISTS (
-    SELECT 1 FROM push_slots s
-    WHERE s.slot_id = push_work.slot_id AND s.revision = push_work.revision AND s.state = 'active'
-  )`).run(now);
-}
-
-export function getDuePushWork(now: number, limit: number): PendingPushWork[] {
-  return db.query(`SELECT w.*, s.address, s.endpoint, s.p256dh, s.auth
-    FROM push_work w JOIN push_slots s ON s.slot_id = w.slot_id AND s.revision = w.revision
-    WHERE s.state = 'active' AND w.deadline > ? AND w.due_at <= ?
-      AND (w.provider_not_before IS NULL OR w.provider_not_before <= ?)
-      AND (w.claim_until IS NULL OR w.claim_until <= ?)
-    ORDER BY w.due_at, w.slot_id LIMIT ?`).all(now, now, now, now, limit) as PendingPushWork[];
-}
-
-export function claimPushWork(
-  work: Pick<PendingPushWork, 'slot_id' | 'revision' | 'generation'>,
-  now: number,
-  leaseMs: number,
-): string | null {
-  const claimToken = crypto.randomUUID();
-  const changed = db.query(`UPDATE push_work
-    SET attempt_count = attempt_count + 1, claim_token = ?, claim_until = ?
-    WHERE slot_id = ? AND revision = ? AND generation = ?
-      AND (claim_until IS NULL OR claim_until <= ?)`)
-    .run(claimToken, now + leaseMs, work.slot_id, work.revision, work.generation, now).changes;
-  return changed > 0 ? claimToken : null;
-}
-
-export function completePushWork(
-  work: Pick<PendingPushWork, 'slot_id' | 'revision' | 'generation'>,
-  claimToken: string,
-): void {
-  const removed = db.query(`DELETE FROM push_work
-    WHERE slot_id = ? AND revision = ? AND generation = ? AND claim_token = ?`)
-    .run(work.slot_id, work.revision, work.generation, claimToken).changes;
-  // When nothing was removed, newer work coalesced into this claim while the
-  // attempt ran. That attempt did not fail temporarily, so it must not inflate
-  // the retained work's temporary backoff; its failure count restarts.
-  if (removed === 0) {
-    db.query(`UPDATE push_work SET attempt_count = 0
-      WHERE slot_id = ? AND revision = ? AND claim_token = ?`)
-      .run(work.slot_id, work.revision, claimToken);
-  }
-}
-
-/**
- * Schedule a durable temporary retry after a failed attempt. Matched by claim
- * token, not generation, so a failure also applies its backoff to newer work
- * that coalesced into this slot while the attempt was in flight. A replaced or
- * removed slot (different revision or no row) leaves the failure unmatched and
- * never resurfaces its work.
- */
-export function recordPushTemporaryFailure(
-  work: Pick<PendingPushWork, 'slot_id' | 'revision'>,
-  claimToken: string,
-  dueAt: number,
-  providerNotBefore: number | null,
-): number {
-  return db.query(`UPDATE push_work
-    SET due_at = ?, provider_not_before = ?, claim_token = NULL, claim_until = NULL
-    WHERE slot_id = ? AND revision = ? AND claim_token = ?`)
-    .run(dueAt, providerNotBefore, work.slot_id, work.revision, claimToken).changes;
-}
-
-export function releasePushClaim(slotId: string, claimToken: string): void {
-  db.query(`UPDATE push_work SET claim_token = NULL, claim_until = NULL
-    WHERE slot_id = ? AND claim_token = ?`).run(slotId, claimToken);
-}
-
-export function transferPushWorkRevision(slotId: string, oldRevision: number, newRevision: number): void {
-  db.query('UPDATE push_work SET revision = ?, generation = generation + 1 WHERE slot_id = ? AND revision = ?')
-    .run(newRevision, slotId, oldRevision);
+  db.query('DELETE FROM push_subscriptions WHERE address = ?').run(address.toLowerCase());
 }
 
 export interface PushSubscriptionRow {
-  slot_id: string;
-  revision: number;
   endpoint: string;
   p256dh: string;
   auth: string;
 }
 
-export function getPushSubscriptionsForAddress(address: string): PushSubscriptionRow[] {
+export const MAX_PUSH_SUBSCRIPTIONS = 5;
+
+/**
+ * An endpoint belongs to the identity that uploaded it last. Past the cap the
+ * oldest subscriptions of that identity are dropped rather than refusing a new one.
+ */
+export function savePushSubscription(address: string, subscription: PushSubscriptionRow): void {
   const normalized = address.toLowerCase();
-  return db
-    .query("SELECT slot_id, revision, endpoint, p256dh, auth FROM push_slots WHERE address = ? AND state = 'active'")
-    .all(normalized) as PushSubscriptionRow[];
+  db.transaction(() => {
+    db.query(`INSERT INTO push_subscriptions (endpoint, address, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(endpoint) DO UPDATE SET address = excluded.address, p256dh = excluded.p256dh,
+        auth = excluded.auth, created_at = excluded.created_at`)
+      .run(subscription.endpoint, normalized, subscription.p256dh, subscription.auth, Date.now());
+    db.query(`DELETE FROM push_subscriptions WHERE address = ? AND endpoint NOT IN (
+      SELECT endpoint FROM push_subscriptions WHERE address = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)`)
+      .run(normalized, normalized, MAX_PUSH_SUBSCRIPTIONS);
+  }).immediate();
+}
+
+export function deletePushSubscription(endpoint: string, address?: string): void {
+  if (address === undefined) db.query('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
+  else db.query('DELETE FROM push_subscriptions WHERE endpoint = ? AND address = ?').run(endpoint, address.toLowerCase());
+}
+
+export function getPushSubscriptionsForAddress(address: string): PushSubscriptionRow[] {
+  return db.query('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE address = ?')
+    .all(address.toLowerCase()) as PushSubscriptionRow[];
 }
 
 export function getConversationPartners(address: string): string[] {

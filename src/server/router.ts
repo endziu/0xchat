@@ -7,7 +7,7 @@ import { handleAuthChallenge, handleAuthSession, authStore } from './routes/auth
 import { handleGetPubkey } from './routes/pubkey.ts';
 import { handleClearConversation, handleMessageStates, handleRecoverMessages, handleOpenMessages, handleSendMessage, handleGetMessages, handleGetConversations } from './routes/messages.ts';
 import { handleGetSSEToken, handleSSE, handleSSEAttention, cleanupSseTokens } from './routes/events.ts';
-import { handleListPush, handleReconcilePush, handleGetVapidPublicKey, handleSubscribePush, handleUnsubscribePush } from './routes/push.ts';
+import { handleGetVapidPublicKey, handleSubscribePush, handleUnsubscribePush } from './routes/push.ts';
 import { handleDeleteAddress } from './routes/account.ts';
 import { handleDeleteSession } from './routes/session.ts';
 import { handleStatic } from './routes/static.ts';
@@ -42,8 +42,6 @@ const routes: Route[] = [
   { method: 'GET',    test: eq('/api/events'),                          handler: handleSSE },
   { method: 'POST',   test: eq('/api/events/attention'),                handler: handleSSEAttention },
   { method: 'GET',    test: eq('/api/push/vapid-public-key'),           handler: handleGetVapidPublicKey },
-  { method: 'GET',    test: eq('/api/push/subscriptions'),              handler: handleListPush },
-  { method: 'POST',   test: eq('/api/push/reconcile'),                  handler: handleReconcilePush },
   { method: 'POST',   test: eq('/api/push/subscribe'),                  handler: handleSubscribePush },
   { method: 'POST',   test: eq('/api/push/unsubscribe'),                handler: handleUnsubscribePush },
   { method: 'GET',    test: () => true,                                 handler: handleStatic },

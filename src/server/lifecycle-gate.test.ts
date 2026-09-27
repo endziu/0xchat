@@ -184,15 +184,10 @@ test('an activated gate leaves notification cleanup and session removal open to 
   start(new LifecycleGate(true));
   const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/gate-cleanup',
     keys: { p256dh: Buffer.alloc(65, 4).toString('base64url'), auth: Buffer.alloc(16, 5).toString('base64url') } };
-  const installation = crypto.randomUUID();
-  const enabled = await request('/api/push/subscribe', 'updated', bob.address,
-    { installation_id: installation, expected_revision: 0, subscription });
+  const enabled = await request('/api/push/subscribe', 'updated', bob.address, subscription);
   expect(enabled.status).toBe(201);
-  const slot = await enabled.json();
 
-  expect((await request('/api/push/subscriptions', 'old')).status).toBe(200);
-  const removed = await request('/api/push/unsubscribe', 'old', bob.address,
-    { slot_id: slot.slot_id, installation_id: installation, expected_revision: slot.revision });
+  const removed = await request('/api/push/unsubscribe', 'old', bob.address, { endpoint: subscription.endpoint });
   expect(removed.status).toBe(200);
   expect((await request('/api/session', 'old', bob.address, undefined, 'DELETE')).status).toBe(204);
 });

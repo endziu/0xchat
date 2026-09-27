@@ -12,7 +12,6 @@ import type { Keypair } from '../lib/burner'
 export function useIdentityTransition(deps: IdentityTransitionDeps) {
   const setTransitioning = useLatest(deps.setTransitioning)
   const unsubscribePush = useLatest(deps.unsubscribePush)
-  const reportPushCleanupFailed = useLatest(deps.reportPushCleanupFailed)
   const revokeSession = useLatest(deps.revokeSession)
   const clearSession = useLatest(deps.clearSession)
   const prepareIdentity = useLatest(deps.prepareIdentity)
@@ -24,7 +23,6 @@ export function useIdentityTransition(deps: IdentityTransitionDeps) {
     transitionRef.current = createIdentityTransition({
       setTransitioning,
       unsubscribePush,
-      reportPushCleanupFailed,
       revokeSession,
       clearSession,
       prepareIdentity,

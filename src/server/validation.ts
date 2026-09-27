@@ -80,7 +80,8 @@ export function validatePushSubscription(body: unknown): PushSubscriptionValidat
   return {
     ok: true,
     value: {
-      endpoint: candidate['endpoint'],
+      // Canonical spelling (host case, default port), so one endpoint is one row.
+      endpoint: endpoint.href,
       keys: { p256dh: keyRecord['p256dh'], auth: keyRecord['auth'] },
     },
   };
