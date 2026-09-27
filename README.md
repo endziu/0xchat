@@ -165,7 +165,7 @@ consumes another's.
 | Recover messages (initial and continuation pages) | 120 | 240 |
 | Lifecycle state lookup | 120 | 240 |
 | Clear conversation | 10 | 20 |
-| Push subscription changes | 10 (per IP + identity) | — |
+| Push subscribe/unsubscribe | 10 (per IP + identity) | — |
 | Registration challenge, registration, auth challenge, auth session, SSE token | — | 10 each |
 
 The per-IP message cap gives two identities that share an IP their full individual
@@ -187,13 +187,27 @@ lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
 
 ## Push notifications
 
-Push alerts are content-free wake-ups. Enabling is always an explicit click.
-Each identity can have up to five notification slots (one per browser). An alert
-can wake an offline recipient until a deadline fixed when the message is accepted:
-its expiry for legacy messages, or 24 hours later under recipient opening.
-When a push service reports an endpoint dead (404/410/401/403), the slot is marked
-as needing repair and the user enables notifications again in that browser. The
-endpoints are `GET /api/push/subscriptions` and `POST /api/push/{subscribe,reconcile,unsubscribe}`,
-all authenticated with the identity's session.
+Push alerts are content-free wake-ups. Enabling is always an explicit click, and
+each identity decides per browser. An alert goes out once, when a message is
+accepted and the recipient has no attentive browser open. It can wait at the push
+service until a deadline fixed at acceptance: the message's expiry for legacy
+messages, or 24 hours later under recipient opening.
+
+The browser's push subscription is the source of truth and the server stores a
+copy keyed by endpoint. Whenever an identity starts, the browser keeps its
+subscription only if that identity opted in there: it uploads an opted-in
+subscription again, and removes one left over from another identity or made with
+a rotated VAPID key. The endpoints are `POST /api/push/{subscribe,unsubscribe}`,
+authenticated with the identity's session.
+
+Deliberate limits, kept to keep the code small:
+
+- No retry. A failed or timed-out wake-up is dropped; the next message tries again.
+- An endpoint belongs to the identity that uploaded it last.
+- Each identity keeps its five most recent subscriptions; older ones are dropped.
+- A push service rejection (401/403/404/410) deletes the endpoint. If an endpoint
+  dies without the browser noticing, turn notifications off and on again.
+- Tabs do not coordinate. Toggling in two tabs at once can disagree until the
+  next load, which repairs it.
 
 ---

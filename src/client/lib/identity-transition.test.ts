@@ -10,8 +10,7 @@ function harness(overrides: Partial<IdentityTransitionDeps> = {}) {
   const events: string[] = []
   const deps: IdentityTransitionDeps = {
     setTransitioning: (value) => { events.push(`transitioning:${value}`) },
-    unsubscribePush: async () => { events.push('unsubscribe'); return true },
-    reportPushCleanupFailed: () => { events.push('push-cleanup-failed') },
+    unsubscribePush: async () => { events.push('unsubscribe') },
     revokeSession: async () => { events.push('revoke-session') },
     clearSession: () => { events.push('clear-session') },
     prepareIdentity: async (keypair) => { events.push(`prepare:${keypair.address}`) },
@@ -49,29 +48,7 @@ describe('identity transition', () => {
     await transition(identityB)
 
     expect(events).toContain('clear-session')
-    expect(events.slice(-3)).toEqual(['commit:0xb:token:0xb', 'push-cleanup-failed', 'transitioning:false'])
-  })
-
-  test('tells the new identity when the old identity\'s alerts may continue on this browser', async () => {
-    const { events, transition } = harness({
-      unsubscribePush: async () => { events.push('unsubscribe'); return false },
-    })
-
-    await transition(identityB)
-
-    expect(events.slice(-3)).toEqual(['commit:0xb:token:0xb', 'push-cleanup-failed', 'transitioning:false'])
-    expect(events.filter(event => event === 'push-cleanup-failed')).toHaveLength(1)
-  })
-
-  test('does not warn about old alerts when the switch does not commit', async () => {
-    const { events, transition } = harness({
-      unsubscribePush: async () => false,
-      createSession: async () => { throw new Error('login failed') },
-    })
-
-    await expect(transition(identityB)).rejects.toThrow('login failed')
-
-    expect(events).not.toContain('push-cleanup-failed')
+    expect(events.slice(-2)).toEqual(['commit:0xb:token:0xb', 'transitioning:false'])
   })
 
   test.each(['registration', 'login'] as const)('keeps the old identity and clears auth when %s fails', async (failure: 'registration' | 'login') => {

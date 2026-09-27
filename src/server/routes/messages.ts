@@ -4,7 +4,7 @@ import { json, getSessionAddress } from '../http.ts';
 import { clearIpLimiter, clearLimiter, recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { notify } from '../sse.ts';
 import { clientUpdateRequired } from '../lifecycle-gate.ts';
-import { requestPushDispatch } from '../push.ts';
+import { pushNotify } from '../push.ts';
 import { log, warn, VALID_TTLS } from '../constants.ts';
 import {
   MESSAGE_ENVELOPE_VERSION,
@@ -98,7 +98,7 @@ export async function handleSendMessage({ req, ip, lifecycleGate }: Context): Pr
   const event = delivered(envelope, stored);
   notify(envelope.recipient, 'message', event);
   notify(envelope.sender, 'message', event);
-  requestPushDispatch();
+  void pushNotify(envelope.recipient, stored.expires_at);
 
   log('[msg]', envelope.id, envelope.sender, '→', envelope.recipient, `ttl=${envelope.ttl}s`,
     `ct_r=${(envelope.ct_recipient.length - 2) / 2}B`, `ct_s=${(envelope.ct_sender.length - 2) / 2}B`);

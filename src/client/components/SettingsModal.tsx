@@ -3,20 +3,15 @@ import type { Keypair } from '../lib/burner'
 import { X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
-import type { PushSlotSummary } from '../../shared/push-slot'
 import { version } from '../../../package.json'
 
 export interface PushSettings {
   supported?: boolean
   subscribed?: boolean
-  repairNeeded?: boolean
-  removable?: boolean
-  slots?: PushSlotSummary[]
   permission?: NotificationPermission | null
   error?: string | null
   subscribe?: () => void
   unsubscribe?: () => void
-  removeSlot?: (slot: PushSlotSummary) => void
 }
 
 interface SettingsModalProps {
@@ -35,14 +30,10 @@ export function SettingsModal({
   const {
     supported: pushSupported,
     subscribed: pushSubscribed,
-    repairNeeded: pushRepairNeeded,
-    removable: pushRemovable,
-    slots: pushSlots,
     permission: pushPermission,
     error: pushError,
     subscribe: onPushSubscribe,
     unsubscribe: onPushUnsubscribe,
-    removeSlot: onPushRemoveSlot,
   } = push ?? {}
 
   useEffect(() => {
@@ -76,13 +67,11 @@ export function SettingsModal({
           <KeyManagement identity={identity} onImport={onImport} />
           <MessageLifetimeSettings />
 
-          {(pushSupported || (pushSlots?.length ?? 0) > 0) && (
+          {pushSupported && (
             <section className="border-t border-neutral-800 p-3">
               <div className="flex items-center justify-between gap-3">
                 <h3>Notifications</h3>
-                {!pushSupported ? (
-                  <span className="text-sm text-neutral-600">Unavailable here</span>
-                ) : pushPermission === 'denied' ? (
+                {pushPermission === 'denied' ? (
                   <span className="text-sm text-neutral-600">Blocked</span>
                 ) : pushSubscribed ? (
                   <button
@@ -93,43 +82,15 @@ export function SettingsModal({
                     On
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    {pushRemovable && (
-                      <button onClick={onPushUnsubscribe} aria-label="Remove notification slot">
-                        Remove
-                      </button>
-                    )}
-                    <button
-                      onClick={onPushSubscribe}
-                      aria-label="Enable notifications"
-                      aria-pressed={false}
-                    >
-                      Off
-                    </button>
-                  </div>
+                  <button
+                    onClick={onPushSubscribe}
+                    aria-label="Enable notifications"
+                    aria-pressed={false}
+                  >
+                    Off
+                  </button>
                 )}
               </div>
-              {pushSupported && pushRepairNeeded && !pushSubscribed && pushPermission !== 'denied' && (
-                <p className="mt-2 text-sm text-neutral-400">Notifications stopped working on this browser. Enable them again.</p>
-              )}
-              {pushSlots && pushSlots.length > 0 && (
-                <div className="mt-3 border-t border-neutral-800 pt-3">
-                  <h4 className="text-sm">Notification subscriptions</h4>
-                  <ul className="mt-2 space-y-2 text-sm">
-                    {pushSlots.map(slot => (
-                      <li key={slot.slot_id} className="flex items-center justify-between gap-2">
-                        <div>
-                          <div>{slot.label} · {slot.state === 'active' ? 'Active' : 'Needs repair'}</div>
-                          <div className="text-xs text-neutral-600">Slot {slot.slot_id} · updated {new Date(slot.updated_at).toLocaleString()}</div>
-                        </div>
-                        <button onClick={() => onPushRemoveSlot?.(slot)} aria-label={`Remove notification slot ${slot.slot_id}`}>
-                          Remove
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
               {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}
             </section>
           )}
