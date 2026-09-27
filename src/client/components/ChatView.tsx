@@ -139,7 +139,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
               </div>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex-1 overflow-y-auto overscroll-contain safe-bottom">
             <ConversationList
               conversations={conversations}
               activeAddress={recipientAddress}

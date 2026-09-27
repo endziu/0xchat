@@ -60,7 +60,7 @@ function AppContent() {
 
   if (idLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-dvh gap-2">
+      <div className="flex flex-col items-center justify-center h-full gap-2">
         {idError ? (
           <>
             <p className="text-red-400">{idError}</p>
@@ -74,19 +74,19 @@ function AppContent() {
   }
 
   if (transitioning) {
-    return <div className="flex items-center justify-center h-dvh text-neutral-600">Switching identity...</div>
+    return <div className="flex items-center justify-center h-full text-neutral-600">Switching identity...</div>
   }
 
   if (!token) {
     if (loginError) {
       return (
-        <div className="flex flex-col items-center justify-center h-dvh gap-2">
+        <div className="flex flex-col items-center justify-center h-full gap-2">
           <p className="text-red-400">{loginError}</p>
           <button onClick={login} disabled={sessionLoading}>{sessionLoading ? 'Retrying...' : 'Retry'}</button>
         </div>
       )
     }
-    return <div className="flex items-center justify-center h-dvh text-neutral-600">Connecting...</div>
+    return <div className="flex items-center justify-center h-full text-neutral-600">Connecting...</div>
   }
 
   return (
