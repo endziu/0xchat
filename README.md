@@ -84,7 +84,6 @@ Open the URL printed by Vite. Debug logging is enabled by the development script
 | `VAPID_PUBLIC_KEY` | empty | Web Push public key |
 | `VAPID_PRIVATE_KEY` | empty | Web Push private key |
 | `VAPID_SUBJECT` | mailto value | VAPID contact URI, normally `mailto:you@example.com` |
-| `RECIPIENT_OPENING` | unset | Set to `1` or `true` to activate opening-based message expiry and require updated clients. Follow the [staged enablement and rollback](docs/message-opening-api.md#release-gate) steps |
 | `TRUSTED_PROXY_IPS` | unset | Comma-separated, unscoped IPs of your reverse proxy/edge (IPv6 zone identifiers are rejected). When the direct peer is in this list, the client IP is taken from the rightmost untrusted `X-Forwarded-For` hop; otherwise `X-Forwarded-For` is ignored |
 
 Generate a VAPID pair with:
@@ -171,8 +170,7 @@ consumes another's.
 The per-IP message cap gives two identities that share an IP their full individual
 allowance while still putting a ceiling on identity cycling. Opening and state
 lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
-[the opening contract](docs/message-opening-api.md) and
-[the recovery contract](docs/message-recovery-api.md).
+[the message lifecycle API](docs/message-lifecycle-api.md).
 
 ## Retention
 
@@ -190,8 +188,8 @@ lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
 Push alerts are content-free wake-ups. Enabling is always an explicit click, and
 each identity decides per browser. An alert goes out once, when a message is
 accepted and the recipient has no attentive browser open. It can wait at the push
-service until a deadline fixed at acceptance: the message's expiry for legacy
-messages, or 24 hours later under recipient opening.
+service until the message's unopened retention limit runs out, 24 hours after
+acceptance.
 
 The browser's push subscription is the source of truth and the server stores a
 copy keyed by endpoint. Whenever an identity starts, the browser keeps its

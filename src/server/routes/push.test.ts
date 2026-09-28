@@ -4,8 +4,6 @@ import { pushMutationLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { handleSubscribePush, handleUnsubscribePush } from './push.ts'
 import type { Context } from '../http.ts'
-import { LifecycleGate } from '../lifecycle-gate.ts'
-
 const alice = `0x${'a'.repeat(40)}`
 const bob = `0x${'b'.repeat(40)}`
 const keys = {
@@ -30,7 +28,7 @@ function context(path: string, body: unknown, token: string | null = alice): Con
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   })
-  return { req, url: new URL(req.url), path, method: 'POST', ip: `push-test-${Math.random()}`, lifecycleGate: new LifecycleGate() }
+  return { req, url: new URL(req.url), path, method: 'POST', ip: `push-test-${Math.random()}` }
 }
 const subscribe = (body: unknown, token?: string | null) => handleSubscribePush(context('/api/push/subscribe', body, token))
 const unsubscribe = (body: unknown, token?: string | null) => handleUnsubscribePush(context('/api/push/unsubscribe', body, token))

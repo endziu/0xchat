@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
-import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type DeliveryPolicy, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
+import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 // Session tokens are stored as sha256 hex digests so a copy of the database
 // never yields a valid bearer token. Callers keep using the raw token; the
@@ -112,15 +112,16 @@ export function initDb(path = 'chat.db'): void {
     CREATE INDEX IF NOT EXISTS idx_msg_expires
       ON messages(expires_at);
   `);
-  // Separate from the envelope cutover: preserve every existing payload and deadline.
+  // Separate from the envelope cutover: adds the opening lifecycle columns.
   db.transaction(() => {
     const columns = tableColumns('messages');
     if (!columns.has('delivery_policy')) {
       db.run("ALTER TABLE messages ADD COLUMN delivery_policy TEXT NOT NULL DEFAULT 'legacy'");
     }
     if (!columns.has('opened_at')) db.run('ALTER TABLE messages ADD COLUMN opened_at INTEGER');
-    db.run(`CREATE INDEX IF NOT EXISTS idx_msg_opening_expires
-      ON messages(expires_at) WHERE delivery_policy = 'recipient-opening'`);
+    db.run('DROP INDEX IF EXISTS idx_msg_opening_expires');
+    // Legacy acceptance-based expiry is retired; such messages lived at most 24 hours.
+    db.run("DELETE FROM messages WHERE delivery_policy = 'legacy'");
   }).immediate();
   db.transaction(() => {
     db.run(`CREATE TABLE IF NOT EXISTS message_recovery (
@@ -216,13 +217,10 @@ export function deleteExpiredSessions(): void {
   db.query('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
 }
 
-export function createMessage(
-  envelope: MessageEnvelope,
-  policy: DeliveryPolicy = 'legacy',
-): MessageLifecycle | null {
+export function createMessage(envelope: MessageEnvelope): MessageLifecycle | null {
   return db.transaction(() => {
     const createdAt = Date.now();
-    const expiresAt = createdAt + (policy === 'legacy' ? envelope.ttl * 1000 : UNOPENED_RETENTION_MS);
+    const expiresAt = createdAt + UNOPENED_RETENTION_MS;
     const result = db.query(
       `INSERT OR IGNORE INTO messages (
         version, id, sender, recipient,
@@ -234,12 +232,12 @@ export function createMessage(
       envelope.version, envelope.id, envelope.sender, envelope.recipient,
       envelope.ct_recipient, envelope.ephemeral_pub_recipient, envelope.iv_recipient,
       envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
-      envelope.ttl, envelope.signature, createdAt, expiresAt, policy,
+      envelope.ttl, envelope.signature, createdAt, expiresAt, 'recipient-opening',
     );
     // Bun includes the acceptance trigger's updates in changes; only zero means an ignored insert.
     if (result.changes === 0) return null;
     markAddressesActive([envelope.sender, envelope.recipient], createdAt);
-    return { delivery_policy: policy, created_at: createdAt, opened_at: null, expires_at: expiresAt };
+    return { delivery_policy: 'recipient-opening' as const, created_at: createdAt, opened_at: null, expires_at: expiresAt };
   }).immediate();
 }
 
@@ -360,12 +358,6 @@ export function getConversations(
     .all(address, now, address, address) as ConversationSummary[];
 }
 
-/** Whether any still-available message requires a lifecycle-aware client. */
-export function hasRecipientOpeningMessages(): boolean {
-  return db.query(`SELECT 1 FROM messages
-    WHERE delivery_policy = 'recipient-opening' AND expires_at > ? LIMIT 1`).get(Date.now()) !== null;
-}
-
 export function deleteExpiredMessages(): void {
   db.query('DELETE FROM messages WHERE expires_at <= ?').run(Date.now());
 }
@@ -477,7 +469,7 @@ export function openMessages(recipient: string, sender: string, ids: string[]): 
         WHERE id = ? AND recipient = ? AND sender = ? AND expires_at > ?`)
         .get(id, recipient, sender, now) as MessageRow | null;
       if (!row) return { id, status: 'unavailable' };
-      if (row.delivery_policy === 'recipient-opening' && row.opened_at === null) {
+      if (row.opened_at === null) {
         row.opened_at = now;
         row.expires_at = now + row.ttl_seconds * 1000;
         db.query('UPDATE messages SET opened_at = ?, expires_at = ? WHERE id = ?')

@@ -554,7 +554,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   })
   const messages = isSynchronized() ? displayed : displayed.filter(message => finalVisibleIds.current.has(message.id))
   if (isSynchronized()) finalVisibleIds.current = new Set(messages
-    .filter(message => message.delivery_policy === 'legacy' || message.opened_at !== null).map(message => message.id))
+    .filter(message => message.opened_at !== null).map(message => message.id))
   const openingFailed = storeRef.current.hasFailedOpenings()
 
   return { messages, recovering: !isSynchronized(), loading, error, olderError, hasMore, loadingOlder, fetchOlder, sendMessage, recipientPubkey, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, refresh: retry, openingFailed, retryOpening }

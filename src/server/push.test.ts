@@ -7,7 +7,6 @@ import { createSession, deleteInactivePubkeys, deleteRegistration, getDb, getPus
 import { pushNotify, setPushSender, type SendPush } from './push.ts'
 import { addClient, removeClient } from './sse.ts'
 import { createFetch } from './router.ts'
-import { LifecycleGate } from './lifecycle-gate.ts'
 import * as limiters from './rate-limiters.ts'
 import { identity } from './test-identity.ts'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts'
@@ -45,10 +44,8 @@ test('wakes every subscription of the recipient with the remaining whole seconds
   expect(sent.every(item => item.TTL === 90)).toBe(true)
 })
 
-test.each([
-  [false, 5],
-  [true, 24 * 60 * 60],
-])('an accepted message wakes the recipient until its acceptance deadline (opening: %p)', async (opening, ttl) => {
+test('an accepted message wakes the recipient until its unopened retention deadline', async () => {
+  const ttl = 24 * 60 * 60
   const sender = identity('31')
   const recipient = identity('42')
   for (const person of [sender, recipient]) {
@@ -57,7 +54,7 @@ test.each([
   }
   for (const limiter of Object.values(limiters)) limiter.reset()
   savePushSubscription(recipient.address, { endpoint: endpoint('recipient'), ...keys })
-  const server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(opening) }) })
+  const server = Bun.serve({ port: 0, fetch: createFetch() })
   try {
     const envelope = await createSignedMessageEnvelope('hello', 5, sender, recipient.address, recipient.publicKey)
     const response = await fetch(new URL('/api/messages', server.url), { method: 'POST', body: JSON.stringify(envelope),

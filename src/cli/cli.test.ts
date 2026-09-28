@@ -152,19 +152,19 @@ describe('unchanged server interoperability', () => {
     expect(received.messages.find(message => message.id === sent.id)?.plaintext).toBe('hello from CLI 😛')
     const token = await browserSession(alice)
     try {
-      const rawPage = await fetch(origin + `/api/messages/${bob.identity.address}`, { headers: { Authorization: `Bearer ${token}` } }).then(response => response.json()) as { messages: unknown[] }
+      const rawPage = await fetch(origin + `/api/messages/${bob.identity.address}`, { headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' } }).then(response => response.json()) as { messages: unknown[] }
       const envelope = await verifyDeliveredMessage(rawPage.messages[0])
       expect(envelope).not.toBeNull()
       expect(await decrypt(envelope!.ct_sender, envelope!.ephemeral_pub_sender, envelope!.iv_sender, alice.identity.privateKey, canonicalMessageAad(envelope!))).toBe('hello from CLI 😛')
       const browserMessage = await createSignedMessageEnvelope('hello from browser', 300, alice.identity, bob.identity.address, bob.identity.publicKey)
-      const response = await fetch(origin + '/api/messages', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(browserMessage) })
+      const response = await fetch(origin + '/api/messages', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1', 'Content-Type': 'application/json' }, body: JSON.stringify(browserMessage) })
       expect(response.status).toBe(201)
       const delivered = await response.json()
       expect((await bob.decode(delivered, alice.identity.address))?.plaintext).toBe('hello from browser')
       await expect(bob.decode({ ...delivered, sender: bob.identity.address.toLowerCase() }, alice.identity.address)).rejects.toThrow()
       await expect(bob.decode(delivered, parsePrivateKey('22'.repeat(32)).address)).rejects.toThrow()
     } finally {
-      await fetch(origin + '/api/session', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      await fetch(origin + '/api/session', { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' } })
     }
     expect((await bob.conversations()).conversations.some(conversation => conversation.address === alice.identity.address.toLowerCase())).toBe(true)
   })

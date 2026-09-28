@@ -9,7 +9,7 @@ These notes capture agreed behavior separately from the glossary. They are not a
 
 ## Intended message expiry
 
-The unopened/opened lifecycle below applies to new messages once operators activate the release gate (see [release gate](message-opening-api.md#release-gate)); until then, message lifetime starts when the server accepts a message. The browser already follows the opening, reveal and synchronization rules for both delivery policies (see [browser opening and reveal](message-opening-api.md#browser-opening-and-reveal)). Agreed behavior:
+The server side of this lifecycle is described in the [message lifecycle API](message-lifecycle-api.md). Agreed behavior:
 
 - An unopened message expires 24 hours after acceptance.
 - Opening a message in its conversation before that deadline starts the full sender-selected message lifetime.
@@ -20,5 +20,4 @@ The unopened/opened lifecycle below applies to new messages once operators activ
 - In the terminal client, `read`, `watch`, and `chat` count as explicitly opening the conversation for the messages they consume. `read` opens the messages it returns; `watch` and `chat` also open incoming messages while running, including when running in the background. Listing conversations does not count as opening them.
 - The server starts a message's lifetime when it first accepts an authenticated opening acknowledgement from the recipient, after the client successfully verifies and decrypts the message under the agreed opening conditions. All devices share that deadline. Retries and later openings cannot reset it, and expired messages cannot be revived. A delayed acknowledgement therefore starts the lifetime later than the actual opening.
 - Incoming messages being opened remain hidden until the server confirms their opening deadline. Clients may verify and decrypt internally before confirmation, but browser display and terminal output wait for confirmation. If acknowledgement fails, keep those messages hidden and show a retryable error.
-- Messages already stored when the new expiry behavior is introduced retain their original expiry deadlines; opening them cannot extend those deadlines. Only newly accepted messages use the new unopened/opened lifecycle.
 - While browser synchronization is unavailable, hide messages whose expiry can still change until reconnection or refocusing and authoritative refresh confirm their state. This includes focus loss, intentional disconnection on visibility loss, and accidental disconnection. Messages with an already-confirmed final deadline may remain visible until that deadline. The sender's copy awaiting recipient opening is affected by this rule.

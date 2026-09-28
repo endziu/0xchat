@@ -3,7 +3,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { render } from 'preact'
 import { getDb, initDb } from '../../server/db'
 import { createFetch } from '../../server/router'
-import { LifecycleGate, clientUpdateRequired } from '../../server/lifecycle-gate'
+import { clientUpdateRequired } from '../../server/http'
 import * as limiters from '../../server/rate-limiters'
 import * as serverConstants from '../../server/constants'
 import { ChatClient } from '../../cli/client'
@@ -215,7 +215,7 @@ beforeEach(async () => {
   visible = true
   openRequests = []
   intercept = (_request, next) => next()
-  const handler = createFetch({ lifecycleGate: new LifecycleGate(true) })
+  const handler = createFetch()
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, srv) {
     const path = new URL(request.url).pathname
     if (request.method === 'POST' && path.endsWith('/open')) openRequests.push((await request.clone().json()).ids)

@@ -1,6 +1,5 @@
 import { getClientIp } from './http.ts';
-import { RECIPIENT_OPENING, SECURITY_HEADERS, log } from './constants.ts';
-import { LifecycleGate } from './lifecycle-gate.ts';
+import { SECURITY_HEADERS, log } from './constants.ts';
 import { TRUSTED_PROXY_IPS } from './trusted-proxy.ts';
 import { handleRegisterChallenge, handleRegister, regStore } from './routes/register.ts';
 import { handleAuthChallenge, handleAuthSession, authStore } from './routes/auth.ts';
@@ -54,8 +53,7 @@ function re(pattern: RegExp) {
   return (path: string) => pattern.test(path);
 }
 
-export function createFetch(options: { lifecycleGate?: LifecycleGate; trustedProxies?: ReadonlySet<string> } = {}) {
-  const lifecycleGate = options.lifecycleGate ?? new LifecycleGate(RECIPIENT_OPENING);
+export function createFetch(options: { trustedProxies?: ReadonlySet<string> } = {}) {
   const trustedProxies = options.trustedProxies ?? TRUSTED_PROXY_IPS;
   return async (req: Request, server: { requestIP: (r: Request) => { address: string } | null }): Promise<Response> => {
     const url = new URL(req.url);
@@ -69,7 +67,7 @@ export function createFetch(options: { lifecycleGate?: LifecycleGate; trustedPro
       return new Response(null, { status: 200, headers: SECURITY_HEADERS });
     }
 
-    const ctx: Context = { req, url, path, method, ip, lifecycleGate };
+    const ctx: Context = { req, url, path, method, ip };
     const route = routes.find((r) => r.method === method && r.test(path));
     return route ? route.handler(ctx) : notFound();
   };

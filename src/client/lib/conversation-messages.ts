@@ -24,7 +24,7 @@ export interface DisplayConditions {
 }
 
 function isFinalDeadline(lifecycle: MessageLifecycle): boolean {
-  return lifecycle.delivery_policy === 'legacy' || lifecycle.opened_at !== null
+  return lifecycle.opened_at !== null
 }
 
 /** An incoming message this client has not had confirmed as opened. */
@@ -34,7 +34,7 @@ function awaitsOpening(entry: Entry): boolean {
 
 /** Opened beats unopened; a final deadline never changes. */
 function mergeLifecycle(current: MessageLifecycle, next: MessageLifecycle): MessageLifecycle {
-  if (next.delivery_policy !== current.delivery_policy || next.created_at !== current.created_at) return current
+  if (next.created_at !== current.created_at) return current
   if (isFinalDeadline(current) || next.opened_at === null) return current
   return next
 }
@@ -54,7 +54,7 @@ function resultsOf(response: unknown): Record<string, unknown>[] | null {
 }
 
 function matchesLifecycle(current: MessageLifecycle, next: MessageLifecycle, serverTime: number): boolean {
-  return next.delivery_policy === current.delivery_policy && next.created_at === current.created_at
+  return next.created_at === current.created_at
     && next.created_at <= serverTime && (next.opened_at === null || next.opened_at <= serverTime)
     && next.expires_at > serverTime
     && !(isFinalDeadline(current) && isFinalDeadline(next)
