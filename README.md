@@ -2,7 +2,7 @@
 
 0xChat is a pseudonymous, end-to-end encrypted chat app where an Ethereum address is your identity. There is no signup, email address, phone number, username, friend request, or wallet connection.
 
-Open the app and it creates a fresh **burner identity** in your browser. Share its address or QR code, start a conversation with another registered address, and choose how long each message should exist—from 5 seconds to 24 hours.
+Open the app and it creates a fresh **burner identity** in your browser. Share its address or QR code, start a conversation with another registered address, and choose how long each message lasts once it is opened—from 5 seconds to 24 hours.
 
 > **Important:** your private key is your account. Export it if you want to keep the identity. Losing browser storage without a backup means losing access permanently. Use a dedicated burner key; do not import a wallet that holds valuable assets.
 
@@ -12,7 +12,7 @@ Open the app and it creates a fresh **burner identity** in your browser. Share i
 - Lets people contact each other directly by address or QR code.
 - Encrypts and signs messages in the browser before sending them.
 - Delivers messages live and can send optional, content-free push alerts.
-- Deletes messages after the sender-selected expiry time, or right away when either side clears the conversation.
+- Deletes each message when its lifetime ends after the recipient opens it (or 24 hours after sending if it is never opened), or right away when either side clears the conversation.
 - Supports text and encrypted image attachments.
 - Works as an installable PWA on mobile and desktop.
 - Lets you export/import your identity and delete your account.
