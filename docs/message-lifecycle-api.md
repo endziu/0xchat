@@ -25,8 +25,8 @@ opening + the full signed TTL, which can shorten or extend the unopened
 deadline. Availability ends at `now >= expires_at`. GET, recovery, state lookup
 and SSE delivery never open messages.
 
-Push alerts use the unopened deadline fixed at acceptance, regardless of a later
-opening.
+Push alerts wait at most until acceptance plus the unopened retention limit,
+regardless of a later opening.
 
 ## Client capability
 

@@ -188,7 +188,8 @@ lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
 Push alerts are content-free wake-ups. Enabling is always an explicit click, and
 each identity decides per browser. An alert goes out once, when a message is
 accepted and the recipient has no attentive browser open. It can wait at the push
-service until the message's unopened deadline, 24 hours after acceptance.
+service until the message's unopened retention limit runs out, 24 hours after
+acceptance.
 
 The browser's push subscription is the source of truth and the server stores a
 copy keyed by endpoint. Whenever an identity starts, the browser keeps its

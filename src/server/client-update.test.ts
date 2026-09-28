@@ -79,7 +79,7 @@ test('old read, conversation and live-token operations are rejected while update
   }
 });
 
-test('notification cleanup and session removal stay open to old clients', async () => {
+test('notification cleanup, session removal and account deletion stay open to old clients', async () => {
   start();
   const subscription = { endpoint: 'https://fcm.googleapis.com/fcm/send/gate-cleanup',
     keys: { p256dh: Buffer.alloc(65, 4).toString('base64url'), auth: Buffer.alloc(16, 5).toString('base64url') } };
@@ -89,4 +89,5 @@ test('notification cleanup and session removal stay open to old clients', async 
   const removed = await request('/api/push/unsubscribe', 'old', bob.address, { endpoint: subscription.endpoint });
   expect(removed.status).toBe(200);
   expect((await request('/api/session', 'old', bob.address, undefined, 'DELETE')).status).toBe(204);
+  expect((await request(`/api/addresses/${alice.address}`, 'old', alice.address, undefined, 'DELETE')).status).toBe(200);
 });

@@ -28,6 +28,8 @@ export interface MessageEnvelope extends MessageMetadata {
 
 export const UNOPENED_RETENTION_MS = 24 * 60 * 60 * 1000
 export const DELIVERY_CAPABILITY = 'recipient-opening-v1'
+// Single-valued, but stays on the wire: deployed clients reject messages without it.
+// Removing it takes two releases: clients that stop requiring it, then a server that stops sending it.
 export type DeliveryPolicy = 'recipient-opening'
 
 export interface MessageLifecycle {
