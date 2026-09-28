@@ -100,19 +100,17 @@ describe('message envelope protocol', () => {
   })
 })
 
-test('signed deliveries validate legacy and opening deadlines independently of the envelope', async () => {
+test('signed deliveries validate opening deadlines independently of the envelope', async () => {
   const envelope = await signedEnvelope()
-  const legacy = { ...envelope, delivery_policy: 'legacy' as const, created_at: 1000, opened_at: null, expires_at: 301000 }
-  expect(await verifyDeliveredMessage(legacy)).toEqual(legacy)
-  const unopened = { ...legacy, delivery_policy: 'recipient-opening' as const, expires_at: 86401000 }
+  const unopened = { ...envelope, delivery_policy: 'recipient-opening' as const, created_at: 1000, opened_at: null, expires_at: 86401000 }
   expect(await verifyDeliveredMessage(unopened)).toEqual(unopened)
   const opened = { ...unopened, opened_at: 86400999, expires_at: 86700999 }
   expect(await verifyDeliveredMessage(opened)).toEqual(opened)
   for (const invalid of [
-    { ...legacy, expires_at: 301001 }, { ...legacy, opened_at: 1000 },
-    { ...unopened, expires_at: 301000 }, { ...unopened, delivery_policy: 'unknown' },
+    { ...unopened, expires_at: 301000 }, { ...unopened, delivery_policy: 'legacy' },
+    { ...unopened, delivery_policy: 'unknown' },
     { ...opened, opened_at: 86401000 }, { ...opened, opened_at: 999 },
     { ...opened, expires_at: 86701000 }, { ...opened, ttl: 5 },
-    { ...legacy, created_at: -1 }, { ...legacy, opened_at: undefined },
-  ]) expect(await verifyDeliveredMessage(invalid)).toBeNull()
+    { ...unopened, created_at: -1 }, { ...unopened, opened_at: undefined },
+]) expect(await verifyDeliveredMessage(invalid)).toBeNull()
 })

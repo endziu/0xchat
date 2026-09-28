@@ -271,7 +271,7 @@ describe('auth routes', () => {
 
     // The raw token authenticates a protected route end to end.
     const res = await fetch(baseUrl + '/api/conversations', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     });
     expect(res.status).toBe(200);
 
@@ -431,7 +431,7 @@ describe('authenticated routes', () => {
 
   test('GET /api/conversations with auth returns list', async () => {
     const res = await fetch(baseUrl + '/api/conversations', {
-      headers: { Authorization: 'Bearer ' + token },
+      headers: { Authorization: 'Bearer ' + token, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     });
     expect(res.status).toBe(200);
     const data = (await res.json()) as {
@@ -443,7 +443,7 @@ describe('authenticated routes', () => {
   test('persists, fetches, streams, verifies, and decrypts both copies', async () => {
     const sseTokenResponse = await fetch(baseUrl + '/api/events/token', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${recipientToken}` },
+      headers: { Authorization: `Bearer ${recipientToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     });
     const { sse_token: sseToken } = await sseTokenResponse.json() as { sse_token: string };
     const sseAbort = new AbortController();
@@ -454,7 +454,7 @@ describe('authenticated routes', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${senderToken}`,
+        Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1',
       },
       body: JSON.stringify(envelope),
     });
@@ -463,14 +463,14 @@ describe('authenticated routes', () => {
     expect(delivered).not.toBeNull();
 
     const fetchedForRecipient = await fetch(`${baseUrl}/api/messages/${messageSender.address}`, {
-      headers: { Authorization: `Bearer ${recipientToken}` },
+      headers: { Authorization: `Bearer ${recipientToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     });
     const recipientMessages = await fetchedForRecipient.json() as { messages: unknown[] };
     const recipientCopy = await verifyDeliveredMessage(recipientMessages.messages[0]);
     expect(recipientCopy).not.toBeNull();
 
     const fetchedForSender = await fetch(`${baseUrl}/api/messages/${messageRecipient.address}`, {
-      headers: { Authorization: `Bearer ${senderToken}` },
+      headers: { Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     });
     const senderMessages = await fetchedForSender.json() as { messages: unknown[] };
     const senderCopy = await verifyDeliveredMessage(senderMessages.messages[0]);
@@ -515,7 +515,7 @@ describe('authenticated routes', () => {
     for (const mutation of mutations) {
       const response = await fetch(baseUrl + '/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
         body: JSON.stringify({ ...original, ...mutation }),
       });
       expect(response.status).toBeGreaterThanOrEqual(400);
@@ -530,27 +530,27 @@ describe('authenticated routes', () => {
     );
     const wrongSigner = await fetch(baseUrl + '/api/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       body: JSON.stringify({ ...wrongSignerEnvelope, sender: messageSender.address }),
     });
     expect(wrongSigner.status).toBe(400);
 
     const legacy = await fetch(baseUrl + '/api/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       body: JSON.stringify({ ...original, version: 1 }),
     });
     expect(legacy.status).toBe(400);
 
     const accepted = await fetch(baseUrl + '/api/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       body: JSON.stringify(original),
     });
     expect(accepted.status).toBe(201);
     const replay = await fetch(baseUrl + '/api/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       body: JSON.stringify(original),
     });
     expect(replay.status).toBe(409);
@@ -566,7 +566,7 @@ describe('rate limiting', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${senderToken}`,
+          Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1',
         },
         body: JSON.stringify(envelope),
       });
@@ -615,7 +615,7 @@ describe('input validation', () => {
     const addr = '0x' + 'a'.repeat(40);
     for (const limit of ['abc', '0', '-5', '1.5']) {
       const res = await fetch(`${baseUrl}/api/messages/${addr}?limit=${limit}`, {
-        headers: { Authorization: 'Bearer test-token-integration' },
+        headers: { Authorization: 'Bearer test-token-integration', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       });
       expect(res.status).toBe(400);
       const data = (await res.json()) as { error: string };
@@ -667,7 +667,7 @@ describe('input validation', () => {
 
     const getPage = (query: string) =>
       fetch(`${baseUrl}/api/messages/${recipient}${query}`, {
-        headers: { Authorization: 'Bearer limit-test-token' },
+        headers: { Authorization: 'Bearer limit-test-token', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
       }).then((res) => res.json() as Promise<{ messages: unknown[] }>);
 
     expect((await getPage('')).messages).toHaveLength(50);

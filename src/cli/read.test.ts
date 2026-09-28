@@ -7,7 +7,6 @@ import { createIdentity, parsePrivateKey } from './identity'
 import { main } from './main'
 import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
-import { LifecycleGate } from '../server/lifecycle-gate'
 import * as limiters from '../server/rate-limiters'
 import { canonicalMessageEnvelope, type DeliveredMessage, type OpeningResponse } from '../shared/message-envelope'
 import { signEIP191 } from '../client/lib/burner'
@@ -20,7 +19,6 @@ let bob: ChatClient
 let clock: ReturnType<typeof spyOn>
 let directory: string
 let bobPath: string
-let legacy: boolean
 let openingBodies: string[][]
 let stateBodies: string[][]
 let transform: (request: Request, response: Response) => Promise<Response>
@@ -44,14 +42,12 @@ beforeEach(async () => {
   const identity = await createIdentity(bobPath)
   openingBodies = []
   stateBodies = []
-  legacy = false
   transform = async (_request, response) => response
-  const handler = createFetch({ lifecycleGate: new LifecycleGate(true) })
-  const legacyHandler = createFetch()
+  const handler = createFetch()
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, server) {
     if (isMessageAction(request, 'open')) openingBodies.push((await request.clone().json()).ids)
     if (isMessageAction(request, 'state')) stateBodies.push((await request.clone().json()).ids)
-    return transform(request, await (legacy ? legacyHandler : handler)(request, server))
+    return transform(request, await handler(request, server))
   } })
   alice = new ChatClient(server.url.origin, parsePrivateKey('12'.repeat(32)))
   bob = new ChatClient(server.url.origin, identity)
@@ -192,32 +188,6 @@ test('all-history output excludes messages that expired while older pages were o
     expect(openingBodies.map(ids => ids.length)).toEqual([100, 1])
   } finally { monotonicClock.mockRestore() }
 }, 20_000)
-
-test('legacy incoming messages require confirmation without changing their deadline', async () => {
-  legacy = true
-  const sent = await alice.send(bob.identity.address, 'legacy', 5)
-  clock.mockReturnValue(1_001_000)
-  const result = await bob.read(alice.identity.address)
-  expect(result.messages[0]).toMatchObject({ delivery_policy: 'legacy', opened_at: null, expires_at: 1_005_000 })
-  expect(openingBodies).toEqual([[sent.id]])
-  transform = async (request, response) => isMessageAction(request, 'open')
-    ? Response.json({ server_time: Date.now(), results: [{ id: sent.id, status: 'unavailable' }] }) : response
-  expect((await bob.read(alice.identity.address)).messages).toEqual([])
-})
-
-test('after activation the CLI reads and opens a conversation that mixes legacy and new-policy messages', async () => {
-  legacy = true
-  const before = await alice.send(bob.identity.address, 'sent before activation', 5)
-  legacy = false
-  const after = await alice.send(bob.identity.address, 'sent after activation', 5)
-  clock.mockReturnValue(1_002_000)
-  const page = await bob.read(alice.identity.address)
-  expect(page.messages).toEqual([
-    expect.objectContaining({ id: before.id, plaintext: 'sent before activation', delivery_policy: 'legacy', opened_at: null, expires_at: 1_005_000 }),
-    expect.objectContaining({ id: after.id, plaintext: 'sent after activation', delivery_policy: 'recipient-opening', opened_at: 1_002_000, expires_at: 1_007_000 }),
-  ])
-  expect(openingBodies).toEqual([[after.id, before.id]])
-})
 
 for (const corruption of ['signature', 'ciphertext', 'misaddressed']) {
   test(`rejects ${corruption} input before opening or printing any plaintext`, async () => {

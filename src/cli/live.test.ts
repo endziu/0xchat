@@ -6,7 +6,7 @@ import { ChatClient } from './client'
 import { createIdentity, parsePrivateKey } from './identity'
 import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
-import { LifecycleGate, clientUpdateRequired } from '../server/lifecycle-gate'
+import { clientUpdateRequired } from '../server/http'
 import * as limiters from '../server/rate-limiters'
 import * as constants from '../server/constants'
 import { UNOPENED_RETENTION_MS } from '../shared/message-envelope'
@@ -34,7 +34,7 @@ beforeEach(async () => {
   const identity = await createIdentity(identityPath)
   transform = async (_request, response) => response
   processes = []
-  const handler = createFetch({ lifecycleGate: new LifecycleGate(true) })
+  const handler = createFetch()
   server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request, server) {
     const response = await handler(request, server)
     if (new URL(request.url).pathname !== '/api/events' || !response.ok) return transform(request, response)
@@ -321,12 +321,12 @@ test('watch stops with the update action when opening a live message requires a 
     rejections++
     return clientUpdateRequired()
   }
-  await alice.send(bob.identity.address, 'live after activation', 300)
+  await alice.send(bob.identity.address, 'live message needing an update', 300)
   await cli.proc.exited
   expect(cli.proc.exitCode).toBe(1)
   expect(cli.diagnostics()).toContain('This 0xChat CLI is out of date')
   expect(cli.diagnostics()).not.toContain('Rejected an invalid message')
-  expect(cli.output()).not.toContain('live after activation')
+  expect(cli.output()).not.toContain('live message needing an update')
   expect(rejections).toBe(1)
 })
 

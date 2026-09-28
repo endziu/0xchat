@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
-import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,7 +6,6 @@ import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
-import { LifecycleGate } from './lifecycle-gate.ts';
 import * as limiters from './rate-limiters.ts';
 import { identity } from './test-identity.ts';
 
@@ -25,7 +23,7 @@ beforeEach(() => {
     registerPubkey(person.address, person.publicKey);
     createSession(person.address, person.address, 1_000_000_000);
   }
-  server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(true) }) });
+  server = Bun.serve({ port: 0, fetch: createFetch() });
 });
 afterEach(() => {
   server?.stop(true);
@@ -125,47 +123,25 @@ test('expired and deleted page boundaries do not invalidate progress or admit la
   expect((await recover(`cursor=${first.next_cursor}`)).exhausted).toBe(true);
 });
 
-test('migration preserves old timestamp/tie cursors and envelopes; checkpoints survive deletion and restart', async () => {
+test('checkpoints survive deletion and restart', async () => {
   server.stop(true);
   getDb().close();
   directory = mkdtempSync(join(tmpdir(), '0xchat-recovery-'));
   const path = join(directory, 'chat.db');
-  const old = new Database(path);
-  old.run(`CREATE TABLE messages (
-    version INTEGER NOT NULL, id TEXT PRIMARY KEY, sender TEXT NOT NULL, recipient TEXT NOT NULL,
-    ct_recipient TEXT NOT NULL, ephemeral_pub_recipient TEXT NOT NULL, iv_recipient TEXT NOT NULL,
-    ct_sender TEXT NOT NULL, ephemeral_pub_sender TEXT NOT NULL, iv_sender TEXT NOT NULL,
-    ttl_seconds INTEGER NOT NULL, signature TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
-  )`);
-  const expected = [];
-  for (const stamp of [1000, 900, 1000]) {
-    const envelope = await createSignedMessageEnvelope('pre-upgrade', 5, alice, bob.address, bob.publicKey);
-    old.query('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-      envelope.version, envelope.id, envelope.sender, envelope.recipient,
-      envelope.ct_recipient, envelope.ephemeral_pub_recipient, envelope.iv_recipient,
-      envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
-      envelope.ttl, envelope.signature, stamp, stamp + 5000);
-    expected.push({ ...envelope, delivery_policy: 'legacy', created_at: stamp, opened_at: null, expires_at: stamp + 5000 });
-  }
-  old.close();
   initDb(path);
   for (const person of [alice, bob]) {
     registerPubkey(person.address, person.publicKey);
     createSession(person.address, person.address, 1_000_000_000);
   }
   server = Bun.serve({ port: 0, fetch: createFetch() });
-  const initial = await (await request('?limit=1')).json();
-  expect(initial.messages).toEqual([expected[2]]);
-  // This (timestamp,rowid) cursor was issued by the old implementation.
-  expect((await (await request('?before=1000&before_rowid=3')).json()).messages).toEqual([expected[0], expected[1]]);
+  const sent = [await send(), await send()];
+  const initial = await (await request()).json();
   for (let restart = 0; restart < 2; restart++) {
     getDb().close();
     initDb(path);
-    const history = await (await request()).json();
-    expect(history.messages).toEqual([expected[2], expected[0], expected[1]]);
-    for (const message of history.messages) expect(await verifyDeliveredMessage(message)).toEqual(message);
+    expect((await (await request()).json()).messages).toEqual([sent[1], sent[0]]);
   }
-  clock.mockReturnValue(6000);
+  clock.mockReturnValue(86_401_000);
   deleteExpiredMessages();
   getDb().close();
   initDb(path);

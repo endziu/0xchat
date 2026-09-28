@@ -28,7 +28,7 @@ export interface MessageEnvelope extends MessageMetadata {
 
 export const UNOPENED_RETENTION_MS = 24 * 60 * 60 * 1000
 export const DELIVERY_CAPABILITY = 'recipient-opening-v1'
-export type DeliveryPolicy = 'legacy' | 'recipient-opening'
+export type DeliveryPolicy = 'recipient-opening'
 
 export interface MessageLifecycle {
   delivery_policy: DeliveryPolicy
@@ -157,18 +157,14 @@ export function parseDeliveryLifecycle(ttl: number, input: object): MessageLifec
     || !Number.isSafeInteger(expires_at)) return null
   const accepted = created_at as number
   const retentionDeadline = accepted + UNOPENED_RETENTION_MS
-  if (delivery_policy === 'legacy') {
-    if (opened_at !== null || expires_at !== accepted + ttl * 1000) return null
-  } else if (delivery_policy === 'recipient-opening') {
-    if (!Number.isSafeInteger(retentionDeadline)) return null
-    if (opened_at === null) {
-      if (expires_at !== retentionDeadline) return null
-    } else {
-      if (!Number.isSafeInteger(opened_at) || (opened_at as number) < accepted
-        || (opened_at as number) >= retentionDeadline
-        || expires_at !== (opened_at as number) + ttl * 1000) return null
-    }
-  } else return null
+  if (delivery_policy !== 'recipient-opening' || !Number.isSafeInteger(retentionDeadline)) return null
+  if (opened_at === null) {
+    if (expires_at !== retentionDeadline) return null
+  } else {
+    if (!Number.isSafeInteger(opened_at) || (opened_at as number) < accepted
+      || (opened_at as number) >= retentionDeadline
+      || expires_at !== (opened_at as number) + ttl * 1000) return null
+  }
   return { delivery_policy, created_at: accepted, opened_at: opened_at as number | null, expires_at: expires_at as number }
 }
 
@@ -196,7 +192,7 @@ export function parseExpiryUpdate(input: unknown): ExpiryUpdate | null {
   if (typeof value['id'] !== 'string' || !MESSAGE_ID.test(value['id'])) return null
   if (typeof value['sender'] !== 'string' || !ADDRESS.test(value['sender'])) return null
   if (typeof value['recipient'] !== 'string' || !ADDRESS.test(value['recipient'])) return null
-  if (value['delivery_policy'] !== 'legacy' && value['delivery_policy'] !== 'recipient-opening') return null
+  if (value['delivery_policy'] !== 'recipient-opening') return null
   if (!Number.isSafeInteger(value['created_at']) || !Number.isSafeInteger(value['expires_at'])) return null
   if (value['opened_at'] !== null && !Number.isSafeInteger(value['opened_at'])) return null
   return value as unknown as ExpiryUpdate
@@ -224,10 +220,9 @@ export async function verifyMessageConfirmation(
     expires_at: confirmation['expires_at'],
   } as MessageLifecycle
   const updated = await verifyDeliveredMessage({ ...(deliveryInput as object), ...lifecycle })
-  if (!updated || updated.delivery_policy !== delivery.delivery_policy
-    || updated.created_at !== delivery.created_at
+  if (!updated || updated.created_at !== delivery.created_at
     || (delivery.opened_at !== null && updated.opened_at !== delivery.opened_at)
-    || (kind === 'opening' && updated.delivery_policy === 'recipient-opening' && updated.opened_at === null)
+    || (kind === 'opening' && updated.opened_at === null)
     || (updated.opened_at !== null && updated.opened_at > (serverTime as number))
     || updated.expires_at <= (serverTime as number)) return null
   return lifecycle

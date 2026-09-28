@@ -31,7 +31,7 @@ export function isMessageAvailable(message: PlainMessage): boolean {
 }
 
 function canReceiveExpiryUpdate(message: PlainMessage): boolean {
-  return message.delivery_policy === 'recipient-opening' && message.opened_at === null
+  return message.opened_at === null
     && performance.now() < message[availabilityDeadline] + message.ttl * 1000
 }
 
@@ -44,8 +44,8 @@ export function applyExpiryUpdate(message: PlainMessage, input: unknown): boolea
   const update = parseExpiryUpdate(input)
   if (!update || update.id !== message.id || update.sender !== message.sender || update.recipient !== message.recipient) return false
   const lifecycle = parseDeliveryLifecycle(message.ttl, update)
-  if (!lifecycle || lifecycle.created_at !== message.created_at || lifecycle.delivery_policy !== message.delivery_policy) return false
-  // A recipient-opening message can move from its unopened deadline to its
+  if (!lifecycle || lifecycle.created_at !== message.created_at) return false
+  // A message can move from its unopened deadline to its
   // final deadline exactly once. Never let a stale event undo that change.
   if (message.opened_at !== null && lifecycle.opened_at !== message.opened_at) return false
   if (lifecycle.opened_at === message.opened_at && lifecycle.expires_at === message.expires_at) return false

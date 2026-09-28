@@ -32,8 +32,8 @@ const DEAD_STATUS = new Set([401, 403, 404, 410]);
 
 /**
  * Wake the recipient's browsers once, unless one of them is already looking.
- * The deadline is fixed at acceptance: the legacy expiry, or the unopened
- * retention deadline under recipient opening. There is no retry; a failed
+ * The deadline is fixed at acceptance: the unopened retention deadline.
+ * There is no retry; a failed
  * wake-up is dropped and the next message tries again.
  */
 export async function pushNotify(address: string, deadline: number): Promise<void> {

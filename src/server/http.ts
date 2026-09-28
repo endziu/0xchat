@@ -1,10 +1,9 @@
 import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
 import { resolveClientIp } from './trusted-proxy.ts';
-import type { LifecycleGate } from './lifecycle-gate.ts';
+import { advertisesDeliveryCapability } from '../shared/message-envelope.ts';
 
 export interface Context {
-  lifecycleGate: LifecycleGate;
   req: Request;
   url: URL;
   path: string;
@@ -20,6 +19,15 @@ export function json(body: unknown, status = 200): Response {
       ...SECURITY_HEADERS,
     },
   });
+}
+
+/** Clients that cannot interpret recipient opening must update before using messages. */
+export function isOutdatedClient(req: Request): boolean {
+  return !advertisesDeliveryCapability(req.headers);
+}
+
+export function clientUpdateRequired(): Response {
+  return json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.', code: 'client_update_required' }, 426);
 }
 
 export function getClientIp(

@@ -143,10 +143,9 @@ placeholder in human-readable output; JSON contains their decrypted data URL.
 Image upload, push notifications, local conversation labels, and identity deletion
 are not implemented in the CLI.
 
-Legacy messages keep the lifetime that started when the server accepted them.
-For recipient-opening messages, the server starts the signed lifetime at the
-first authenticated opening. Both policies are described in
-[domain behavior](domain-behavior.md), and the CLI follows server timestamps.
+The server starts the signed lifetime at the first authenticated opening; an
+unopened message expires 24 hours after acceptance. See
+[domain behavior](domain-behavior.md). The CLI follows server timestamps.
 `read`/`watch` output, shell history, redirected JSON, screenshots, and terminal
 recordings can retain plaintext beyond expiry; expiry cannot erase those copies.
 Even chat mode cannot prevent terminal capture. A reconnect can recover only
@@ -167,8 +166,8 @@ expiry, identity file permissions, and command-line JSON/stdin behavior.
 ### Message opening and expiry
 
 `read` verifies signed envelopes and authenticates decryption before requesting
-message opening from the server. Both legacy and recipient-opening incoming
-deliveries require opening confirmation. Sender copies use the read-only lifecycle
+message opening from the server. Incoming deliveries require opening
+confirmation. Sender copies use the read-only lifecycle
 lookup for availability confirmation; they and `conversations` never open messages.
 A normal read opens only its returned page; cursor reads open that page, and
 `--all` opens each history page as it loads it.

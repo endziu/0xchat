@@ -3,7 +3,6 @@ import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
-import { LifecycleGate } from './lifecycle-gate.ts';
 import { addClient, removeClient } from './sse.ts';
 import * as limiters from './rate-limiters.ts';
 import { identity } from './test-identity.ts';
@@ -22,7 +21,7 @@ beforeEach(() => {
     registerPubkey(person.address, person.publicKey);
     createSession(person.address, person.address, 1_000_000_000);
   }
-  server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(true) }) });
+  server = Bun.serve({ port: 0, fetch: createFetch() });
 });
 
 afterEach(() => {

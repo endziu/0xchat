@@ -60,7 +60,7 @@ describe('SSE', () => {
     const browser = makeCtrl().ctrl;
     const terminal = makeCtrl().ctrl;
     try {
-      addClient(address, browser, false, true, true);
+      addClient(address, browser, true, true);
       expect(pushSuppressingConnectionCount(address)).toBe(1);
       clock.mockReturnValue(47_000);
       expect(pushSuppressingConnectionCount(address)).toBe(0);

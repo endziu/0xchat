@@ -1,8 +1,6 @@
-import { advertisesDeliveryCapability } from '../../shared/message-envelope.ts';
 import { randomBytes } from 'node:crypto';
 import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
-import { json, getSessionAddress } from '../http.ts';
-import { clientUpdateRequired } from '../lifecycle-gate.ts';
+import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
 import { sseTokenLimiter } from '../rate-limiters.ts';
 import { MAX_SSE_CONNECTIONS_PER_ADDRESS, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
 import type { Context } from '../http.ts';
@@ -13,8 +11,6 @@ const SSE_TOKEN_TTL_MS = 30_000;
 interface SseTokenEntry {
   address: string;
   expiresAt: number;
-  supportsOpening: boolean;
-  activation: number;
 }
 
 /**
@@ -34,9 +30,9 @@ export class SseTokenStore {
     private readonly now: () => number = Date.now,
   ) {}
 
-  mint(address: string, supportsOpening = false, activation = 0): string {
+  mint(address: string): string {
     const token = randomBytes(16).toString('hex');
-    this.tokens.set(token, { address, expiresAt: this.now() + this.ttlMs, supportsOpening, activation });
+    this.tokens.set(token, { address, expiresAt: this.now() + this.ttlMs });
     return token;
   }
 
@@ -48,15 +44,6 @@ export class SseTokenStore {
       return null;
     }
     return entry.address;
-  }
-
-  supportsOpening(token: string): boolean {
-    return this.lookup(token) !== null && this.tokens.get(token)!.supportsOpening;
-  }
-
-  /** Gate activation current when the token was minted. */
-  activation(token: string): number | null {
-    return this.lookup(token) === null ? null : this.tokens.get(token)!.activation;
   }
 
   /** Consume a token (single-use); the bound address if live, else null. */
@@ -83,7 +70,7 @@ export function cleanupSseTokens(): void {
   sseTokenStore.prune();
 }
 
-export async function handleGetSSEToken({ req, ip, lifecycleGate }: Context): Promise<Response> {
+export async function handleGetSSEToken({ req, ip }: Context): Promise<Response> {
   if (sseTokenLimiter.hit(ip)) {
     warn('[rate-limit] sse-token', ip);
     return json({ error: 'Too many requests' }, 429);
@@ -94,29 +81,21 @@ export async function handleGetSSEToken({ req, ip, lifecycleGate }: Context): Pr
     warn('[unauth] sse token no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
-  if (lifecycleGate.rejects(req)) return clientUpdateRequired();
+  if (isOutdatedClient(req)) return clientUpdateRequired();
 
-  const sseToken = sseTokenStore.mint(address, advertisesDeliveryCapability(req.headers), lifecycleGate.activation);
+  const sseToken = sseTokenStore.mint(address);
 
   log('[sse-token]', address);
   return json({ sse_token: sseToken });
 }
 
-export async function handleSSE({ url, ip, lifecycleGate }: Context): Promise<Response> {
+export async function handleSSE({ url, ip }: Context): Promise<Response> {
   const sseToken = url.searchParams.get('token');
   if (!sseToken) return json({ error: 'Missing token' }, 401);
 
   const address = sseTokenStore.lookup(sseToken);
   if (!address) {
     return json({ error: 'Invalid or expired token' }, 401);
-  }
-  if (lifecycleGate.enforced()) {
-    // A pre-activation token is refused; its client mints again under the gate.
-    if (sseTokenStore.activation(sseToken) !== lifecycleGate.activation) {
-      sseTokenStore.consume(sseToken);
-      return json({ error: 'Invalid or expired token' }, 401);
-    }
-    if (!sseTokenStore.supportsOpening(sseToken)) return clientUpdateRequired();
   }
 
   // Checked before the token is consumed: a rejected client keeps its token
@@ -126,7 +105,6 @@ export async function handleSSE({ url, ip, lifecycleGate }: Context): Promise<Re
     return json({ error: 'Too many requests' }, 429);
   }
 
-  const supportsOpening = sseTokenStore.supportsOpening(sseToken);
   sseTokenStore.consume(sseToken); // single-use
   // Older clients and the CLI keep the existing push-suppression behavior.
   const suppressPush = url.searchParams.get('attentive') !== 'false';
@@ -148,10 +126,7 @@ export async function handleSSE({ url, ip, lifecycleGate }: Context): Promise<Re
   const stream = new ReadableStream({
     start(streamController) {
       controller = streamController;
-      addClient(address, controller, supportsOpening, suppressPush, url.searchParams.has('attentive'), () => {
-        cleanup();
-        controller.close();
-      });
+      addClient(address, controller, suppressPush, url.searchParams.has('attentive'));
       liveStreams.set(sseToken, { address, controller });
       log('[sse]', address, 'connected');
 

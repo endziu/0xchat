@@ -3,12 +3,10 @@ import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openingConnectionCount } from './sse.ts';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
-import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
+import { createSession, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';
-import { LifecycleGate } from './lifecycle-gate.ts';
 import * as limiters from './rate-limiters.ts';
 import { identity } from './test-identity.ts';
 
@@ -32,14 +30,14 @@ afterEach(() => {
   }
 });
 
-function start(newPolicy = true, path = ':memory:') {
+function start(path = ':memory:') {
   initDb(path);
   clock = spyOn(Date, 'now').mockReturnValue(1000);
   for (const person of [alice, bob]) {
     registerPubkey(person.address, person.publicKey);
     createSession(person.address, person.address, 1_000_000_000);
   }
-  server = Bun.serve({ port: 0, fetch: createFetch({ lifecycleGate: new LifecycleGate(newPolicy) }) });
+  server = Bun.serve({ port: 0, fetch: createFetch() });
 }
 function request(path: string, identity = bob.address, body?: unknown) {
   return fetch(new URL(path, server.url), { method: body === undefined ? 'GET' : 'POST',
@@ -73,16 +71,6 @@ test('real HTTP opening starts the full signed lifetime once and retries confirm
   clock.mockReturnValue(86405999);
   expect((await (await open([message.id])).json()).results).toEqual([{ id: message.id, status: 'unavailable' }]);
   expect((await (await request(`/api/messages/${alice.address}`)).json()).messages).toEqual([]);
-});
-
-test('default acceptance stays legacy and opening never extends its deadline', async () => {
-  start(false);
-  const message = await send();
-  expect(message.delivery_policy).toBe('legacy');
-  expect(message.expires_at).toBe(6000);
-  clock.mockReturnValue(2000);
-  expect((await (await open([message.id])).json()).results[0]).toEqual({ id: message.id,
-    status: 'available', delivery_policy: 'legacy', created_at: 1000, opened_at: null, expires_at: 6000 });
 });
 
 test('24-hour lifetime extends beyond retention and unopened exact expiry cannot revive', async () => {
@@ -119,7 +107,7 @@ test('opening rejects unauthorized and malformed requests and conceals inaccessi
   ]);
 });
 
-test('pre-upgrade initialization twice preserves signed deliveries and original deadlines through HTTP', async () => {
+test('initialization retires pre-upgrade messages that expire on acceptance', async () => {
   tempDirectory = mkdtempSync(join(tmpdir(), '0xchat-migration-'));
   const path = join(tempDirectory, 'chat.db');
   const envelope = await createSignedMessageEnvelope('old ciphertext', 5, alice, bob.address, bob.publicKey);
@@ -136,29 +124,18 @@ test('pre-upgrade initialization twice preserves signed deliveries and original 
     envelope.ct_sender, envelope.ephemeral_pub_sender, envelope.iv_sender,
     envelope.ttl, envelope.signature, 1000, 6000);
   old.close();
-  start(false, path);
-  const expected = { ...envelope, delivery_policy: 'legacy' as const, created_at: 1000, opened_at: null, expires_at: 6000 };
-  for (let initialization = 0; initialization < 2; initialization++) {
-    const page = await (await request(`/api/messages/${alice.address}`)).json();
-    expect(page.messages).toEqual([expected]);
-    expect(await verifyDeliveredMessage(page.messages[0])).toEqual(expected);
-    expect((await (await open([envelope.id])).json()).results[0].expires_at).toBe(6000);
-    if (initialization === 0) {
-      getDb().close();
-      initDb(path);
-    }
-  }
-  clock.mockReturnValue(6000);
-  deleteExpiredMessages();
-  // Turning the clock back distinguishes physical cleanup from read-time filtering.
-  clock.mockReturnValue(1000);
+  start(path);
   expect((await (await request(`/api/messages/${alice.address}`)).json()).messages).toEqual([]);
+  expect((await (await open([envelope.id])).json()).results).toEqual([{ id: envelope.id, status: 'unavailable' }]);
+  getDb().close();
+  initDb(path);
+  const message = await send();
+  expect((await (await request(`/api/messages/${alice.address}`)).json()).messages.map((m: { id: string }) => m.id)).toEqual([message.id]);
 });
 
-async function stream(address: string, capability?: string) {
+async function stream(address: string) {
   const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${address}`,
-      ...(capability ? { 'X-0xChat-Delivery-Capability': capability } : {}) },
+    method: 'POST', headers: { Authorization: `Bearer ${address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
   });
   expect(tokenResponse.status).toBe(200);
   const { sse_token } = await tokenResponse.json();
@@ -169,14 +146,12 @@ async function stream(address: string, capability?: string) {
   return { reader, abort };
 }
 
-test('SSE records advertised capability and both participants receive committed metadata', async () => {
+test('both participants receive committed opening metadata over SSE', async () => {
   start();
   const message = await send();
-  const sender = await stream(alice.address, 'recipient-opening-v1');
-  const recipient = await stream(bob.address, 'recipient-opening-v1');
+  const sender = await stream(alice.address);
+  const recipient = await stream(bob.address);
   try {
-    expect(openingConnectionCount(alice.address)).toBe(1);
-    expect(openingConnectionCount(bob.address)).toBe(1);
     clock.mockReturnValue(2000);
     const opening = await open([message.id]);
     expect(opening.status).toBe(200);

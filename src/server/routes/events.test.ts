@@ -7,8 +7,6 @@ import { createFetch } from '../router.ts'
 import { connectionCount, notify, pushSuppressingConnectionCount } from '../sse.ts'
 import { handleGetSSEToken, handleSSE, handleSSEAttention, SseTokenStore } from './events.ts'
 import type { Context } from '../http.ts'
-import { LifecycleGate } from '../lifecycle-gate.ts'
-
 const address = `0x${'b'.repeat(40)}`
 const otherAddress = `0x${'c'.repeat(40)}`
 const sessionToken = 'sse-route-test-token'
@@ -38,10 +36,10 @@ function makeContext(
     ...init,
     headers: {
       ...init?.headers,
-      Authorization: `Bearer ${auth}`,
+      Authorization: `Bearer ${auth}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1',
     },
   })
-  return { req, url: new URL(req.url), path, method: req.method, ip, lifecycleGate: new LifecycleGate() }
+  return { req, url: new URL(req.url), path, method: req.method, ip }
 }
 
 async function mintSseToken(
@@ -230,16 +228,6 @@ describe('SseTokenStore', () => {
     expect(store.lookup(token)).toBeNull()
   })
 
-  test('delivery capability is bound to the SSE token independently of envelope version', async () => {
-    const store = new SseTokenStore(30_000)
-    const legacy = store.mint(address)
-    const capable = store.mint(address, true)
-    expect(store.supportsOpening(legacy)).toBe(false)
-    expect(store.supportsOpening(capable)).toBe(true)
-    store.consume(capable)
-    expect(store.supportsOpening(capable)).toBe(false)
-  })
-
   test('prune drops only expired entries', () => {
     let now = 1_000
     const store = new SseTokenStore(30_000, () => now)
@@ -270,7 +258,7 @@ describe('SSE over real HTTP', () => {
   test('a real client disconnect frees the slot and the accepted token cannot be replayed', async () => {
     const mint = await fetch(`${base}/api/events/token`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${sessionToken}` },
+      headers: { Authorization: `Bearer ${sessionToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     })
     expect(mint.status).toBe(200)
     const { sse_token } = (await mint.json()) as { sse_token: string }

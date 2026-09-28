@@ -64,7 +64,7 @@ test('state refresh rejects inconsistent metadata and malformed server time', ()
   store.add([message])
   expect(store.applyStates([message.id], response({ ...opened, created_at: 999 }))).toBe(false)
   expect(store.applyStates([message.id], response({
-    delivery_policy: 'legacy', created_at: 1_000, opened_at: null, expires_at: 6_000,
+    delivery_policy: 'recipient-opening', created_at: 1_000, opened_at: null, expires_at: 6_000,
   }))).toBe(false)
   expect(store.applyStates([message.id], { ...response(opened), server_time: '2000' })).toBe(false)
   expect(store.applyStates([message.id], response(opened))).toBe(true)

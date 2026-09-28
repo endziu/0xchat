@@ -161,7 +161,7 @@ export const api = {
   recoverMessages: (address: string, token: string, cursor: { after: string } | { cursor: string }): Promise<RecoveryPage> =>
     request(`/api/messages/${address}/recover?${new URLSearchParams(cursor)}`, {}, token),
 
-  // Opening starts recipient-opening lifetimes; state lookup never does. Both
+  // Opening starts message lifetimes; state lookup never does. Both
   // responses are server input and are validated by the caller.
   openMessages: (address: string, ids: string[], token: string): Promise<unknown> =>
     request(`/api/messages/${address}/open`, {
