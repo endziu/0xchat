@@ -101,8 +101,10 @@ async function mount(address = alice) {
   render(<ToastProvider><Harness address={address} /></ToastProvider>, container)
   await settle()
 }
-async function click(label: string) {
-  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+const notificationsSwitch = () => container.querySelector<HTMLButtonElement>('button[role="switch"]')
+async function toggle(expected: 'on' | 'off') {
+  const button = notificationsSwitch()
+  expect(button?.getAttribute('aria-checked')).toBe(expected === 'on' ? 'false' : 'true')
   expect(button).not.toBeNull()
   pending = undefined
   button!.click()
@@ -114,18 +116,18 @@ const errorText = () => container.querySelector('.text-red-400')?.textContent ??
 
 test('enabling subscribes the browser, stores the endpoint and shows notifications on', async () => {
   await mount()
-  await click('Enable notifications')
+  await toggle('on')
 
   expect(browserSub).not.toBeNull()
   expect(endpoints()).toEqual([browserSub!.endpoint])
   expect(push.subscribed).toBe(true)
-  expect(container.querySelector('[aria-label="Disable notifications"]')).not.toBeNull()
+  expect(notificationsSwitch()?.getAttribute('aria-checked')).toBe('true')
 })
 
 test('disabling removes the browser subscription and the stored endpoint', async () => {
   await mount()
-  await click('Enable notifications')
-  await click('Disable notifications')
+  await toggle('on')
+  await toggle('off')
 
   expect(browserSub).toBeNull()
   expect(endpoints()).toEqual([])
@@ -134,7 +136,7 @@ test('disabling removes the browser subscription and the stored endpoint', async
 
 test('disabling still stops alerts when the server cannot be reached', async () => {
   await mount()
-  await click('Enable notifications')
+  await toggle('on')
   failRemoval = true
 
   expect(await push.unsubscribe()).toBe(true)
@@ -144,7 +146,7 @@ test('disabling still stops alerts when the server cannot be reached', async () 
 
 test('a reload re-uploads an opted-in subscription the server lost', async () => {
   await mount()
-  await click('Enable notifications')
+  await toggle('on')
   getDb().run('DELETE FROM push_subscriptions')
 
   render(null, container)
@@ -156,7 +158,7 @@ test('a reload re-uploads an opted-in subscription the server lost', async () =>
 
 test('a subscription the current identity never opted into is removed', async () => {
   await mount()
-  await click('Enable notifications')
+  await toggle('on')
   const leftover = browserSub!.endpoint
 
   render(null, container)
@@ -171,7 +173,7 @@ test('a subscription the current identity never opted into is removed', async ()
 
 test('a subscription made with a rotated VAPID key is removed and Enable replaces it', async () => {
   await mount()
-  await click('Enable notifications')
+  await toggle('on')
   const old = browserSub!.endpoint
   vapidKey = 'B'.repeat(87)
 
@@ -180,7 +182,7 @@ test('a subscription made with a rotated VAPID key is removed and Enable replace
   expect(browserSub).toBeNull()
   expect(push.subscribed).toBe(false)
 
-  await click('Enable notifications')
+  await toggle('on')
   expect(browserSub!.endpoint).not.toBe(old)
   expect(Buffer.from(browserSub!.options.applicationServerKey!)).toEqual(Buffer.from(keyBytes(vapidKey)))
   expect(push.subscribed).toBe(true)
@@ -191,7 +193,7 @@ test('Enable replaces a browser subscription made with another key without a rel
   localStorage.setItem(`0xchat.push.${alice}`, JSON.stringify({ enabled: false }))
   await mount()
 
-  await click('Enable notifications')
+  await toggle('on')
   expect(push.subscribed).toBe(true)
   expect(endpoints()).toEqual([browserSub!.endpoint])
 })
@@ -202,7 +204,7 @@ test('an unsupported push service is reported and leaves no browser subscription
     (options!.applicationServerKey as Uint8Array<ArrayBuffer>).buffer, 'https://jmt17.google.com/fcm/send/token'))
   await mount()
 
-  await click('Enable notifications')
+  await toggle('on')
   expect(errorText()).toContain("push service is not supported")
   expect(browserSub).toBeNull()
   expect(push.subscribed).toBe(false)
@@ -210,7 +212,7 @@ test('an unsupported push service is reported and leaves no browser subscription
 
 test('an unanswered permission prompt does not block disabling', async () => {
   await mount()
-  await click('Enable notifications')
+  await toggle('on')
   Object.defineProperty(globalThis, 'Notification', { configurable: true, value: {
     permission: 'default', requestPermission: () => new Promise<NotificationPermission>(() => {}),
   } })

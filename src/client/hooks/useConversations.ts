@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks'
 import { api, Conversation } from '../lib/api'
-import { mergeContacts, loadContacts, deleteContact, isDeleted } from '../lib/contacts'
+import { mergeContacts, loadContacts, markConversationRemoved, isRemoved } from '../lib/contacts'
 import { errorMessage } from '../lib/errors'
 
 export type ConversationRefreshResult = 'refreshed' | 'failed' | 'cancelled'
@@ -10,7 +10,7 @@ export interface MergedConversation extends Conversation {
 }
 
 function withKnownContacts(live: Conversation[]): MergedConversation[] {
-  const liveVisible = live.filter(c => !isDeleted(c.address, c.last_message_at))
+  const liveVisible = live.filter(c => !isRemoved(c.address, c.last_message_at))
   const known = mergeContacts(liveVisible)
   const liveAddresses = new Set(liveVisible.map(c => c.address.toLowerCase()))
   const stale = Object.values(known)
@@ -88,8 +88,10 @@ export function useConversations(token: string | null) {
     })
   }, [])
 
-  const deleteConversation = useCallback((address: string) => {
-    deleteContact(address)
+  // For a partner who is done with that address: off the list, name forgotten.
+  // Their next message, if one ever comes, brings the conversation back unnamed.
+  const removeConversation = useCallback((address: string) => {
+    markConversationRemoved(address)
     setLabels(prev => {
       const next = { ...prev }
       delete next[address.toLowerCase()]
@@ -131,5 +133,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, error, refresh, reload: doRefresh, labels, setLabel, deleteConversation }
+  return { conversations, loading, error, refresh, reload: doRefresh, labels, setLabel, removeConversation }
 }

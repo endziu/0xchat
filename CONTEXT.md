@@ -23,17 +23,17 @@ _Avoid_: Contact
 A private, locally assigned name for a conversation partner.
 _Avoid_: Username, display name
 
-**Hide conversation**:
-The local removal of a conversation from the conversation list without deleting its messages.
-_Avoid_: Delete conversation, delete contact
+**Remove conversation**:
+The local removal of a conversation from the conversation list, forgetting its conversation label, without deleting its messages.
+_Avoid_: Hide conversation, delete conversation, delete contact
 
 **Message deletion**:
-The removal of messages, including when they expire, rather than merely hiding their conversation from view.
-_Avoid_: Hide conversation
+The removal of messages, including when they expire, rather than merely removing their conversation from the list.
+_Avoid_: Remove conversation
 
 **Clear conversation**:
 Message deletion of every message in a conversation, for both identities, before their lifetimes end. The conversation itself remains.
-_Avoid_: Delete conversation, hide conversation
+_Avoid_: Delete conversation, remove conversation
 
 **Message lifetime**:
 The sender-selected duration a message remains available once the recipient opens that message in its conversation.

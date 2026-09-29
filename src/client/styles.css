@@ -5,6 +5,12 @@
    be guarded too — otherwise it stays hidden forever on touch. */
 @custom-variant can-hover (@media (hover: hover) and (pointer: fine));
 
+/* The one brand accent ("ember", for things that burn): your own messages,
+   unread state, focus rings and links. Everything else stays neutral. */
+@theme {
+  --color-accent: oklch(82.8% 0.189 84.429); /* amber-400 */
+}
+
 @layer base {
   html {
     height: 100dvh;
@@ -51,13 +57,13 @@
     touch-action: manipulation; /* kills the 300ms double-tap-zoom delay */
     &:hover { @apply bg-neutral-950; }
     &:disabled { @apply opacity-30 pointer-events-none; }
-    &:focus-visible { @apply outline outline-1 outline-neutral-500; }
+    &:focus-visible { @apply outline outline-1 outline-accent; }
   }
   input, textarea, select {
     /* text-base = 16px, which is what keeps iOS from zooming on focus. */
     @apply bg-neutral-950 text-neutral-200 border border-neutral-800 px-2 py-1.5 font-mono text-base outline-none w-full;
-    &:focus { @apply border-neutral-600; }
-    &::placeholder { @apply text-neutral-600; }
+    &:focus { @apply border-accent; }
+    &::placeholder { @apply text-neutral-500; }
   }
   textarea { @apply resize-none overflow-y-hidden; }
   select { @apply w-auto cursor-pointer; }

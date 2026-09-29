@@ -2,6 +2,7 @@ import { migrateKey } from './storage-migration'
 
 const STORAGE_KEY = '0xchat_known_contacts_v1'
 const OLD_STORAGE_KEY = 'eth_chat_known_contacts_v1'
+// Removed conversations; the key keeps its old name so existing removals survive.
 const DELETED_KEY = '0xchat_deleted_contacts_v1'
 const OLD_DELETED_KEY = 'eth_chat_deleted_contacts_v1'
 
@@ -30,7 +31,7 @@ export function subscribeLastSeen(listener: () => void): () => void {
   return () => { lastSeenListeners.delete(listener) }
 }
 
-function loadDeleted(): Record<string, number> {
+function loadRemoved(): Record<string, number> {
   migrateKey(OLD_DELETED_KEY, DELETED_KEY)
   try {
     return JSON.parse(localStorage.getItem(DELETED_KEY) ?? '{}')
@@ -39,30 +40,30 @@ function loadDeleted(): Record<string, number> {
   }
 }
 
-function saveDeleted(deleted: Record<string, number>) {
+function saveRemoved(removed: Record<string, number>) {
   localStorage.removeItem(OLD_DELETED_KEY)
-  localStorage.setItem(DELETED_KEY, JSON.stringify(deleted))
+  localStorage.setItem(DELETED_KEY, JSON.stringify(removed))
 }
 
-// Marks a conversation as deleted so it stays hidden until new activity
-// (a later last_message_at) supersedes the deletion.
-export function deleteContact(address: string) {
+// Removes a conversation from the list, forgetting what is stored for it. It
+// stays removed until new activity (a later last_message_at) supersedes that.
+export function markConversationRemoved(address: string) {
   const key = address.toLowerCase()
 
   const contacts = loadContacts()
   delete contacts[key]
   saveContacts(contacts)
 
-  const deleted = loadDeleted()
-  deleted[key] = Date.now()
-  saveDeleted(deleted)
+  const removed = loadRemoved()
+  removed[key] = Date.now()
+  saveRemoved(removed)
 
   localStorage.removeItem(getLastSeenKey(key))
 }
 
-export function isDeleted(address: string, lastMessageAt: number): boolean {
-  const deletedAt = loadDeleted()[address.toLowerCase()]
-  return deletedAt !== undefined && lastMessageAt <= deletedAt
+export function isRemoved(address: string, lastMessageAt: number): boolean {
+  const removedAt = loadRemoved()[address.toLowerCase()]
+  return removedAt !== undefined && lastMessageAt <= removedAt
 }
 
 export function loadContacts(): Record<string, KnownContact> {

@@ -1226,3 +1226,81 @@ test('the clear button takes two taps and clears the conversation for both parti
   await waitFor(() => !view.text().includes('to be cleared') && view.text().includes('Conversation cleared'))
   expect(await lifecycle(sent.id)).toMatchObject({ status: 'unavailable' })
 })
+
+test('the open conversation names the partner by their label and your own messages as You', async () => {
+  localStorage.setItem('conversation_labels', JSON.stringify({ [aliceAddress]: 'Alice' }))
+  const otherDevice = new ChatClient(origin, bobKey)
+  await alice.send(bobKey.address, 'hi from alice', 300)
+  await otherDevice.send(aliceAddress, 'hi from me', 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('hi from alice') && view.text().includes('hi from me'))
+
+  const senders = [...view.container.querySelectorAll('article .font-bold')].map(sender => sender.textContent)
+  expect(senders).toEqual(['Alice', 'You'])
+  expect(button('Rename Alice')).not.toBeNull()
+  await otherDevice.close()
+})
+
+test('removing a conversation takes two taps and forgets its label', async () => {
+  localStorage.setItem('conversation_labels', JSON.stringify({ [aliceAddress]: 'Alice' }))
+  await alice.send(bobKey.address, 'before removing', 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('before removing'))
+  const listed = () => view.container.querySelector('nav li') !== null
+
+  button('Remove conversation').click()
+  await Bun.sleep(50)
+  expect(view.text()).toContain('Remove and forget?')
+  expect(listed()).toBe(true)
+
+  button('Confirm remove conversation').click()
+  await waitFor(() => !listed())
+  expect(JSON.parse(localStorage.getItem('conversation_labels')!)).toEqual({})
+
+  // Should the address ever write again, it comes back unnamed.
+  await alice.send(bobKey.address, 'back again', 300)
+  await waitFor(() => view.container.querySelector('nav li')?.textContent?.includes(aliceAddress.slice(0, 6)) ?? false)
+})
+
+test('remaining lifetimes count down while the conversation is open, without any other update', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  await alice.send(bobKey.address, 'counting down', 300)
+  await waitFor(() => view.text().includes('counting down'))
+  const remaining = () => view.container.querySelector('[title^="Disappears in"]')?.textContent
+  // Four or five minutes, depending on the clock skew against the server.
+  expect(['4m', '5m']).toContain(remaining() ?? '')
+
+  // Counts on the server's clock, which moves with the monotonic one.
+  const start = performance.now()
+  const clock = spyOn(performance, 'now').mockImplementation(() => start + 150_000)
+  try {
+    await waitFor(() => remaining() === '2m', 3_000)
+  } finally { clock.mockRestore() }
+})
+
+test('remaining lifetimes ignore a skewed device clock', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  await alice.send(bobKey.address, 'skewed', 300)
+  await waitFor(() => view.text().includes('skewed'))
+  const remaining = () => view.container.querySelector('[title^="Disappears in"]')?.textContent
+
+  const clock = spyOn(Date, 'now').mockImplementation(() => performance.timeOrigin + performance.now() + 3_600_000)
+  try {
+    await Bun.sleep(1_100)
+    expect(['4m', '5m']).toContain(remaining() ?? '')
+  } finally { clock.mockRestore() }
+})
+
+test('a departed partner who writes again can be messaged again', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  TestEventSource.instances.at(-1)!.replay('user:disconnected', JSON.stringify({ address: aliceAddress }))
+  await waitFor(() => view.text().includes("deleted their identity. Messages can't be delivered."))
+  expect(view.container.querySelector('textarea')).toBeNull()
+
+  await alice.send(bobKey.address, 'I imported my key again', 300)
+  await waitFor(() => view.container.querySelector('textarea') !== null)
+  expect(view.text()).not.toContain('deleted their identity')
+})

@@ -5,7 +5,7 @@ These notes capture agreed behavior separately from the glossary. They are not a
 ## Identity and conversations
 
 - Importing the same private key after account deletion restores the same identity. Registering it again does not restore deleted messages.
-- Hiding a conversation does not delete its messages. New message activity makes it visible again.
+- Removing a conversation forgets its label but does not delete its messages. New message activity brings it back, unnamed.
 
 ## Intended message expiry
 

@@ -62,14 +62,14 @@ function AppContent() {
             <button onClick={() => window.location.reload()}>Retry</button>
           </>
         ) : (
-          <span className="text-neutral-600">Initializing...</span>
+          <span className="text-neutral-500">Initializing...</span>
         )}
       </div>
     )
   }
 
   if (transitioning) {
-    return <div className="flex items-center justify-center h-full text-neutral-600">Switching identity...</div>
+    return <div className="flex items-center justify-center h-full text-neutral-500">Switching identity...</div>
   }
 
   if (!token) {
@@ -81,7 +81,7 @@ function AppContent() {
         </div>
       )
     }
-    return <div className="flex items-center justify-center h-full text-neutral-600">Connecting...</div>
+    return <div className="flex items-center justify-center h-full text-neutral-500">Connecting...</div>
   }
 
   return (
