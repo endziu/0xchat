@@ -1,11 +1,12 @@
 import type { ComponentChildren } from 'preact'
-import { useState, useRef } from 'preact/hooks'
+import { useState, useEffect } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
 import { Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
 import { shortAddr } from '../lib/display'
+import { useCopied } from '../hooks/useCopied'
 import type { PushSettings } from './SettingsModal'
 
 interface LayoutProps {
@@ -30,21 +31,14 @@ export function Layout({
   push,
 }: LayoutProps) {
   const [showSettings, setShowSettings] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
+  const [copied, copy] = useCopied()
+  const [linkCopied, copyLink] = useCopied()
   const [showQR, setShowQR] = useState(false)
   // The first connection is not a reconnection: before it, the dot alone says
   // "connecting". After it, a lost stream gets a strip that stays until it is back.
-  const everConnected = useRef(false)
-  if (sseConnected) everConnected.current = true
-  const reconnecting = everConnected.current && sseConnected === false
-
-  const handleCopy = () => {
-    if (!identity) return
-    navigator.clipboard.writeText(identity.address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  const [everConnected, setEverConnected] = useState(false)
+  useEffect(() => { if (sseConnected) setEverConnected(true) }, [sseConnected])
+  const reconnecting = everConnected && sseConnected === false
 
   return (
     // index.html opts into viewport-fit=cover, so the notch and home indicator
@@ -69,10 +63,10 @@ export function Layout({
         {identity && (
           <div className="flex items-center gap-2 max-sm:gap-0 text-sm text-neutral-500">
             <span className="max-sm:hidden">{shortAddr(identity.address)}</span>
-            <button onClick={handleCopy} title="Copy Address" aria-label="Copy address" className="header-action">
+            <button onClick={() => copy(identity.address)} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
-            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/chat/${identity.address}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000) }} title="Copy conversation link" aria-label="Copy conversation link" className="header-action">
+            <button onClick={() => copyLink(`${window.location.origin}/chat/${identity.address}`)} title="Copy conversation link" aria-label="Copy conversation link" className="header-action">
               {linkCopied ? <Check size={14} /> : <Link size={14} />}
             </button>
             <button onClick={() => setShowQR(true)} title="Show QR code" aria-label="Show QR code" className="header-action">

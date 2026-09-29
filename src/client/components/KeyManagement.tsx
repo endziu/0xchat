@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair, deriveKeypair } from '../lib/burner'
 import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
 import { useToast } from './Toast'
+import { useCopied } from '../hooks/useCopied'
 
 interface KeyManagementProps {
   identity: Keypair
@@ -11,7 +12,7 @@ interface KeyManagementProps {
 export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   const { toast } = useToast()
   const [showKey, setShowKey] = useState(false)
-  const [keyCopied, setKeyCopied] = useState(false)
+  const [keyCopied, copyKey] = useCopied()
   const [importHex, setImportHex] = useState('')
   const [previewKeypair, setPreviewKeypair] = useState<Keypair | null>(null)
   const [confirmTimeout, setConfirmTimeout] = useState(false)
@@ -57,7 +58,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
           <button onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide private key' : 'Show private key'} aria-label={showKey ? 'Hide private key' : 'Show private key'}>
             {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
-          <button onClick={() => { navigator.clipboard.writeText(identity.privateKey); toast('Copied', 'success'); setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000) }} title="Copy private key" aria-label="Copy private key">
+          <button onClick={() => { copyKey(identity.privateKey); toast('Copied', 'success') }} title="Copy private key" aria-label="Copy private key">
             {keyCopied ? <Check size={14} /> : <Copy size={14} />}
           </button>
         </div>

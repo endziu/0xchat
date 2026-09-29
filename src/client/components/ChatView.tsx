@@ -34,6 +34,11 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   // on it; these handlers call the message hook's latest functions.
   const handleSSE = useLatest((data: unknown) => {
     refreshConversations()
+    // A departed partner who writes again has imported their key again.
+    const sender = (data as { sender?: unknown } | null)?.sender
+    if (typeof sender === 'string' && departed.has(sender.toLowerCase())) {
+      setDeparted(prev => { const next = new Set(prev); next.delete(sender.toLowerCase()); return next })
+    }
     if (recipientAddress) addMessage(data)
   })
 
@@ -58,7 +63,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   // Reconnecting cannot succeed once the server requires a newer client.
   const updateRequired = useClientUpdateRequired()
   const { connected, connection } = useSSE(updateRequired ? null : token, handleSSE, handleDisconnect, handleExpiryUpdate, handleConversationCleared)
-  const { messages, recovering, sendMessage, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
+  const { messages, now, recovering, sendMessage, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
 
@@ -101,6 +106,11 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     resolveAndNavigate(newChatAddr)
   }
 
+  const handleNewChatKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') handleNewChatSubmit()
+    else if (e.key === 'Escape') closeNewChat()
+  }
+
   const handleScan = (addr: string) => {
     setShowScanner(false)
     setNewChatAddr(addr)
@@ -136,22 +146,17 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
                 spellcheck={false}
                 value={newChatAddr}
                 onInput={(e: any) => { setNewChatAddr(e.target.value); setNewChatError('') }}
-                onKeyDown={(e: KeyboardEvent) => {
-                  if (e.key === 'Enter') handleNewChatSubmit()
-                  else if (e.key === 'Escape') closeNewChat()
-                }}
+                onKeyDown={handleNewChatKeyDown}
               />
               <input
                 type="text"
                 aria-label="Name (optional)"
                 placeholder="Name (optional)"
                 autocomplete="off"
+                maxLength={64}
                 value={newChatName}
                 onInput={(e: any) => setNewChatName(e.target.value)}
-                onKeyDown={(e: KeyboardEvent) => {
-                  if (e.key === 'Enter') handleNewChatSubmit()
-                  else if (e.key === 'Escape') closeNewChat()
-                }}
+                onKeyDown={handleNewChatKeyDown}
               />
               {newChatError && <p className="text-red-400">{newChatError}</p>}
               <div className="flex gap-1">
@@ -183,8 +188,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
               selfAddress={identity.address}
               labels={labels}
               onRename={(name) => setLabel(recipientAddress, name)}
-              partnerDeleted={departed.has(recipientAddress.toLowerCase())}
+              departed={departed.has(recipientAddress.toLowerCase())}
               messages={messages}
+              now={now}
               recovering={recovering}
               loading={messagesLoading}
               error={messagesError}

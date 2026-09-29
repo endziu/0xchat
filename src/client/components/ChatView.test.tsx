@@ -1267,13 +1267,40 @@ test('remaining lifetimes count down while the conversation is open, without any
   await waitFor(() => view.text().includes('No messages yet') && streamReady())
   await alice.send(bobKey.address, 'counting down', 300)
   await waitFor(() => view.text().includes('counting down'))
-  const remaining = () => view.container.querySelector('[aria-label^="Disappears in"]')?.textContent
+  const remaining = () => view.container.querySelector('[title^="Disappears in"]')?.textContent
   // Four or five minutes, depending on the clock skew against the server.
   expect(['4m', '5m']).toContain(remaining() ?? '')
 
-  const start = Date.now()
-  const clock = spyOn(Date, 'now').mockImplementation(() => start + 150_000)
+  // Counts on the server's clock, which moves with the monotonic one.
+  const start = performance.now()
+  const clock = spyOn(performance, 'now').mockImplementation(() => start + 150_000)
   try {
     await waitFor(() => remaining() === '2m', 3_000)
   } finally { clock.mockRestore() }
+})
+
+test('remaining lifetimes ignore a skewed device clock', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  await alice.send(bobKey.address, 'skewed', 300)
+  await waitFor(() => view.text().includes('skewed'))
+  const remaining = () => view.container.querySelector('[title^="Disappears in"]')?.textContent
+
+  const clock = spyOn(Date, 'now').mockImplementation(() => performance.timeOrigin + performance.now() + 3_600_000)
+  try {
+    await Bun.sleep(1_100)
+    expect(['4m', '5m']).toContain(remaining() ?? '')
+  } finally { clock.mockRestore() }
+})
+
+test('a departed partner who writes again can be messaged again', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  TestEventSource.instances.at(-1)!.replay('user:disconnected', JSON.stringify({ address: aliceAddress }))
+  await waitFor(() => view.text().includes("deleted their identity. Messages can't be delivered."))
+  expect(view.container.querySelector('textarea')).toBeNull()
+
+  await alice.send(bobKey.address, 'I imported my key again', 300)
+  await waitFor(() => view.container.querySelector('textarea') !== null)
+  expect(view.text()).not.toContain('deleted their identity')
 })

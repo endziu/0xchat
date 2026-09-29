@@ -88,7 +88,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
             >
               {/* The unread dot owns the left edge, where the eye starts reading;
                   the slot is kept when read so the rows stay aligned. */}
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isUnread ? 'bg-accent' : ''}`} {...(isUnread ? { 'aria-label': 'Unread' } : {})} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isUnread ? 'bg-accent' : ''}`} aria-label={isUnread ? 'Unread' : undefined} />
               <AddressAvatar address={conv.address} />
               <span className="flex-1 min-w-0 flex flex-col">
                 <span className={`truncate ${isUnread ? 'font-bold text-white' : label ? 'text-neutral-300' : 'text-sm text-neutral-400'}`}>

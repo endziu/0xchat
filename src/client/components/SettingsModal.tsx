@@ -5,6 +5,7 @@ import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
 import { Modal } from './Modal'
 import { AddressQR } from './QRModal'
+import { useCopied } from '../hooks/useCopied'
 import { version } from '../../../package.json'
 
 export interface PushSettings {
@@ -40,7 +41,7 @@ export function SettingsModal({
     subscribe: onPushSubscribe,
     unsubscribe: onPushUnsubscribe,
   } = push ?? {}
-  const [copied, setCopied] = useState(false)
+  const [copied, copy] = useCopied()
   const [burnConfirm, setBurnConfirm] = useState(false)
   const burnTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(burnTimeout.current), [])
@@ -72,7 +73,7 @@ export function SettingsModal({
           <div className="mt-2 flex flex-col items-center gap-1">
             <AddressQR address={identity.address} size={160} />
             <button
-              onClick={() => { navigator.clipboard.writeText(identity.address); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+              onClick={() => copy(identity.address)}
               className="text-sm"
             >
               {copied ? <Check size={14} /> : <Copy size={14} />} Copy address

@@ -557,5 +557,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     .filter(message => message.opened_at !== null).map(message => message.id))
   const openingFailed = storeRef.current.hasFailedOpenings()
 
-  return { messages, recovering: !isSynchronized(), loading, error, olderError, hasMore, loadingOlder, fetchOlder, sendMessage, recipientPubkey, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, refresh: retry, openingFailed, retryOpening }
+  // Server time once known: the clock expiry runs on, for showing time left.
+  const now = useCallback(() => storeRef.current.now(), [])
+
+  return { messages, now, recovering: !isSynchronized(), loading, error, olderError, hasMore, loadingOlder, fetchOlder, sendMessage, recipientPubkey, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, refresh: retry, openingFailed, retryOpening }
 }

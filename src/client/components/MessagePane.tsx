@@ -9,6 +9,7 @@ import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
 import { MessageText } from './MessageText'
 import { AddressAvatar } from './AddressAvatar'
+import { useCopied } from '../hooks/useCopied'
 import { displayName, fmtDay, fmtRemaining, fmtTime, shortAddr } from '../lib/display'
 
 interface MessagePaneProps {
@@ -18,8 +19,10 @@ interface MessagePaneProps {
   // An empty name removes the label.
   onRename: (name: string) => void
   // The partner burned their identity, so nothing more can be delivered.
-  partnerDeleted?: boolean
+  departed?: boolean
   messages: (Message & { plaintext: string })[]
+  // Server time, the clock that decides when messages disappear.
+  now: () => number
   recovering?: boolean
   loading?: boolean
   error: string | null
@@ -49,7 +52,7 @@ function ImageAttachment({ src }: { src: string }) {
   )
 }
 
-export function MessagePane({ recipientAddress, selfAddress, labels, onRename, partnerDeleted, messages, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onClear, onBack }: MessagePaneProps) {
+export function MessagePane({ recipientAddress, selfAddress, labels, onRename, departed, messages, now: serverNow, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onClear, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   // Resolved per conversation (the pane is keyed by recipient) and again
@@ -58,7 +61,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
   const [ttl, setTtl] = useState(resolveComposerLifetime)
   useEffect(() => subscribeDefaultLifetimeSetting(() => setTtl(resolveComposerLifetime())), [])
   const [sending, setSending] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, copy] = useCopied()
   const label = labels[recipientAddress.toLowerCase()]
   const [renaming, setRenaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
@@ -224,7 +227,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
     const timer = setInterval(() => setTick(tick => tick + 1), 1000)
     return () => clearInterval(timer)
   }, [hasMessages])
-  const now = Date.now()
+  const now = serverNow()
   const lifetimeLabel = MESSAGE_LIFETIMES.find((o) => o.seconds === ttl)?.label
   const shortLifetime = ttl <= SHORT_LIFETIME_SECONDS
 
@@ -272,7 +275,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
                 ) : 'Add a name'}
               </span>
             </button>
-            <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy address" aria-label="Copy address" className="border-0 header-action">
+            <button onClick={() => copy(recipientAddress)} title="Copy address" aria-label="Copy address" className="border-0 header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
             <button
@@ -308,7 +311,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
           : !error && messages.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
               <p className="m-0">No messages yet</p>
-              <p className="m-0 text-sm">Messages here are end-to-end encrypted and disappear after the lifetime you pick below.</p>
+              <p className="m-0 text-sm">Messages here are end-to-end encrypted. Each one disappears once its lifetime runs out after it is opened.</p>
             </div>
           )
         }
@@ -335,7 +338,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
             <Fragment key={msg.id}>
               {newDay && <div className="self-center mt-3 text-xs text-neutral-500">{day ?? 'Today'}</div>}
               <article data-message-id={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : i === 0 ? '' : 'mt-3'} group hover:bg-neutral-950/50`}>
-                <time className={`w-10 shrink-0 text-xs text-neutral-500 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible group-focus-within:visible' : ''}`}>
+                <time className={`w-10 shrink-0 text-xs text-neutral-500 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible' : ''}`}>
                   {fmtTime(msg.created_at)}
                 </time>
                 <div className={`min-w-0 flex-1 pl-2 border-l-2 ${isMine ? 'border-accent' : 'border-neutral-500'}`}>
@@ -351,7 +354,8 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
                     <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
                   )}
                 </div>
-                <span className="shrink-0 text-xs text-neutral-500 pt-0.5" title={`Disappears in ${remaining}`} aria-label={`Disappears in ${remaining}`}>
+                {/* Hidden from screen readers: inside the log, each tick would be announced. */}
+                <span className="shrink-0 text-xs text-neutral-500 pt-0.5" title={`Disappears in ${remaining}`} aria-hidden="true">
                   {remaining}
                 </span>
               </article>
@@ -363,9 +367,9 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, p
 
       {/* The shell leaves the bottom inset to us: clear the home indicator,
           but don't stack our own padding on top of it. */}
-      {partnerDeleted ? (
+      {departed ? (
         <p role="status" className="m-0 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 border-t border-neutral-800 text-center text-sm">
-          This identity was deleted. Messages can't be delivered.
+          {displayName(recipientAddress, labels, selfAddress)} deleted their identity. Messages can't be delivered.
         </p>
       ) : (
       <form className="p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
