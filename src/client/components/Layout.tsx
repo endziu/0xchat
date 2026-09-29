@@ -1,13 +1,12 @@
 import type { ComponentChildren } from 'preact'
-import { useState, useRef, useEffect } from 'preact/hooks'
+import { useState, useRef } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
-import { LogOut, Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
+import { Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
+import { shortAddr } from '../lib/display'
 import type { PushSettings } from './SettingsModal'
-import { useToast } from './Toast'
-import { version } from '../../../package.json'
 
 interface LayoutProps {
   children: ComponentChildren
@@ -30,32 +29,15 @@ export function Layout({
   sseConnected,
   push,
 }: LayoutProps) {
-  const { toast } = useToast()
   const [showSettings, setShowSettings] = useState(false)
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
-  const [logoutConfirm, setLogoutConfirm] = useState(false)
   const [showQR, setShowQR] = useState(false)
-  const logoutTimeoutRef = useRef<any>(null)
-  const prevConnected = useRef<boolean | undefined>(undefined)
-
-  useEffect(() => {
-    return () => { if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current) }
-  }, [])
-
-  useEffect(() => {
-    if (prevConnected.current === true && sseConnected === false) {
-      toast('Connection lost — messages may be delayed', 'error')
-    } else if (prevConnected.current === false && sseConnected === true) {
-      toast('Reconnected', 'info')
-    }
-    prevConnected.current = sseConnected
-  }, [sseConnected, toast])
-
-  const dismissLogoutConfirm = () => {
-    if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current)
-    setLogoutConfirm(false)
-  }
+  // The first connection is not a reconnection: before it, the dot alone says
+  // "connecting". After it, a lost stream gets a strip that stays until it is back.
+  const everConnected = useRef(false)
+  if (sseConnected) everConnected.current = true
+  const reconnecting = everConnected.current && sseConnected === false
 
   const handleCopy = () => {
     if (!identity) return
@@ -76,7 +58,7 @@ export function Layout({
         <div className="flex items-center gap-2">
           <a href="/chat" onClick={(e) => { e.preventDefault(); navigate?.('/chat') }} className="whitespace-nowrap">⬡ 0xChat</a>
           {sseConnected !== undefined && (
-            <span className="flex items-center gap-1 text-neutral-600 text-sm" title={sseConnected ? 'Live' : 'Connecting'}>
+            <span className="flex items-center gap-1 text-neutral-500 text-sm" title={sseConnected ? 'Live' : 'Connecting'}>
               <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-neutral-700'}`} />
               {/* The dot alone carries the state; the word is header width we
                   can't spare next to 44px touch targets. */}
@@ -86,7 +68,7 @@ export function Layout({
         </div>
         {identity && (
           <div className="flex items-center gap-2 max-sm:gap-0 text-sm text-neutral-500">
-            <span className="max-sm:hidden">{identity.address.slice(0, 6)}...{identity.address.slice(-4)}</span>
+            <span className="max-sm:hidden">{shortAddr(identity.address)}</span>
             <button onClick={handleCopy} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
@@ -99,59 +81,16 @@ export function Layout({
             <button onClick={() => setShowSettings(!showSettings)} title="Settings" aria-label="Settings" aria-expanded={showSettings} className="header-action">
               <Settings size={14} />
             </button>
-            <div className="relative">
-              <button
-                onClick={() => {
-                  if (logoutConfirm) {
-                    dismissLogoutConfirm()
-                    return
-                  }
-                  setLogoutConfirm(true)
-                  logoutTimeoutRef.current = setTimeout(() => setLogoutConfirm(false), 8000)
-                }}
-                title={logoutConfirm ? 'Cancel' : 'Burn identity'}
-                aria-label={logoutConfirm ? 'Cancel' : 'Burn identity'}
-                aria-expanded={logoutConfirm}
-                className={`header-action ${logoutConfirm ? 'text-red-400' : ''}`}
-              >
-                <LogOut size={14} />
-              </button>
-              {logoutConfirm && (
-                <div role="alertdialog" aria-live="assertive" className="absolute right-0 top-full mt-1 z-10 w-72 bg-black border border-red-900 p-2 text-left">
-                  <p className="text-sm text-red-400">
-                    This permanently deletes your identity, account, and all messages. This cannot be undone.
-                  </p>
-                  <div className="flex gap-1 mt-2">
-                    <button
-                      onClick={() => {
-                        dismissLogoutConfirm()
-                        setShowSettings(true)
-                      }}
-                      className="text-sm whitespace-nowrap"
-                    >
-                      Export
-                    </button>
-                    <button onClick={onLogout} className="text-sm text-red-400 whitespace-nowrap">
-                      Burn
-                    </button>
-                    <button onClick={dismissLogoutConfirm} className="text-sm whitespace-nowrap">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         )}
       </header>
+      {reconnecting && (
+        <div role="status" className="px-2 py-0.5 text-center text-xs text-neutral-400 bg-neutral-900 border-b border-neutral-800">Reconnecting…</div>
+      )}
       <InstallBanner />
       <main className="flex-1 overflow-hidden flex flex-col">
         {children}
       </main>
-      {/* On phones there is no free corner outside the safe area; Settings shows it there. */}
-      <div className="fixed bottom-1 left-1 max-sm:hidden z-20 text-[0.625rem] leading-3 text-neutral-700 pointer-events-none" aria-label={`Version ${version}`}>
-        v{version}
-      </div>
       {showSettings && identity && (
         <SettingsModal
           identity={identity}
@@ -161,6 +100,7 @@ export function Layout({
             setShowSettings(false)
           }}
           push={push}
+          onBurn={onLogout}
         />
       )}
       {showQR && identity && (

@@ -12,7 +12,7 @@ export function ErrorState({ title, detail, onRetry }: ErrorStateProps) {
   return (
     <div role="alert" className="flex flex-col items-start gap-1 m-2 p-2 border border-red-900 text-sm">
       <span className="text-red-400">{title}</span>
-      <span className="w-full break-words text-neutral-600">{detail}</span>
+      <span className="w-full break-words text-neutral-500">{detail}</span>
       <button onClick={onRetry}>Retry</button>
     </div>
   )

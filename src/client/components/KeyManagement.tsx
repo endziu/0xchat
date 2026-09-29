@@ -47,8 +47,8 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   }
 
   return (
-    <section className="p-3">
-      <h3>Identity</h3>
+    <section className="border-t border-neutral-800 p-3">
+      <h3>Backup</h3>
 
       <div className="mt-3">
         <label htmlFor="export-private-key" className="text-sm text-neutral-400">Export private key</label>
@@ -61,6 +61,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
             {keyCopied ? <Check size={14} /> : <Copy size={14} />}
           </button>
         </div>
+        <p className="mt-1 text-sm">Your key is your account. Export it and keep it somewhere safe, or you lose this identity if this browser's storage is cleared.</p>
       </div>
 
       <div className="mt-3">

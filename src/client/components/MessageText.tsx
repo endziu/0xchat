@@ -15,7 +15,7 @@ export function MessageText({ plaintext, className }: MessageTextProps) {
             href={part.value}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sky-400 underline underline-offset-2 break-all hover:text-sky-300"
+            className="text-accent underline underline-offset-2 break-all hover:brightness-125"
           >
             {part.value}
           </a>

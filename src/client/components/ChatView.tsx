@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useRef } from 'preact/hooks'
 import { ConversationList } from './ConversationList'
 import { MessagePane } from './MessagePane'
 import { useConversations } from '../hooks/useConversations'
@@ -21,10 +21,13 @@ interface ChatViewProps {
 }
 
 export function ChatView({ recipientAddress, identity, token, navigate, onConnectedChange }: ChatViewProps) {
-  const { conversations, refresh: refreshConversations, reload: reloadConversations, error: conversationsError, labels, setLabel, deleteConversation } = useConversations(token)
+  const { conversations, refresh: refreshConversations, reload: reloadConversations, error: conversationsError, labels, setLabel, removeConversation } = useConversations(token)
   const [newChatAddr, setNewChatAddr] = useState<string | null>(null)
+  const [newChatName, setNewChatName] = useState('')
   const [newChatError, setNewChatError] = useState('')
-  const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null)
+  const newChatInputRef = useRef<HTMLInputElement>(null)
+  // Partners who burned their identity this session: nothing can reach them.
+  const [departed, setDeparted] = useState<ReadonlySet<string>>(new Set())
   const [showScanner, setShowScanner] = useState(false)
 
   // The stream comes before the message hook, whose synchronization depends
@@ -49,9 +52,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
 
   const handleDisconnect = useLatest((address: string) => {
     refreshConversations()
-    if (recipientAddress?.toLowerCase() === address.toLowerCase()) {
-      setDisconnectNotice(`${address.slice(0, 6)}...${address.slice(-4)} has left the chat`)
-    }
+    setDeparted(prev => new Set(prev).add(address.toLowerCase()))
   })
 
   // Reconnecting cannot succeed once the server requires a newer client.
@@ -68,10 +69,16 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     refreshConversations()
   }
 
-  const handleDeleteConversation = (address: string) => {
-    deleteConversation(address)
+  const handleRemoveConversation = (address: string) => {
+    removeConversation(address)
     if (recipientAddress?.toLowerCase() === address.toLowerCase()) navigate('/chat')
   }
+
+  const openNewChat = () => { setNewChatAddr(''); setNewChatName(''); setNewChatError('') }
+  const closeNewChat = () => { setNewChatAddr(null); setNewChatError('') }
+  // autoFocus loses to the + button, which keeps focus after the click.
+  const newChatOpen = newChatAddr !== null
+  useEffect(() => { if (newChatOpen) newChatInputRef.current?.focus() }, [newChatOpen])
 
   const resolveAndNavigate = async (addr: string) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
@@ -81,6 +88,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     try {
       const { pubkey } = await api.getPubkey(addr)
       if (!pubkey) { setNewChatError('Address not registered yet.'); return }
+      if (newChatName.trim()) setLabel(addr, newChatName)
       navigate(`/chat/${addr.toLowerCase()}`)
       setNewChatAddr(null)
     } catch (err: any) {
@@ -111,14 +119,16 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       <div className={`flex flex-1 min-h-0 overflow-hidden max-sm:flex-col ${recipientAddress ? 'max-sm:[&>:first-child]:hidden' : 'max-sm:[&>:last-child]:hidden'}`}>
         <nav className="w-72 shrink-0 border-r border-neutral-800 max-sm:border-r-0 flex flex-col max-sm:w-full max-sm:flex-1 max-sm:min-h-0">
           {/* Same sizing as MessagePane's header so the two bottom borders line up side by side. */}
-          <div className="flex items-center justify-between min-h-11 px-2 sm:py-2 border-b border-neutral-800">
+          <div className="flex items-center justify-between min-h-11 sm:h-14 px-2 border-b border-neutral-800">
             <span className="text-sm uppercase tracking-wider text-neutral-500">Conversations</span>
-            <button onClick={() => { setNewChatAddr(''); setNewChatError('') }} aria-label="New conversation" title="New conversation" className="border-0"><Plus size={18} /></button>
+            <button onClick={openNewChat} aria-label="New conversation" title="New conversation" className="border-0"><Plus size={18} /></button>
           </div>
           {newChatAddr !== null && (
             <div className="p-2 border-b border-neutral-900 flex flex-col gap-1.5">
               <input
+                ref={newChatInputRef}
                 type="text"
+                aria-label="Address"
                 placeholder="0x..."
                 autocomplete="off"
                 autocorrect="off"
@@ -128,15 +138,26 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
                 onInput={(e: any) => { setNewChatAddr(e.target.value); setNewChatError('') }}
                 onKeyDown={(e: KeyboardEvent) => {
                   if (e.key === 'Enter') handleNewChatSubmit()
-                  else if (e.key === 'Escape') { setNewChatAddr(null); setNewChatError('') }
+                  else if (e.key === 'Escape') closeNewChat()
                 }}
-                autoFocus
+              />
+              <input
+                type="text"
+                aria-label="Name (optional)"
+                placeholder="Name (optional)"
+                autocomplete="off"
+                value={newChatName}
+                onInput={(e: any) => setNewChatName(e.target.value)}
+                onKeyDown={(e: KeyboardEvent) => {
+                  if (e.key === 'Enter') handleNewChatSubmit()
+                  else if (e.key === 'Escape') closeNewChat()
+                }}
               />
               {newChatError && <p className="text-red-400">{newChatError}</p>}
               <div className="flex gap-1">
                 <button onClick={handleNewChatSubmit}>Start</button>
                 <button onClick={() => setShowScanner(true)} aria-label="Scan QR code" title="Scan QR code"><QrCode size={14} /></button>
-                <button onClick={() => { setNewChatAddr(null); setNewChatError('') }} aria-label="Cancel"><X size={14} /></button>
+                <button onClick={closeNewChat} aria-label="Cancel"><X size={14} /></button>
               </div>
             </div>
           )}
@@ -145,9 +166,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
               conversations={conversations}
               activeAddress={recipientAddress}
               onSelect={(addr) => navigate(`/chat/${addr}`)}
+              onNewConversation={openNewChat}
+              onRemove={handleRemoveConversation}
               labels={labels}
-              onRename={setLabel}
-              onDelete={handleDeleteConversation}
               error={conversationsError}
               onRetry={reloadConversations}
             />
@@ -155,11 +176,14 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
         </nav>
 
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {disconnectNotice && <p className="p-2 border-b border-neutral-800 text-neutral-500 text-center">{disconnectNotice}</p>}
           {recipientAddress ? (
             <MessagePane
               key={recipientAddress}
               recipientAddress={recipientAddress}
+              selfAddress={identity.address}
+              labels={labels}
+              onRename={(name) => setLabel(recipientAddress, name)}
+              partnerDeleted={departed.has(recipientAddress.toLowerCase())}
               messages={messages}
               recovering={recovering}
               loading={messagesLoading}
@@ -176,7 +200,10 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
               onBack={() => navigate('/chat')}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-neutral-700">No conversation selected</div>
+            <div className="flex flex-col items-center justify-center gap-1 h-full p-4 text-center">
+              <p className="m-0">No conversation selected</p>
+              <p className="m-0 text-sm">End-to-end encrypted · messages disappear · your key is your account</p>
+            </div>
           )}
         </div>
       </div>

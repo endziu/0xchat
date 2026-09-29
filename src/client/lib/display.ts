@@ -1,0 +1,41 @@
+// How addresses, names and times are shown to a person.
+
+export const shortAddr = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`
+
+/** The conversation label, "You" for your own address, else the short address. */
+export function displayName(address: string, labels: Record<string, string>, self: string): string {
+  const key = address.toLowerCase()
+  if (key === self.toLowerCase()) return 'You'
+  return labels[key] || shortAddr(address)
+}
+
+/** A stable hue for an address, so truncated addresses that look alike still differ. */
+export function addressHue(address: string): number {
+  let hash = 0
+  for (const char of address.toLowerCase()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return hash % 360
+}
+
+export const fmtTime = (ts: number) =>
+  new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+
+const startOfDay = (ts: number) => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() }
+
+/** null for today, "Yesterday", then a weekday within a week, else a date. */
+export function fmtDay(ts: number, now = Date.now()): string | null {
+  // Rounded: a day across a DST change is 23 or 25 hours long.
+  const days = Math.round((startOfDay(now) - startOfDay(ts)) / 86_400_000)
+  if (days <= 0) return null
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return new Date(ts).toLocaleDateString([], { weekday: 'short' })
+  return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+/** Time left until `expiresAt`, in its largest whole unit: 12s, 29m, 4h. */
+export function fmtRemaining(expiresAt: number, now = Date.now()): string {
+  const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  return `${Math.floor(minutes / 60)}h`
+}

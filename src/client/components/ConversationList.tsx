@@ -1,45 +1,43 @@
 import { useState, useEffect, useRef } from 'preact/hooks'
+import { UserX } from 'lucide-preact'
 import { MergedConversation } from '../hooks/useConversations'
 import { getLastSeenKey, subscribeLastSeen } from '../lib/contacts'
-import { Pencil, Trash2, Check } from 'lucide-preact'
+import { fmtDay, fmtTime, shortAddr } from '../lib/display'
+import { AddressAvatar } from './AddressAvatar'
 import { ErrorState } from './ErrorState'
 
 interface ConversationListProps {
   conversations: MergedConversation[]
   activeAddress: string | null
   onSelect: (address: string) => void
+  onNewConversation: () => void
+  // Takes the conversation off the list and forgets its label, on this device.
+  onRemove: (address: string) => void
   labels?: Record<string, string>
-  onRename?: (address: string, name: string) => void
-  onDelete?: (address: string) => void
   error: string | null
   onRetry: () => void
 }
 
-const formatTimestamp = (timestamp: number): string => {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const timeDiff = today.getTime() - msgDate.getTime()
-
-  if (timeDiff === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-  if (timeDiff === 86400000) return 'Yesterday'
-  if (timeDiff < 604800000) return date.toLocaleDateString([], { weekday: 'short' })
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-}
-
-export function ConversationList({ conversations, activeAddress, onSelect, labels = {}, onRename, onDelete, error, onRetry }: ConversationListProps) {
+export function ConversationList({ conversations, activeAddress, onSelect, onNewConversation, onRemove, labels = {}, error, onRetry }: ConversationListProps) {
   const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({})
-  const [editingAddress, setEditingAddress] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  // The delete button is always visible on touch, right next to a tappable
-  // row — so it takes two taps, same confirm pattern as logout.
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-  const confirmTimeoutRef = useRef<any>(null)
+  // Removing takes two taps; the second tap's question is spelled out, since
+  // touch screens show no title.
+  const [removeConfirm, setRemoveConfirm] = useState<string | null>(null)
+  const removeConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(removeConfirmTimeout.current), [])
 
-  useEffect(() => {
-    return () => { if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current) }
-  }, [])
+  const handleRemove = (e: Event, address: string) => {
+    e.stopPropagation()
+    clearTimeout(removeConfirmTimeout.current)
+    const addr = address.toLowerCase()
+    if (removeConfirm === addr) {
+      setRemoveConfirm(null)
+      onRemove(address)
+      return
+    }
+    setRemoveConfirm(addr)
+    removeConfirmTimeout.current = setTimeout(() => setRemoveConfirm(null), 3000)
+  }
 
   // last_seen advances only when the open conversation confirms opening its
   // messages (or loads your own), so selecting a conversation in a hidden or
@@ -56,39 +54,19 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
     setUnreadMap(map)
   }, [conversations, seenVersion])
 
-  const handleStartEdit = (e: Event, address: string) => {
-    e.stopPropagation()
-    setEditingAddress(address.toLowerCase())
-    setEditValue(labels[address.toLowerCase()] ?? '')
-  }
-
-  const handleDelete = (e: Event, address: string) => {
-    e.stopPropagation()
-    const addr = address.toLowerCase()
-    if (deleteConfirm === addr) {
-      clearTimeout(confirmTimeoutRef.current)
-      setDeleteConfirm(null)
-      onDelete?.(address)
-      return
-    }
-    setDeleteConfirm(addr)
-    clearTimeout(confirmTimeoutRef.current)
-    confirmTimeoutRef.current = setTimeout(() => setDeleteConfirm(null), 3000)
-  }
-
-  const handleSaveEdit = (address: string) => {
-    onRename?.(address, editValue)
-    setEditingAddress(null)
-    setEditValue('')
-  }
-
   // The notice sits above the list rather than replacing it: a failed refresh
   // while cached contacts are on screen must not pass the stale list off as
   // live. An empty-but-successful load still gets the plain empty state.
   const errorNotice = error && <ErrorState title="Failed to load conversations" detail={error} onRetry={onRetry} />
 
   if (conversations.length === 0) {
-    return errorNotice || <div className="flex items-center justify-center h-full text-neutral-700 p-4">No conversations yet</div>
+    return errorNotice || (
+      <div className="flex flex-col items-center justify-center gap-3 h-full p-4 text-center">
+        <p className="m-0">No conversations yet</p>
+        <p className="m-0 text-sm">Share your address with the copy, link or QR buttons at the top to start.</p>
+        <button onClick={onNewConversation}>Start a conversation</button>
+      </div>
+    )
   }
 
   return (
@@ -99,53 +77,34 @@ export function ConversationList({ conversations, activeAddress, onSelect, label
           const addr = conv.address.toLowerCase()
           const isActive = activeAddress?.toLowerCase() === addr
           const isUnread = unreadMap[addr]
-          const isEditing = editingAddress === addr
-          const isConfirming = deleteConfirm === addr
           const label = labels[addr]
+          const confirming = removeConfirm === addr
 
           return (
             <li
               key={conv.address}
-              className={`group flex items-center gap-1 pl-3 pr-1 py-1 border-b border-neutral-900 cursor-pointer select-none ${isActive ? 'bg-neutral-900' : ''} ${conv.stale ? 'opacity-50' : ''}`}
-              title={conv.stale ? 'No active messages' : undefined}
-              onClick={() => !isEditing && onSelect(conv.address)}
+              className={`flex items-center gap-2 pl-1 pr-1 min-h-11 border-b border-neutral-900 cursor-pointer select-none ${isActive ? 'bg-neutral-900' : ''}`}
+              onClick={() => onSelect(conv.address)}
             >
-              {isEditing ? (
-                <input
-                  className="flex-1"
-                  type="text"
-                  value={editValue}
-                  onInput={(e: any) => setEditValue(e.target.value)}
-                  onKeyDown={(e: KeyboardEvent) => {
-                    if (e.key === 'Enter') handleSaveEdit(addr)
-                    else if (e.key === 'Escape') { setEditingAddress(null); setEditValue('') }
-                  }}
-                  onBlur={() => handleSaveEdit(addr)}
-                  onClick={(e) => e.stopPropagation()}
-                  autoFocus
-                />
-              ) : (
-                <>
-                  <span className="flex-1 min-w-0 truncate">
-                    {label || <span className="text-sm text-neutral-600">{conv.address.slice(0, 6)}...{conv.address.slice(-4)}</span>}
-                  </span>
-                  {isUnread && <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0" aria-label="Unread" />}
-                  <time className="text-sm text-neutral-600 shrink-0">{formatTimestamp(conv.last_message_at)}</time>
-                  {/* Hidden-until-hover is a pointer-device affordance only; on
-                      touch these stay visible or they'd be unreachable. */}
-                  <button onClick={(e) => handleStartEdit(e, conv.address)} title="Rename" aria-label="Rename" className="border-0 shrink-0 can-hover:opacity-0 can-hover:group-hover:opacity-100 focus:opacity-100">
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={(e) => handleDelete(e, conv.address)}
-                    title={isConfirming ? 'Tap again to confirm' : 'Delete'}
-                    aria-label={isConfirming ? 'Confirm delete' : 'Delete'}
-                    className={`border-0 shrink-0 focus:opacity-100 ${isConfirming ? 'text-red-400' : 'can-hover:opacity-0 can-hover:group-hover:opacity-100'}`}
-                  >
-                    {isConfirming ? <Check size={14} /> : <Trash2 size={14} />}
-                  </button>
-                </>
-              )}
+              {/* The unread dot owns the left edge, where the eye starts reading;
+                  the slot is kept when read so the rows stay aligned. */}
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isUnread ? 'bg-accent' : ''}`} {...(isUnread ? { 'aria-label': 'Unread' } : {})} />
+              <AddressAvatar address={conv.address} />
+              <span className="flex-1 min-w-0 flex flex-col">
+                <span className={`truncate ${isUnread ? 'font-bold text-white' : label ? 'text-neutral-300' : 'text-sm text-neutral-400'}`}>
+                  {label || shortAddr(conv.address)}
+                </span>
+                {conv.stale && <span className="text-xs text-neutral-500">No messages</span>}
+              </span>
+              <time className={`text-sm shrink-0 ${isUnread ? 'text-neutral-200' : 'text-neutral-500'}`}>{fmtDay(conv.last_message_at) ?? fmtTime(conv.last_message_at)}</time>
+              <button
+                onClick={(e) => handleRemove(e, conv.address)}
+                title="Remove from your conversations and forget the name"
+                aria-label={confirming ? 'Confirm remove conversation' : 'Remove conversation'}
+                className={`border-0 shrink-0 header-action ${confirming ? 'text-neutral-200' : 'text-neutral-500 hover:text-neutral-200'}`}
+              >
+                {confirming ? <span className="text-sm whitespace-nowrap">Remove and forget?</span> : <UserX size={14} />}
+              </button>
             </li>
           )
         })}

@@ -88,7 +88,9 @@ export function useConversations(token: string | null) {
     })
   }, [])
 
-  const deleteConversation = useCallback((address: string) => {
+  // For a partner who is done with that address: off the list, name forgotten.
+  // Their next message, if one ever comes, brings the conversation back unnamed.
+  const removeConversation = useCallback((address: string) => {
     deleteContact(address)
     setLabels(prev => {
       const next = { ...prev }
@@ -131,5 +133,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, error, refresh, reload: doRefresh, labels, setLabel, deleteConversation }
+  return { conversations, loading, error, refresh, reload: doRefresh, labels, setLabel, removeConversation }
 }

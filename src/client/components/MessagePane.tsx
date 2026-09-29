@@ -1,5 +1,6 @@
+import { Fragment } from 'preact'
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
-import { ArrowLeft, Send, Copy, Check, Plus, X, Trash2, Timer } from 'lucide-preact'
+import { ArrowLeft, Send, Copy, Check, ImagePlus, X, Trash2, Timer, LoaderCircle } from 'lucide-preact'
 import { Message } from '../lib/api'
 import { compressImageFile, ImageTooLargeError } from '../lib/image'
 import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
@@ -7,9 +8,17 @@ import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
 import { ErrorState } from './ErrorState'
 import { MessageText } from './MessageText'
+import { AddressAvatar } from './AddressAvatar'
+import { displayName, fmtDay, fmtRemaining, fmtTime, shortAddr } from '../lib/display'
 
 interface MessagePaneProps {
   recipientAddress: string
+  selfAddress: string
+  labels: Record<string, string>
+  // An empty name removes the label.
+  onRename: (name: string) => void
+  // The partner burned their identity, so nothing more can be delivered.
+  partnerDeleted?: boolean
   messages: (Message & { plaintext: string })[]
   recovering?: boolean
   loading?: boolean
@@ -28,10 +37,19 @@ interface MessagePaneProps {
   onBack: () => void
 }
 
-const shortAddr = (a: string) => `${a.slice(0, 6)}...${a.slice(-4)}`
-const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+// Lifetimes this short are easy to pick by accident, so the chip says so loudly.
+const SHORT_LIFETIME_SECONDS = 60
 
-export function MessagePane({ recipientAddress, messages, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onClear, onBack }: MessagePaneProps) {
+function ImageAttachment({ src }: { src: string }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-label={expanded ? 'Shrink image' : 'Expand image'} className="mt-1 block border-0 p-0 max-w-full hover:bg-transparent">
+      <img src={src} alt="Attachment" className={`border-0 ${expanded ? 'max-w-full' : 'max-w-48 max-h-48 object-contain'}`} />
+    </button>
+  )
+}
+
+export function MessagePane({ recipientAddress, selfAddress, labels, onRename, partnerDeleted, messages, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onClear, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
   // Resolved per conversation (the pane is keyed by recipient) and again
@@ -41,7 +59,13 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
   useEffect(() => subscribeDefaultLifetimeSetting(() => setTtl(resolveComposerLifetime())), [])
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
-  // Clearing is irreversible for both sides, so it takes two taps.
+  const label = labels[recipientAddress.toLowerCase()]
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (renaming) nameInputRef.current?.focus() }, [renaming])
+  // Clearing is irreversible for both sides, so it takes two taps; the second
+  // tap's question is spelled out, since touch screens show no title.
   const [clearConfirm, setClearConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
   const clearConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -189,28 +213,79 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
     } finally { setClearing(false) }
   }
 
+  const startRename = () => { setNameDraft(label ?? ''); setRenaming(true) }
+  const saveName = () => { onRename(nameDraft); setRenaming(false) }
+
+  // Remaining lifetimes count down once a second while any message is shown.
+  const [, setTick] = useState(0)
+  const hasMessages = messages.length > 0
+  useEffect(() => {
+    if (!hasMessages) return
+    const timer = setInterval(() => setTick(tick => tick + 1), 1000)
+    return () => clearInterval(timer)
+  }, [hasMessages])
+  const now = Date.now()
+  const lifetimeLabel = MESSAGE_LIFETIMES.find((o) => o.seconds === ttl)?.label
+  const shortLifetime = ttl <= SHORT_LIFETIME_SECONDS
+
   return (
     <div className="flex flex-col h-full" onPaste={handlePaste}>
       {/* Same height and edges as the app bar above: on phones both are just
-          their 44px targets, and the back arrow sits on the logo's left edge. */}
-      <div className="flex items-center gap-2 min-h-11 px-2 sm:py-2 border-b border-neutral-800">
-        <button onClick={onBack} aria-label="Back to conversations" className="border-0 justify-start px-0"><ArrowLeft size={18} /></button>
-        <span className="flex-1 min-w-0 text-sm text-neutral-500 truncate">
-          <span className="max-sm:hidden">{recipientAddress}</span>
-          <span className="sm:hidden">{recipientAddress.slice(0, 6)}...{recipientAddress.slice(-4)}</span>
-        </span>
-        <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy" aria-label="Copy address" className="border-0 header-action">
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-        </button>
-        <button
-          onClick={handleClear}
-          disabled={clearing}
-          title={clearConfirm ? 'Tap again to clear for both of you' : 'Clear conversation'}
-          aria-label={clearConfirm ? 'Confirm clear conversation' : 'Clear conversation'}
-          className={`border-0 header-action ${clearConfirm ? 'text-red-400' : ''}`}
-        >
-          {clearConfirm ? <Check size={14} /> : <Trash2 size={14} />}
-        </button>
+          their 44px targets, and the back arrow sits on the logo's left edge.
+          On wider screens the list's header matches this height. */}
+      <div className="flex items-center gap-2 min-h-11 sm:h-14 px-2 border-b border-neutral-800">
+        {/* The list is beside the pane on wider screens, so no way back is needed. */}
+        <button onClick={onBack} aria-label="Back to conversations" className="border-0 justify-start px-0 sm:hidden"><ArrowLeft size={18} /></button>
+        <AddressAvatar address={recipientAddress} size={20} />
+        {renaming ? (
+          <form className="flex flex-1 min-w-0 items-center gap-1" onSubmit={(e) => { e.preventDefault(); saveName() }}>
+            <input
+              ref={nameInputRef}
+              type="text"
+              aria-label="Name"
+              placeholder="Name"
+              autocomplete="off"
+              maxLength={64}
+              value={nameDraft}
+              onInput={(e: any) => setNameDraft(e.target.value)}
+              onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Escape') setRenaming(false) }}
+              className="min-w-0 flex-1 py-1"
+            />
+            <button type="submit" aria-label="Save name" title="Save" className="border-0 header-action"><Check size={14} /></button>
+            <button type="button" onClick={() => setRenaming(false)} aria-label="Cancel rename" title="Cancel" className="border-0 header-action"><X size={14} /></button>
+          </form>
+        ) : (
+          <>
+            <button
+              onClick={startRename}
+              title={label ? 'Rename' : 'Add a name'}
+              aria-label={label ? `Rename ${label}` : 'Add a name'}
+              className="border-0 flex-1 min-w-0 flex-col items-start justify-center gap-0 px-0 py-0 leading-tight text-left hover:bg-transparent"
+            >
+              <span className="max-w-full truncate">{label || shortAddr(recipientAddress)}</span>
+              <span className="max-w-full truncate text-xs text-neutral-500">
+                {label ? (
+                  <>
+                    <span className="max-sm:hidden">{recipientAddress}</span>
+                    <span className="sm:hidden">{shortAddr(recipientAddress)}</span>
+                  </>
+                ) : 'Add a name'}
+              </span>
+            </button>
+            <button onClick={() => { navigator.clipboard.writeText(recipientAddress); setCopied(true); setTimeout(() => setCopied(false), 2000) }} title="Copy address" aria-label="Copy address" className="border-0 header-action">
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+            </button>
+            <button
+              onClick={handleClear}
+              disabled={clearing}
+              title="Clear conversation for both of you"
+              aria-label={clearConfirm ? 'Confirm clear conversation' : 'Clear conversation'}
+              className={`border-0 header-action ${clearConfirm ? 'text-red-400' : ''}`}
+            >
+              {clearConfirm ? <span className="text-sm whitespace-nowrap">Clear for both of you?</span> : <Trash2 size={14} />}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Outside the scroll area on purpose: the pane auto-scrolls to the
@@ -225,10 +300,17 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
         />
       )}
 
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+      <div ref={scrollRef} onScroll={handleScroll} role="log" aria-label="Messages" className="flex-1 overflow-y-auto overscroll-contain px-4 py-2 flex flex-col">
+        {/* Takes the free space above a short conversation, so it sits on the composer. */}
+        <div className="mt-auto" />
         {loading
-          ? <div className="flex items-center justify-center h-full text-neutral-700">Loading...</div>
-          : !error && messages.length === 0 && <div className="flex items-center justify-center h-full text-neutral-700">No messages yet</div>
+          ? <div className="flex flex-1 items-center justify-center text-neutral-500">Loading...</div>
+          : !error && messages.length === 0 && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+              <p className="m-0">No messages yet</p>
+              <p className="m-0 text-sm">Messages here are end-to-end encrypted and disappear after the lifetime you pick below.</p>
+            </div>
+          )
         }
         {!loading && hasMore && (
           <div className="self-center mb-2 flex flex-col items-center gap-1">
@@ -242,30 +324,38 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
           const isMine = msg.sender.toLowerCase() !== recipientAddress.toLowerCase()
           const isImage = msg.plaintext.startsWith('data:image/')
           const prev = messages[i - 1]
-          const sameSender = prev && prev.sender.toLowerCase() === msg.sender.toLowerCase()
+          // A conversation can span midnight: mark where each earlier day starts.
+          const day = fmtDay(msg.created_at, now)
+          const newDay = prev ? day !== fmtDay(prev.created_at, now) : day !== null
+          const sameSender = !newDay && prev && prev.sender.toLowerCase() === msg.sender.toLowerCase()
           const sameMinute = sameSender && fmtTime(prev.created_at) === fmtTime(msg.created_at)
+          const remaining = fmtRemaining(msg.expires_at, now)
 
           return (
-            <article key={msg.id} data-message-id={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : 'mt-3 first:mt-0'} group hover:bg-neutral-950/50`}>
-              <time className={`w-10 shrink-0 text-xs text-neutral-500 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible' : ''}`}>
-                {fmtTime(msg.created_at)}
-              </time>
-              <div className={`min-w-0 flex-1 ${!sameSender ? `pl-2 border-l-2 ${isMine ? 'border-neutral-700' : 'border-neutral-400'}` : 'pl-2 border-l-2 border-transparent'}`}>
-                {!sameSender && (
-                  <span className={`text-sm font-bold ${isMine ? 'text-neutral-500' : 'text-neutral-200'}`}>
-                    {shortAddr(msg.sender)}
-                  </span>
-                )}
-                {isImage ? (
-                  <img src={msg.plaintext} alt="Attachment" className="max-w-xs max-sm:max-w-full mt-1 border-0 cursor-pointer" onClick={() => window.open(msg.plaintext, '_blank')} />
-                ) : (
-                  <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
-                )}
-                {!sameSender && (
-                  <span className="block text-xs text-neutral-500">expires {fmtTime(msg.expires_at)}</span>
-                )}
-              </div>
-            </article>
+            <Fragment key={msg.id}>
+              {newDay && <div className="self-center mt-3 text-xs text-neutral-500">{day ?? 'Today'}</div>}
+              <article data-message-id={msg.id} className={`flex gap-3 ${sameSender ? 'mt-0.5' : i === 0 ? '' : 'mt-3'} group hover:bg-neutral-950/50`}>
+                <time className={`w-10 shrink-0 text-xs text-neutral-500 pt-0.5 text-right ${sameMinute ? 'invisible group-hover:visible group-focus-within:visible' : ''}`}>
+                  {fmtTime(msg.created_at)}
+                </time>
+                <div className={`min-w-0 flex-1 pl-2 border-l-2 ${isMine ? 'border-accent' : 'border-neutral-500'}`}>
+                  {!sameSender && (
+                    <span className={`flex items-center gap-1.5 text-sm font-bold ${isMine ? 'text-neutral-400' : 'text-neutral-200'}`}>
+                      <AddressAvatar address={msg.sender} size={12} />
+                      {displayName(msg.sender, labels, selfAddress)}
+                    </span>
+                  )}
+                  {isImage ? (
+                    <ImageAttachment src={msg.plaintext} />
+                  ) : (
+                    <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
+                  )}
+                </div>
+                <span className="shrink-0 text-xs text-neutral-500 pt-0.5" title={`Disappears in ${remaining}`} aria-label={`Disappears in ${remaining}`}>
+                  {remaining}
+                </span>
+              </article>
+            </Fragment>
           )
         })}
         <div ref={messagesEndRef} />
@@ -273,6 +363,11 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
 
       {/* The shell leaves the bottom inset to us: clear the home indicator,
           but don't stack our own padding on top of it. */}
+      {partnerDeleted ? (
+        <p role="status" className="m-0 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 border-t border-neutral-800 text-center text-sm">
+          This identity was deleted. Messages can't be delivered.
+        </p>
+      ) : (
       <form className="p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
         {compressingImage && (
           <div className="mb-2 border border-neutral-800 p-2 text-xs text-neutral-500">Compressing image…</div>
@@ -286,41 +381,47 @@ export function MessagePane({ recipientAddress, messages, recovering = false, lo
           </div>
         )}
         <div className="flex items-center border border-neutral-800 rounded-lg bg-neutral-950">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach" className="border-0 p-0 px-2 text-neutral-400 hover:text-neutral-200">
-            <Plus size={18} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach image" className="border-0 p-0 px-2 text-neutral-400 hover:text-neutral-200">
+            <ImagePlus size={18} />
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleImageFile(f) }} hidden />
           {/* The pill is what shows; the real select lies invisibly on top of
               it, so taps still open the native picker. */}
-          <label className="relative flex items-center self-stretch shrink-0 px-1">
+          <label className="relative flex items-center self-stretch shrink-0 px-1" title={`Messages you send disappear ${lifetimeLabel} after they are opened`}>
             <select
               value={ttl}
               onChange={(e: any) => { const seconds = Number(e.target.value); setTtl(seconds); rememberLifetimeSelection(seconds) }}
-              aria-label="Message expiry"
+              aria-label={`Message lifetime: messages you send disappear ${lifetimeLabel} after they are opened`}
               className="peer absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             >
               <LifetimeOptions />
             </select>
-            <span aria-hidden="true" className="flex items-center gap-1 border border-neutral-800 rounded-full px-2 py-0.5 text-xs text-neutral-400 peer-focus-visible:border-neutral-500">
+            <span aria-hidden="true" className={`flex items-center gap-1 border rounded-full px-2 py-0.5 text-xs peer-focus-visible:border-accent ${shortLifetime ? 'border-red-400 text-red-400 font-bold' : 'border-neutral-800 text-neutral-400'}`}>
               <Timer size={12} />
-              {MESSAGE_LIFETIMES.find((o) => o.seconds === ttl)?.label}
+              {lifetimeLabel}
             </span>
           </label>
           <textarea
             ref={textareaRef}
             value={inputText}
             onInput={(e: any) => setInputText(e.target.value)}
-            onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+            // Phones have no Shift+Enter, so there Enter is a newline and the
+            // Send button sends.
+            onKeyDown={(e: KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer: coarse)').matches) { e.preventDefault(); handleSend() } }}
             placeholder="Message..."
             autoComplete="off"
             rows={1}
-            className="flex-1 border-0 bg-transparent py-2.5 px-2"
+            readOnly={sending}
+            className={`flex-1 border-0 bg-transparent py-2.5 px-2 ${sending ? 'text-neutral-500' : ''}`}
           />
-          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} aria-label="Send" title="Send" className="border-0 p-0 px-2 text-neutral-200 hover:text-white">
-            <Send size={18} />
+          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} aria-label={sending ? 'Sending' : 'Send'} title={sending ? 'Sending…' : 'Send'} className={`border-0 p-0 px-2 text-neutral-200 hover:text-white ${sending ? 'disabled:opacity-100' : ''}`}>
+            {sending ? <LoaderCircle size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </div>
+        {/* Always present: a live region only announces changes to itself. */}
+        <span role="status" className="sr-only">{sending ? 'Sending…' : ''}</span>
       </form>
+      )}
     </div>
   )
 }

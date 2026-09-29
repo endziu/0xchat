@@ -1,8 +1,10 @@
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
-import { X } from 'lucide-preact'
+import { Check, Copy, Flame, X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
+import { Modal } from './Modal'
+import { AddressQR } from './QRModal'
 import { version } from '../../../package.json'
 
 export interface PushSettings {
@@ -19,6 +21,8 @@ interface SettingsModalProps {
   onClose: () => void
   onImport: (keypair: Keypair) => Promise<void>
   push?: PushSettings
+  // Permanently deletes the identity, its account and its messages.
+  onBurn?: () => void
 }
 
 export function SettingsModal({
@@ -26,6 +30,7 @@ export function SettingsModal({
   onClose,
   onImport,
   push,
+  onBurn,
 }: SettingsModalProps) {
   const {
     supported: pushSupported,
@@ -35,67 +40,98 @@ export function SettingsModal({
     subscribe: onPushSubscribe,
     unsubscribe: onPushUnsubscribe,
   } = push ?? {}
+  const [copied, setCopied] = useState(false)
+  const [burnConfirm, setBurnConfirm] = useState(false)
+  const burnTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(burnTimeout.current), [])
+  // Focus the safe choice, which also scrolls the confirmation into view.
+  const cancelBurnRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { if (burnConfirm) cancelBurnRef.current?.focus() }, [burnConfirm])
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  const askBurn = () => {
+    setBurnConfirm(true)
+    burnTimeout.current = setTimeout(() => setBurnConfirm(false), 8000)
+  }
+  const cancelBurn = () => { clearTimeout(burnTimeout.current); setBurnConfirm(false) }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3" onClick={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        className="flex max-h-full w-full max-w-lg flex-col border border-neutral-800 bg-black"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="flex items-center justify-between border-b border-neutral-800 p-2">
-          <div className="flex items-baseline gap-2">
-            <h2 id="settings-title">Settings</h2>
-            <span className="text-xs text-neutral-700">v{version}</span>
-          </div>
-          <button onClick={onClose} aria-label="Close settings" title="Close">
-            <X size={16} />
-          </button>
-        </header>
-
-        <div className="min-h-0 overflow-y-auto">
-          <KeyManagement identity={identity} onImport={onImport} />
-          <MessageLifetimeSettings />
-
-          {pushSupported && (
-            <section className="border-t border-neutral-800 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3>Notifications</h3>
-                {pushPermission === 'denied' ? (
-                  <span className="text-sm text-neutral-600">Blocked</span>
-                ) : pushSubscribed ? (
-                  <button
-                    onClick={onPushUnsubscribe}
-                    aria-label="Disable notifications"
-                    aria-pressed={true}
-                  >
-                    On
-                  </button>
-                ) : (
-                  <button
-                    onClick={onPushSubscribe}
-                    aria-label="Enable notifications"
-                    aria-pressed={false}
-                  >
-                    Off
-                  </button>
-                )}
-              </div>
-              {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}
-            </section>
-          )}
+    <Modal onClose={onClose} labelledBy="settings-title" className="max-w-lg">
+      <header className="flex items-center justify-between border-b border-neutral-800 p-2">
+        <div className="flex items-baseline gap-2">
+          <h2 id="settings-title">Settings</h2>
+          <span className="text-xs text-neutral-500">v{version}</span>
         </div>
-      </section>
-    </div>
+        <button onClick={onClose} aria-label="Close settings" title="Close">
+          <X size={16} />
+        </button>
+      </header>
+
+      <div className="min-h-0 overflow-y-auto">
+        <section className="p-3">
+          <h3>Profile</h3>
+          <div className="mt-2 flex flex-col items-center gap-1">
+            <AddressQR address={identity.address} size={160} />
+            <button
+              onClick={() => { navigator.clipboard.writeText(identity.address); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+              className="text-sm"
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />} Copy address
+            </button>
+          </div>
+        </section>
+
+        <MessageLifetimeSettings />
+
+        {pushSupported && (
+          <section className="border-t border-neutral-800 p-3">
+            <h3>Notifications</h3>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span id="notifications-label" className="text-sm text-neutral-400">Notify me of new messages</span>
+              {pushPermission !== 'denied' && (
+                <button
+                  role="switch"
+                  aria-checked={!!pushSubscribed}
+                  aria-labelledby="notifications-label"
+                  onClick={pushSubscribed ? onPushUnsubscribe : onPushSubscribe}
+                  className={`w-11 shrink-0 justify-start rounded-full p-0.5 ${pushSubscribed ? 'border-accent' : ''}`}
+                >
+                  <span className={`block h-4 w-4 rounded-full transition-transform ${pushSubscribed ? 'translate-x-5 bg-accent' : 'bg-neutral-500'}`} />
+                </button>
+              )}
+            </div>
+            {pushPermission === 'denied' && (
+              <p className="mt-2 text-sm">
+                Blocked in this browser. To allow notifications, open this site's settings
+                (usually the icon beside the address bar), allow Notifications, then reload.
+              </p>
+            )}
+            {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}
+          </section>
+        )}
+
+        <KeyManagement identity={identity} onImport={onImport} />
+
+        {onBurn && (
+          <section className="border-t border-red-900 p-3">
+            <h3 className="text-red-400">Danger zone</h3>
+            {burnConfirm ? (
+              <div role="alert" className="mt-2">
+                <p className="text-sm text-red-400">
+                  This permanently deletes your identity, account, and all messages. This cannot be undone.
+                </p>
+                <div className="mt-2 flex gap-1">
+                  <button onClick={onBurn} className="text-sm text-red-400 border-red-900">Burn</button>
+                  <button ref={cancelBurnRef} onClick={cancelBurn} className="text-sm">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={askBurn} className="mt-2 text-sm text-red-400 border-red-900">
+                <Flame size={14} /> Burn identity…
+              </button>
+            )}
+          </section>
+        )}
+      </div>
+    </Modal>
   )
 }
