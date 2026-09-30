@@ -1,4 +1,4 @@
-import { X, Share } from 'lucide-preact'
+import { X, Share, SquarePlus } from 'lucide-preact'
 import { useInstallPrompt } from '../hooks/useInstallPrompt'
 
 export function InstallBanner() {
@@ -14,7 +14,10 @@ export function InstallBanner() {
         </>
       ) : (
         <span className="flex-1 min-w-0 text-sm text-neutral-500 flex items-center gap-1 flex-wrap">
-          Install: tap <Share size={13} className="inline shrink-0" /> then “Add to Home Screen”
+          To Install go to Page Menu (⋯) →{' '}
+          <span className="inline-flex items-center gap-1">Share <Share size={13} aria-hidden="true" className="shrink-0" /></span>
+          →{' '}
+          <span className="inline-flex items-center gap-1">Add to Home Screen <SquarePlus size={13} aria-hidden="true" className="shrink-0" /></span>
         </span>
       )}
       <button onClick={dismiss} aria-label="Dismiss" className="border-0 shrink-0"><X size={14} /></button>
