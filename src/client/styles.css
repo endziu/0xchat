@@ -89,6 +89,16 @@
   }
 }
 
+/* Native dialogs live in the top layer, outside the app's safe-area padding.
+   Bound both centering and scrolling to the unobstructed viewport. */
+@utility modal-safe-viewport {
+  --modal-top-gap: max(0.75rem, env(safe-area-inset-top));
+  --modal-bottom-gap: max(0.75rem, env(safe-area-inset-bottom));
+  top: var(--modal-top-gap);
+  bottom: var(--modal-bottom-gap);
+  max-height: calc(100% - var(--modal-top-gap) - var(--modal-bottom-gap));
+}
+
 @utility safe-top { padding-top: env(safe-area-inset-top); }
 @utility safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 @utility safe-x {

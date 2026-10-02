@@ -30,7 +30,7 @@ export function Modal({ onClose, labelledBy, className = '', children }: ModalPr
       onClose={onClose}
       // A click on the dialog element itself, not its content, is the backdrop.
       onClick={(event) => { if (event.target === ref.current) onClose() }}
-      className={`m-auto max-h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] flex-col border border-neutral-800 bg-black p-0 text-neutral-200 open:flex backdrop:bg-black/80 ${className}`}
+      className={`m-auto modal-safe-viewport w-[calc(100%-1.5rem)] flex-col border border-neutral-800 bg-black p-0 text-neutral-200 open:flex backdrop:bg-black/80 ${className}`}
     >
       {children}
     </dialog>
