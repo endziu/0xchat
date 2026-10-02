@@ -94,9 +94,12 @@ export function SettingsModal({
                   aria-checked={!!pushSubscribed}
                   aria-labelledby="notifications-label"
                   onClick={pushSubscribed ? onPushUnsubscribe : onPushSubscribe}
-                  className={`w-11 shrink-0 justify-start rounded-full p-0.5 ${pushSubscribed ? 'border-accent' : ''}`}
+                  className="shrink-0 rounded-full border-0 p-0"
                 >
-                  <span className={`block h-4 w-4 rounded-full transition-transform ${pushSubscribed ? 'translate-x-5 bg-accent' : 'bg-neutral-500'}`} />
+                  {/* Keep the visual track independent of the button's 44px touch target. */}
+                  <span aria-hidden="true" className={`inline-flex h-6 w-11 box-border items-center rounded-full border p-0.5 ${pushSubscribed ? 'border-accent' : 'border-neutral-800'}`}>
+                    <span className={`block h-4 w-4 shrink-0 rounded-full transition-transform ${pushSubscribed ? 'translate-x-5 bg-accent' : 'bg-neutral-500'}`} />
+                  </span>
                 </button>
               )}
             </div>
