@@ -239,7 +239,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
       <div className="flex items-center gap-2 min-h-11 sm:h-14 px-2 border-b border-neutral-800">
         {/* The list is beside the pane on wider screens, so no way back is needed. */}
         <button onClick={onBack} aria-label="Back to conversations" className="border-0 justify-start px-0 sm:hidden"><ArrowLeft size={18} /></button>
-        <AddressAvatar address={recipientAddress} size={20} />
+        <AddressAvatar address={recipientAddress} />
         {renaming ? (
           <form className="flex flex-1 min-w-0 items-center gap-1" onSubmit={(e) => { e.preventDefault(); saveName() }}>
             <input
@@ -344,7 +344,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
                 <div className={`min-w-0 flex-1 pl-2 border-l-2 ${isMine ? 'border-accent' : 'border-neutral-500'}`}>
                   {!sameSender && (
                     <span className={`flex items-center gap-1.5 text-sm font-bold ${isMine ? 'text-neutral-400' : 'text-neutral-200'}`}>
-                      <AddressAvatar address={msg.sender} size={12} />
+                      <AddressAvatar address={msg.sender} size={16} />
                       {displayName(msg.sender, labels, selfAddress)}
                     </span>
                   )}

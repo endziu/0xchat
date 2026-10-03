@@ -9,13 +9,6 @@ export function displayName(address: string, labels: Record<string, string>, sel
   return labels[key] || shortAddr(address)
 }
 
-/** A stable hue for an address, so truncated addresses that look alike still differ. */
-export function addressHue(address: string): number {
-  let hash = 0
-  for (const char of address.toLowerCase()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return hash % 360
-}
-
 export const fmtTime = (ts: number) =>
   new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
