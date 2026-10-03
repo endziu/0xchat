@@ -87,13 +87,14 @@ export class ConversationMessages {
   private serverOffset: number | null = null
   private clearedThrough = -Infinity
 
-  constructor(identityAddress: string) {
+  /** `monotonic` measures elapsed time, as `performance.now()` does. */
+  constructor(identityAddress: string, private readonly monotonic: () => number = () => performance.now()) {
     this.self = identityAddress.toLowerCase()
   }
 
   /** Server time plus elapsed monotonic time; request latency shortens availability conservatively. */
   now(fallback = Date.now()): number {
-    return this.serverOffset === null ? fallback : performance.now() + this.serverOffset
+    return this.serverOffset === null ? fallback : this.monotonic() + this.serverOffset
   }
 
   hasServerTime(): boolean {
@@ -201,7 +202,7 @@ export class ConversationMessages {
    * confirmed independently, unavailable ones are removed, and missing,
    * duplicate or invalid results fail for retry.
    */
-  confirmOpening(ids: string[], response: unknown, requestStarted = performance.now()): void {
+  confirmOpening(ids: string[], response: unknown, requestStarted = this.monotonic()): void {
     const results = resultsOf(response) ?? []
     const serverTime = (response as { server_time?: number } | null)?.server_time ?? NaN
     for (const id of ids) {
@@ -227,7 +228,7 @@ export class ConversationMessages {
    * unavailable IDs are removed. Returns false when any loaded ID lacks
    * exactly one valid result, so the refresh cannot count as authoritative.
    */
-  applyStates(ids: string[], response: unknown, requestStarted = performance.now()): boolean {
+  applyStates(ids: string[], response: unknown, requestStarted = this.monotonic()): boolean {
     const results = resultsOf(response)
     if (!results) return false
     const serverTime = (response as { server_time: number }).server_time

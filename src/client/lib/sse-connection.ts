@@ -19,6 +19,9 @@
 
 import { LIVE_EVENT_TYPES, parseLiveEvent, type LiveEvent } from '../../shared/live-events'
 
+/** One open stream. Epochs are opaque identities: only equality has meaning to consumers. */
+export type ConnectionEpoch = symbol
+
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 30_000
 
