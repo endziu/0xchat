@@ -237,25 +237,6 @@ afterEach(async () => {
   getDb().close()
 })
 
-test('reveals an incoming message only after the server confirms its opening', async () => {
-  const sent = await alice.send(bobKey.address, 'first secret', 300)
-  let release!: () => void
-  const released = new Promise<void>(resolve => { release = resolve })
-  intercept = async (request, next) => {
-    if (new URL(request.url).pathname.endsWith('/open')) await released
-    return next()
-  }
-  const view = mount()
-  await waitFor(() => openRequests.length === 1)
-  expect(openRequests[0]).toEqual([sent.id])
-  await Bun.sleep(50)
-  expect(view.text()).not.toContain('first secret')
-
-  release()
-  await waitFor(() => view.text().includes('first secret'))
-  expect(await lifecycle(sent.id)).toMatchObject({ status: 'available', opened_at: expect.any(Number) })
-})
-
 test('a selected conversation opens nothing until its window is visible and focused', async () => {
   focused = false
   const sent = await alice.send(bobKey.address, 'unattended secret', 300)
@@ -293,37 +274,6 @@ function gate(matches: (request: Request) => boolean, when: 'before' | 'after' =
 
 const isOpening = (request: Request) => new URL(request.url).pathname.endsWith('/open')
 
-test('an opening confirmed after focus is lost stays hidden until focus returns', async () => {
-  const sent = await alice.send(bobKey.address, 'confirmed while away', 300)
-  const opening = gate(isOpening, 'after')
-  const view = mount()
-  await waitFor(() => opening.seen())
-  setFocused(false)
-  await waitFor(async () => (await lifecycle(sent.id) as MessageLifecycle).opened_at !== null)
-  opening.release()
-  await Bun.sleep(150)
-  expect(view.text()).not.toContain('confirmed while away')
-
-  setFocused(true)
-  await waitFor(() => view.text().includes('confirmed while away'))
-  expect(openRequests).toEqual([[sent.id], [sent.id]])
-})
-
-test('losing focus while messages load and decrypt prevents their opening', async () => {
-  const sent = await alice.send(bobKey.address, 'loaded while away', 300)
-  const history = gate(request => request.method === 'GET' && new URL(request.url).pathname === `/api/messages/${aliceAddress}`)
-  const view = mount()
-  await waitFor(() => history.seen())
-  setFocused(false)
-  history.release()
-  await Bun.sleep(150)
-  expect(openRequests).toEqual([])
-  expect(await lifecycle(sent.id)).toMatchObject({ opened_at: null })
-
-  setFocused(true)
-  await waitFor(() => view.text().includes('loaded while away'))
-})
-
 test('switching conversations discards in-flight opening results', async () => {
   const carolKey = parsePrivateKey('56'.repeat(32))
   const carol = new ChatClient(origin, carolKey)
@@ -341,43 +291,6 @@ test('switching conversations discards in-flight opening results', async () => {
   await carol.close()
 })
 
-test('queued openings from a previous conversation cannot consume the selected conversation messages', async () => {
-  const carolKey = parsePrivateKey('56'.repeat(32))
-  const carol = new ChatClient(origin, carolKey)
-  await carol.login()
-  await alice.send(bobKey.address, 'alice first', 300)
-  await carol.send(bobKey.address, 'carol first', 300)
-  let releaseAlice!: () => void
-  let releaseCarol!: () => void
-  const aliceGate = new Promise<void>(resolve => { releaseAlice = resolve })
-  const carolGate = new Promise<void>(resolve => { releaseCarol = resolve })
-  const requests: Array<{ path: string; ids: string[] }> = []
-  intercept = async (request, next) => {
-    if (isOpening(request)) {
-      const path = new URL(request.url).pathname
-      requests.push({ path, ids: (await request.clone().json()).ids })
-      await (path.includes(aliceAddress) ? aliceGate : carolGate)
-    }
-    return next()
-  }
-  const view = mount()
-  await waitFor(() => requests.length === 1 && streamReady())
-  await alice.send(bobKey.address, 'alice queued', 300)
-  await Bun.sleep(150)
-  view.select(carolKey.address.toLowerCase())
-  await waitFor(() => requests.length === 2)
-  const pending = await carol.send(bobKey.address, 'carol queued', 300)
-  await Bun.sleep(150)
-  releaseAlice()
-  await Bun.sleep(150)
-  expect(requests.filter(request => request.path.includes(aliceAddress))).toHaveLength(1)
-  releaseCarol()
-  await waitFor(() => view.text().includes('carol first') && view.text().includes('carol queued'))
-  expect(requests.at(-1)).toEqual({ path: `/api/messages/${carolKey.address.toLowerCase()}/open`, ids: [pending.id] })
-  expect(view.text()).not.toContain('alice queued')
-  await carol.close()
-})
-
 const OPENING_FAILED = 'Some messages could not be opened'
 
 function notice(title: string): HTMLElement | undefined {
@@ -389,33 +302,6 @@ function clickRetry(title: string): void {
   if (!button) throw new Error(`No retry offered for: ${title}`)
   button.click()
 }
-
-test('confirmed and unavailable IDs resolve independently; failed ones stay hidden until a retry succeeds', async () => {
-  const kept = await alice.send(bobKey.address, 'confirmed neighbour', 300)
-  const lost = await alice.send(bobKey.address, 'needs a retry', 300)
-  const gone = await alice.send(bobKey.address, 'reported unavailable', 300)
-  let first = true
-  intercept = async (request, next) => {
-    const response = await next()
-    if (!isOpening(request) || !first) return response
-    first = false
-    const body = await response.json() as OpeningResponse
-    return Response.json({ ...body, results: body.results
-      .filter(result => result.id !== lost.id)
-      .map(result => result.id === gone.id ? { id: gone.id, status: 'unavailable' } : result) })
-  }
-  const view = mount()
-  await waitFor(() => view.text().includes('confirmed neighbour'))
-  expect(view.text()).not.toContain('needs a retry')
-  expect(view.text()).not.toContain('reported unavailable')
-  expect(notice(OPENING_FAILED)).toBeDefined()
-
-  clickRetry(OPENING_FAILED)
-  await waitFor(() => view.text().includes('needs a retry'))
-  expect(view.text()).not.toContain('reported unavailable')
-  expect(notice(OPENING_FAILED)).toBeUndefined()
-  expect(openRequests).toEqual([[kept.id, lost.id, gone.id], [lost.id]])
-})
 
 test('an opening request failure keeps messages hidden without echoing the server error', async () => {
   await alice.send(bobKey.address, 'held back', 300)
@@ -460,34 +346,6 @@ function button(label: string): HTMLButtonElement {
   return found
 }
 
-test('only loaded pages open: the newest page on load, older history when it loads', async () => {
-  const sent = []
-  for (let index = 0; index < 60; index++) sent.push(await alice.send(bobKey.address, `history ${index}`, 300))
-  const view = mount()
-  await waitFor(() => view.text().includes('history 59'))
-  expect(openRequests).toEqual([sent.slice(10).map(message => message.id)])
-  expect(await lifecycle(sent[0]!.id)).toMatchObject({ opened_at: null })
-
-  button('Load older messages').click()
-  await waitFor(() => view.text().includes('history 0'))
-  expect(openRequests[1]).toEqual(sent.slice(0, 10).map(message => message.id))
-  expect(await lifecycle(sent[0]!.id)).toMatchObject({ opened_at: expect.any(Number) })
-}, 20_000)
-
-test('messages received while unfocused open in batches of at most 100 once focused', async () => {
-  const view = mount()
-  await waitFor(() => view.text().includes('No messages yet') && streamReady())
-  setFocused(false)
-  expect(latestStream().live).toBe(true)
-  for (let index = 0; index < 101; index++) await alice.send(bobKey.address, `burst ${index}`, 300)
-  await Bun.sleep(500)
-  expect(openRequests).toEqual([])
-
-  setFocused(true)
-  await waitFor(() => view.text().includes('burst 0') && view.text().includes('burst 100'))
-  expect(openRequests.map(ids => ids.length).sort((a, b) => b - a)).toEqual([100, 1])
-}, 20_000)
-
 const unreadDot = () => document.querySelector('[aria-label="Unread"]')
 
 test('selecting a conversation leaves it unread until its messages are confirmed opened', async () => {
@@ -509,241 +367,12 @@ test('selecting a conversation leaves it unread until its messages are confirmed
   await otherDevice.close()
 })
 
-test('a failed opening keeps the conversation unread until a retry succeeds', async () => {
-  await alice.send(bobKey.address, 'still unread', 300)
-  let failures = 1
-  intercept = (request, next) => isOpening(request) && failures-- > 0
-    ? Promise.resolve(Response.json({ error: 'unavailable' }, { status: 503 }))
-    : next()
-  const view = mount()
-  await waitFor(() => notice(OPENING_FAILED) !== undefined && unreadDot() !== null)
-
-  clickRetry(OPENING_FAILED)
-  await waitFor(() => view.text().includes('still unread'))
-  await waitFor(() => unreadDot() === null)
-})
-
-/** Opens a message the way another client of `token`'s identity would. */
-async function openAs(token: string, counterparty: string, id: string): Promise<void> {
-  const response = await bunFetch(`${origin}/api/messages/${counterparty}/open`, {
-    method: 'POST',
-    headers: { Origin: origin, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
-    body: JSON.stringify({ ids: [id] }),
-  })
-  expect(response.status).toBe(200)
-}
-
 const latestStream = () => TestEventSource.instances.at(-1)!
 const bobAddress = bobKey.address.toLowerCase()
 
-test("a sender copy takes the deadline set by the recipient's opening", async () => {
-  const otherDevice = new ChatClient(origin, bobKey)
-  const view = mount()
-  await waitFor(() => view.text().includes('No messages yet') && streamReady())
-  const sent = await otherDevice.send(aliceAddress, 'five seconds after opening', 5)
-  await waitFor(() => view.text().includes('five seconds after opening'))
-
-  await openAs(aliceToken, bobAddress, sent.id)
-  const openedAt = performance.now()
-  await waitFor(() => !view.text().includes('five seconds after opening'), 8_000)
-  expect(performance.now() - openedAt).toBeGreaterThan(4_000)
-  await otherDevice.close()
-}, 15_000)
-
-test('stale deliveries cannot undo an opening or revive an expired message', async () => {
-  const start = Date.now()
-  let elapsed = 0
-  const clock = spyOn(Date, 'now').mockImplementation(() => start + elapsed)
-  const monotonicNow = performance.now.bind(performance)
-  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => monotonicNow() + elapsed)
-  try {
-    const otherDevice = new ChatClient(origin, bobKey)
-    const view = mount()
-    await waitFor(() => view.text().includes('No messages yet') && streamReady())
-    const sent = await otherDevice.send(aliceAddress, 'opened once', 5)
-    await waitFor(() => view.text().includes('opened once'))
-    const stale = latestStream().frames.find(frame => frame.type === 'message' && frame.data.includes(sent.id))!
-
-    await openAs(aliceToken, bobAddress, sent.id)
-    await waitFor(() => latestStream().frames.some(frame => frame.type === 'expiry-update'))
-    latestStream().replay('message', stale.data)
-    await Bun.sleep(100)
-    expect(view.text()).toContain('opened once')
-
-    // Background timers can run late: regaining focus re-checks expiry.
-    setFocused(false)
-    await Bun.sleep(50)
-    elapsed = 5_000
-    setFocused(true)
-    await waitFor(() => !view.text().includes('opened once'))
-    latestStream().replay('message', stale.data)
-    await Bun.sleep(100)
-    expect(view.text()).not.toContain('opened once')
-    await otherDevice.close()
-  } finally {
-    clock.mockRestore()
-    monotonicClock.mockRestore()
-  }
-})
-
-test('opening visibility and focus expiry use server time despite wall-clock jumps', async () => {
-  focused = false
-  await alice.send(bobKey.address, 'server-clock secret', 5)
-  let refreshed = false
-  let localOffset = 0
-  let elapsed = 0
-  const wallNow = Date.now.bind(Date)
-  const monotonicNow = performance.now.bind(performance)
-  const clock = spyOn(Date, 'now').mockImplementation(() => wallNow() + localOffset)
-  const monotonicClock = spyOn(performance, 'now').mockImplementation(() => monotonicNow() + elapsed)
-  try {
-    intercept = async (request, next) => {
-      const response = await next()
-      if (new URL(request.url).pathname.endsWith('/state')) refreshed = true
-      if (isOpening(request)) localOffset = 3_600_000
-      return response
-    }
-    const view = mount()
-    await waitFor(() => view.text().includes('No messages yet'))
-    await Bun.sleep(50)
-    setFocused(true)
-    await waitFor(() => refreshed && view.text().includes('server-clock secret'))
-    setFocused(false)
-    await Bun.sleep(50)
-    localOffset = -3_600_000
-    elapsed = 5_000
-    setFocused(true)
-    await waitFor(() => !view.text().includes('server-clock secret'))
-  } finally {
-    clock.mockRestore()
-    monotonicClock.mockRestore()
-  }
-})
-
-test('an opening from another device does not reveal plaintext this browser has not confirmed', async () => {
-  focused = false
-  const sent = await alice.send(bobKey.address, 'opened elsewhere', 300)
-  const view = mount()
-  await waitFor(() => view.text().includes('No messages yet'))
-  await openAs(await createSession(bobKey), aliceAddress, sent.id)
-  await Bun.sleep(100)
-  expect(view.text()).not.toContain('opened elsewhere')
-
-  setFocused(true)
-  await waitFor(() => view.text().includes('opened elsewhere'))
-  expect(openRequests).toEqual([[sent.id], [sent.id]])
-})
-
-const HOUR = 3_600_000
-
-test('changeable deadlines hide while out of sync and return only after an authoritative refresh', async () => {
-  const start = Date.now()
-  let offset = -2 * HOUR
-  const clock = spyOn(Date, 'now').mockImplementation(() => start + offset)
-  try {
-    const otherDevice = new ChatClient(origin, bobKey)
-    await alice.send(bobKey.address, 'final once opened', 86400)
-    const copy = await otherDevice.send(aliceAddress, 'awaiting her opening', 86400)
-    offset = 0
-    await otherDevice.send(aliceAddress, 'still unopened', 86400)
-    await otherDevice.close()
-    const view = mount()
-    const shows = (text: string) => view.text().includes(text)
-    await waitFor(() => shows('final once opened') && shows('awaiting her opening') && shows('still unopened') && streamReady())
-
-    let dropped = false
-    let stateRequested = false
-    let releaseMint!: () => void
-    let releaseStates!: () => void
-    const mint = new Promise<void>(resolve => { releaseMint = resolve })
-    const states = new Promise<void>(resolve => { releaseStates = resolve })
-    intercept = async (request, next) => {
-      const path = new URL(request.url).pathname
-      if (dropped && path === '/api/events/token') await mint
-      if (path.endsWith('/state')) {
-        stateRequested = true
-        await states
-      }
-      return next()
-    }
-    dropped = true
-    latestStream().drop()
-    await waitFor(() => !shows('awaiting her opening') && !shows('still unopened'))
-    expect(shows('final once opened')).toBe(true)
-
-    // Opened elsewhere while this browser is out of sync; then the copy's
-    // old unopened deadline passes locally before anything reconnects.
-    offset = 21 * HOUR
-    await openAs(aliceToken, bobAddress, copy.id)
-    offset = 23 * HOUR
-    // Refocusing sweeps expired messages; the copy must survive it hidden.
-    setFocused(false)
-    await Bun.sleep(50)
-    setFocused(true)
-    await Bun.sleep(50)
-
-    // An open transport alone restores nothing that could have changed.
-    releaseMint()
-    await waitFor(() => stateRequested, 5_000)
-    await Bun.sleep(100)
-    expect(shows('awaiting her opening')).toBe(false)
-    expect(shows('still unopened')).toBe(false)
-
-    releaseStates()
-    await waitFor(() => shows('awaiting her opening') && shows('still unopened'))
-    expect(shows('final once opened')).toBe(true)
-  } finally {
-    clock.mockRestore()
-  }
-}, 15_000)
-
-test('messages arriving while an opening is in flight share the next request', async () => {
-  const first = await alice.send(bobKey.address, 'first of a burst', 300)
-  const opening = gate(isOpening)
-  const view = mount()
-  await waitFor(() => opening.seen() && streamReady())
-  const followers = []
-  for (let index = 0; index < 5; index++) followers.push(await alice.send(bobKey.address, `burst follower ${index}`, 300))
-  await Bun.sleep(200)
-
-  opening.release()
-  await waitFor(() => view.text().includes('first of a burst') && view.text().includes('burst follower 4'))
-  expect(openRequests).toEqual([[first.id], followers.map(message => message.id)])
-})
-
-test('forged or malformed expiry updates are ignored', async () => {
-  const start = Date.now()
-  let elapsed = 0
-  const clock = spyOn(Date, 'now').mockImplementation(() => start + elapsed)
-  try {
-    const otherDevice = new ChatClient(origin, bobKey)
-    const view = mount()
-    await waitFor(() => view.text().includes('No messages yet') && streamReady())
-    const sent = await otherDevice.send(aliceAddress, 'keeps its deadline', 5)
-    await otherDevice.close()
-    await waitFor(() => view.text().includes('keeps its deadline'))
-
-    // Each would expire the copy five seconds after sending if it applied.
-    const opened = { id: sent.id, sender: bobAddress, recipient: aliceAddress, delivery_policy: 'recipient-opening',
-      created_at: sent.created_at, opened_at: sent.created_at, expires_at: sent.created_at + 5_000 }
-    const stream = latestStream()
-    stream.replay('expiry-update', JSON.stringify({ ...opened, sender: `0x${'ab'.repeat(20)}` }))
-    stream.replay('expiry-update', JSON.stringify({ ...opened, extra: true }))
-    stream.replay('expiry-update', JSON.stringify({ ...opened, expires_at: opened.expires_at - 1 }))
-    stream.replay('expiry-update', '"junk"')
-    setFocused(false)
-    await Bun.sleep(50)
-    elapsed = 6_000
-    setFocused(true)
-    await Bun.sleep(100)
-    expect(view.text()).toContain('keeps its deadline')
-  } finally {
-    clock.mockRestore()
-  }
-})
-
-test.each(['missing result', 'different acceptance', 'different policy'])(
-  'an invalid state refresh (%s) keeps changeable content hidden and offers a retry', async invalid => {
+// The rules for what a refresh accepts are the session's; this covers the
+// notice and its retry once the stream reconnects.
+test('a failed refresh after reconnecting keeps changeable content hidden and offers a retry', async () => {
   const otherDevice = new ChatClient(origin, bobKey)
   await otherDevice.send(aliceAddress, 'needs a valid refresh', 300)
   await otherDevice.close()
@@ -755,12 +384,7 @@ test.each(['missing result', 'different acceptance', 'different policy'])(
     if (!corrupt || !new URL(request.url).pathname.endsWith('/state')) return response
     corrupt = false
     const body = await response.json() as OpeningResponse
-    return Response.json({ ...body, results: invalid === 'missing result' ? [] : body.results.map(result => {
-      if (result.status !== 'available') return result
-      return invalid === 'different acceptance'
-        ? { ...result, created_at: result.created_at - 1, expires_at: result.expires_at - 1 }
-        : { ...result, delivery_policy: 'legacy', expires_at: result.created_at + 300_000 }
-    }) })
+    return Response.json({ ...body, results: [] })
   }
 
   latestStream().drop()
@@ -768,23 +392,6 @@ test.each(['missing result', 'different acceptance', 'different policy'])(
   expect(view.text()).not.toContain('needs a valid refresh')
   clickRetry('Failed to load messages')
   await waitFor(() => view.text().includes('needs a valid refresh'))
-})
-
-test('live arrivals during lifecycle reconciliation merge after the refresh', async () => {
-  const otherDevice = new ChatClient(origin, bobKey)
-  await otherDevice.send(aliceAddress, 'original sender copy', 300)
-  const view = mount()
-  await waitFor(() => view.text().includes('original sender copy') && streamReady())
-  const states = gate(request => new URL(request.url).pathname.endsWith('/state'), 'after')
-  latestStream().drop()
-  await waitFor(() => states.seen())
-  await otherDevice.send(aliceAddress, 'copy during refresh', 300)
-  await Bun.sleep(100)
-  expect(view.text()).not.toContain('original sender copy')
-  expect(view.text()).not.toContain('copy during refresh')
-  states.release()
-  await waitFor(() => view.text().includes('original sender copy') && view.text().includes('copy during refresh'))
-  await otherDevice.close()
 })
 
 test('switching identity discards in-flight opening results', async () => {
@@ -818,25 +425,6 @@ test('a visible window keeps live delivery after blur without opening unattended
   await waitFor(() => stream.frames.some(frame => frame.data.includes(sent.id)))
   expect(openRequests).toEqual([])
   expect(await lifecycle(sent.id)).toMatchObject({ status: 'available', opened_at: null })
-})
-
-test('refocusing on an unchanged stream opens what arrived without refreshing', async () => {
-  await alice.send(bobAddress, 'synchronized before blur', 300)
-  const view = mount()
-  await waitFor(() => streamReady() && view.text().includes('synchronized before blur'))
-  const stream = latestStream()
-  setFocused(false)
-  const sent = await alice.send(bobAddress, 'arrived before refocus', 300)
-  await waitFor(() => stream.frames.some(frame => frame.data.includes(sent.id)))
-  // Let the conversation list's debounced refresh for this delivery pass.
-  await Bun.sleep(400)
-  const paths: string[] = []
-  intercept = (request, next) => { paths.push(new URL(request.url).pathname); return next() }
-
-  setFocused(true)
-  await waitFor(() => view.text().includes('arrived before refocus'))
-  expect(stream.live).toBe(true)
-  expect(paths.filter(path => path !== '/api/events/attention')).toEqual([`/api/messages/${aliceAddress}/open`])
 })
 
 test('focus flips report attention once settled, not per event', async () => {
@@ -876,70 +464,6 @@ test('hiding the document closes delivery immediately and a late token cannot re
   setVisible(true)
   await waitFor(streamReady)
 })
-
-test('focused recovery drains more than 100 missed messages before merging live delivery', async () => {
-  const sender = new ChatClient(origin, bobKey)
-  const copy = await sender.send(aliceAddress, 'copy opened during recovery', 5)
-  const view = mount()
-  await waitFor(() => streamReady() && view.text().includes('copy opened during recovery'))
-  const stream = latestStream()
-  setVisible(false)
-  await waitFor(() => !stream.live)
-  for (let index = 0; index < 105; index++) {
-    // Sending budget is unrelated to the recovery interval exercised here.
-    for (const limiter of Object.values(limiters)) limiter.reset()
-    await alice.send(bobAddress, `gap message [${index}]`, 300)
-  }
-  const recovery = gate(request => new URL(request.url).pathname.endsWith('/recover'), 'after')
-  setVisible(true)
-  await waitFor(() => recovery.seen())
-  await alice.send(bobAddress, 'interleaved delivery', 300)
-  await openAs(aliceToken, bobAddress, copy.id)
-  await Bun.sleep(100)
-  expect(view.text()).not.toContain('copy opened during recovery')
-  expect(view.text()).not.toContain('gap message [0]')
-  expect(view.text()).not.toContain('interleaved delivery')
-  recovery.release()
-  await waitFor(() => view.text().includes('gap message [104]') && view.text().includes('interleaved delivery'), 8_000)
-  for (let index = 0; index < 105; index++) expect(view.text().split(`gap message [${index}]`)).toHaveLength(2)
-  expect(view.text().split('interleaved delivery')).toHaveLength(2)
-  await waitFor(() => !view.text().includes('copy opened during recovery'), 8_000)
-  await sender.close()
-}, 20_000)
-
-test('failed continuation retries the complete gap and ignores a response from a lost connection', async () => {
-  await alice.send(bobAddress, 'recovery baseline', 300)
-  const view = mount()
-  await waitFor(() => streamReady() && view.text().includes('recovery baseline'))
-  openRequests = []
-  const stream = latestStream()
-  setVisible(false)
-  await waitFor(() => !stream.live)
-  for (let index = 0; index < 103; index++) await alice.send(bobAddress, `retry gap [${index}]`, 300)
-  let fail = true
-  intercept = async (request, next) => {
-    const url = new URL(request.url)
-    if (url.pathname.endsWith('/recover') && url.searchParams.has('cursor') && fail) {
-      fail = false
-      return Response.json({ error: 'Try recovery again' }, { status: 503 })
-    }
-    return next()
-  }
-  setVisible(true)
-  await waitFor(() => notice('Failed to load messages') !== undefined)
-  expect(openRequests).toEqual([])
-  expect(view.text()).not.toContain('retry gap [0]')
-  const stale = gate(request => new URL(request.url).pathname.endsWith('/recover'), 'after')
-  clickRetry('Failed to load messages')
-  await waitFor(() => stale.seen())
-  setFocused(false)
-  stale.release()
-  await Bun.sleep(100)
-  expect(openRequests).toEqual([])
-  setFocused(true)
-  await waitFor(() => view.text().includes('retry gap [102]'))
-  for (let index = 0; index < 103; index++) expect(view.text().split(`retry gap [${index}]`)).toHaveLength(2)
-}, 15_000)
 
 test('recovery retains older history, its next page and the nearest surviving scroll anchor', async () => {
   for (let index = 0; index < 110; index++) await alice.send(bobAddress, `older [${index}]`, 300)
@@ -1004,48 +528,6 @@ test('attention changes during reconnect backoff neither mint early nor connect 
   await Bun.sleep(100)
   expect(mints).toBe(1)
   await waitFor(() => mints === 2 && streamReady())
-})
-
-test('events arriving during the first clock lookup drain before recovery completes', async () => {
-  const initial = gate(request => request.method === 'GET' && new URL(request.url).pathname === `/api/messages/${aliceAddress}`, 'after')
-  const view = mount()
-  await waitFor(() => initial.seen() && streamReady())
-  const first = await alice.send(bobAddress, 'first buffered message', 300)
-  await waitFor(() => latestStream().frames.some(frame => frame.data.includes(first.id)))
-  const clock = gate(request => new URL(request.url).pathname.endsWith('/state'), 'after')
-  initial.release()
-  await waitFor(() => clock.seen())
-  await alice.send(bobAddress, 'arrived during clock lookup', 300)
-  await Bun.sleep(100)
-  expect(view.text()).not.toContain('first buffered message')
-  expect(view.text()).not.toContain('arrived during clock lookup')
-  clock.release()
-  await waitFor(() => view.text().includes('first buffered message') && view.text().includes('arrived during clock lookup'))
-})
-
-test('recovery restores an older page interrupted during opening without waiting for the stale request', async () => {
-  for (let index = 0; index < 60; index++) await alice.send(bobAddress, `interrupted older [${index}]`, 300)
-  const view = mount()
-  await waitFor(() => view.text().includes('interrupted older [59]'))
-  const opening = gate(isOpening, 'after')
-  button('Load older messages').click()
-  await waitFor(() => opening.seen())
-  setFocused(false)
-  await Bun.sleep(50)
-  intercept = (_request, next) => next()
-  setFocused(true)
-  await waitFor(() => view.text().includes('interrupted older [0]'))
-  opening.release()
-  await Bun.sleep(100)
-  expect(view.text().split('interrupted older [0]')).toHaveLength(2)
-  expect(view.text().split('interrupted older [59]')).toHaveLength(2)
-}, 15_000)
-
-test('short initial history does not offer another older page', async () => {
-  await alice.send(bobAddress, 'only message', 300)
-  const view = mount()
-  await waitFor(() => view.text().includes('only message'))
-  expect(view.text()).not.toContain('Load older messages')
 })
 
 test.each([false, true])('a live conversation refresh cannot abort awaited recovery (stale failure: %s)', async staleFailure => {

@@ -9,6 +9,7 @@ import { reloadForUpdate, useClientUpdateRequired } from '../hooks/useClientUpda
 import { Keypair } from '../lib/burner'
 import { api } from '../lib/api'
 import { markConversationSeen } from '../lib/contacts'
+import type { ConnectionEpoch } from '../lib/sse-connection'
 import type { LiveEvent } from '../../shared/live-events'
 import { Plus, X, QrCode } from 'lucide-preact'
 import { QRModal } from './QRModal'
@@ -39,25 +40,24 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   }
 
   // The stream comes before the message hook, whose synchronization depends
-  // on it; this handler calls the message hook's latest functions.
+  // on it; these handlers call the message hook's latest functions.
+  const handleConnectionChange = useLatest((epoch: ConnectionEpoch | null) => connectionChanged(epoch))
   const handleLiveEvent = useLatest((event: LiveEvent) => {
+    liveEvent(event)
     switch (event.type) {
       case 'message': {
         refreshConversations()
         // A departed partner who writes again has imported their key again.
         const { sender } = event.data
         if (departed.has(sender)) setDeparted(prev => { const next = new Set(prev); next.delete(sender); return next })
-        if (recipientAddress) addMessage(event.data)
         return
       }
       case 'expiry-update':
-        if (recipientAddress) applyExpiryUpdate(event.data)
         return
       // Nothing is left to read in a cleared conversation, open or not.
       case 'conversation-cleared':
         markConversationSeen(event.data.address, event.data.cleared_at)
         refreshConversations()
-        applyConversationCleared(event.data)
         return
       case 'user:disconnected':
         handlePartnerRegistrationDeleted(event.data.address)
@@ -69,8 +69,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
 
   // Reconnecting cannot succeed once the server requires a newer client.
   const updateRequired = useClientUpdateRequired()
-  const { connected, connection } = useSSE(updateRequired ? null : token, handleLiveEvent)
-  const { messages, now, recovering, sendMessage, addMessage, applyExpiryUpdate, applyConversationCleared, clearConversation, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connected, connection, reloadConversations)
+  const { connected, connection } = useSSE(updateRequired ? null : token, handleLiveEvent, handleConnectionChange)
+  const { messages, now, recovering, sendMessage, liveEvent, connectionChanged, clearConversation, loading: messagesLoading, error: messagesError, olderError: messagesOlderError, refresh: refreshMessages, hasMore, loadingOlder, fetchOlder, openingFailed, retryOpening } = useMessages(recipientAddress, identity, token, connection, reloadConversations)
 
   useEffect(() => { onConnectedChange?.(connected) }, [connected, onConnectedChange])
 

@@ -1,18 +1,17 @@
 import { useEffect, useState, useRef } from 'preact/hooks'
-import { isWindowAttentive } from './useWindowAttention'
+import { isWindowAttentive } from '../lib/window-attention'
 import { api } from '../lib/api'
-import { SseConnection } from '../lib/sse-connection'
+import { SseConnection, type ConnectionEpoch } from '../lib/sse-connection'
 import type { LiveEvent } from '../../shared/live-events'
 
-// Epochs are opaque identities: only equality has meaning to consumers.
-export type ConnectionEpoch = symbol
 export interface LiveConnection { current: ConnectionEpoch | null }
 
 // Push suppression lapses 45 s after the last report of an attentive stream.
 const ATTENTION_HEARTBEAT_MS = 20_000
 const ATTENTION_SETTLE_MS = 300
 
-export function useSSE(token: string | null, onEvent: (event: LiveEvent) => void) {
+/** `onConnectionChange` hears each change of `connection.current` as it happens, before Preact renders. */
+export function useSSE(token: string | null, onEvent: (event: LiveEvent) => void, onConnectionChange: (connection: ConnectionEpoch | null) => void) {
   const [connected, setConnected] = useState<ConnectionEpoch | null>(null)
   // Updated synchronously at the transport boundary, before Preact renders.
   const connection = useRef<ConnectionEpoch | null>(null)
@@ -64,9 +63,17 @@ export function useSSE(token: string | null, onEvent: (event: LiveEvent) => void
         // The URL already told the server; report only a change since dialing.
         reported = dialedAttention
         reportAttention()
-        connection.current = Symbol('SSE connection'); setConnected(connection.current)
+        connection.current = Symbol('SSE connection')
+        onConnectionChange(connection.current)
+        setConnected(connection.current)
       },
-      onDisconnect: () => { streamToken = null; reported = null; connection.current = null; setConnected(null) },
+      onDisconnect: () => {
+        streamToken = null
+        reported = null
+        connection.current = null
+        onConnectionChange(null)
+        setConnected(null)
+      },
       onEvent,
     })
     const update = () => {
@@ -92,9 +99,10 @@ export function useSSE(token: string | null, onEvent: (event: LiveEvent) => void
       streamToken = null
       connection.current = null
       conn.close()
+      onConnectionChange(null)
       setConnected(null)
     }
-  }, [token, onEvent])
+  }, [token, onEvent, onConnectionChange])
 
   return { connected: connected !== null, connection }
 }
