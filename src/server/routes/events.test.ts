@@ -4,7 +4,7 @@ import { MAX_SSE_CONNECTIONS_PER_ADDRESS } from '../constants.ts'
 import { sseTokenLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { createFetch } from '../router.ts'
-import { connectionCount, notify, pushSuppressingConnectionCount } from '../sse.ts'
+import { connectionCount, publish, pushSuppressingConnectionCount } from '../sse.ts'
 import { handleGetSSEToken, handleSSE, handleSSEAttention, SseTokenStore } from './events.ts'
 import type { Context } from '../http.ts'
 const address = `0x${'b'.repeat(40)}`
@@ -97,8 +97,8 @@ describe('SSE route', () => {
     expect(connectionCount(address)).toBe(1)
 
     // client is live: notifications reach it
-    notify(address, 'message', { id: 'm1' })
-    expect(await readEventText(reader)).toContain('event: message')
+    publish(address, { type: 'user:disconnected', data: { address: '0xpartner' } })
+    expect(await readEventText(reader)).toContain('event: user:disconnected')
 
     await reader.cancel()
 
@@ -275,8 +275,8 @@ describe('SSE over real HTTP', () => {
     expect(connectionCount(address)).toBe(1)
 
     // events reach the client over the wire
-    notify(address, 'message', { id: 'wire-1' })
-    expect(await readEventText(reader)).toContain('event: message')
+    publish(address, { type: 'user:disconnected', data: { address: '0xpartner' } })
+    expect(await readEventText(reader)).toContain('event: user:disconnected')
 
     // real disconnect: abort the fetch and let the server observe it
     abortController.abort()

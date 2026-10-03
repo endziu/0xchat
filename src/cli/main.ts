@@ -6,6 +6,8 @@ import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
+import { parseLiveEvent } from '../shared/live-events'
+import { isEnvelopeParticipant } from '../shared/message-envelope'
 
 const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
 
@@ -101,7 +103,7 @@ async function follow(
   while (!signal.aborted) {
     try {
       let synced = false
-      for await (const event of client.events(signal)) {
+      for await (const frame of client.events(signal)) {
         if (signal.aborted) return
         for (const [id, message] of seen) {
           if (!shouldRetainMessage(message)) seen.delete(id)
@@ -120,37 +122,38 @@ async function follow(
           backoff = 1000
           status('Connected')
         }
-        if (event.event === 'message') {
-          const input: unknown = JSON.parse(event.data)
-          // Other conversations share this stream; only open the selected one.
-          if (!input || typeof input !== 'object' || !('sender' in input) || !('recipient' in input)) continue
-          const me = client.identity.address.toLowerCase()
-          if (!((input.sender === me && input.recipient === partner) || (input.sender === partner && input.recipient === me))) continue
-          try {
-            const message = await client.confirmLiveMessage(partner, input)
-            if (message) deliver(message)
-          } catch (error) {
-            if (error instanceof ClientUpdateRequiredError) throw error
-            status('Rejected an invalid message')
+        const event = parseLiveEvent(frame.event, frame.data)
+        // Pings, unknown and malformed events never alter displayed messages.
+        if (!event) continue
+        switch (event.type) {
+          case 'message':
+            // Other conversations share this stream; only open the selected one.
+            if (!isEnvelopeParticipant(event.data, client.identity.address, partner)) break
+            try {
+              const message = await client.confirmLiveMessage(partner, event.data)
+              if (message) deliver(message)
+            } catch (error) {
+              if (error instanceof ClientUpdateRequiredError) throw error
+              status('Rejected an invalid message')
+            }
+            break
+          case 'expiry-update': {
+            const message = seen.get(event.data.id)
+            if (!signal.aborted && message && applyExpiryUpdate(message, event.data)) lifecycle(message)
+            break
           }
-        } else if (event.event === 'expiry-update') {
-          try {
-            const input: unknown = JSON.parse(event.data)
-            if (!input || typeof input !== 'object' || !('id' in input) || typeof input.id !== 'string') continue
-            const message = seen.get(input.id)
-            if (!signal.aborted && message && applyExpiryUpdate(message, input)) lifecycle(message)
-          } catch { /* Invalid lifecycle events never alter displayed messages. */ }
-        } else if (event.event === 'conversation-cleared') {
-          try {
-            const input: unknown = JSON.parse(event.data)
-            if (!input || typeof input !== 'object' || !('address' in input) || input.address !== partner
-              || !('cleared_at' in input) || !Number.isSafeInteger(input.cleared_at)) continue
-            const clearedAt = input.cleared_at as number
+          case 'conversation-cleared':
+            if (event.data.address !== partner) break
             for (const [id, message] of seen) {
-              if (message.created_at <= clearedAt) { seen.delete(id); unavailable(id) }
+              if (message.created_at <= event.data.cleared_at) { seen.delete(id); unavailable(id) }
             }
             status('Conversation cleared')
-          } catch { /* Invalid clear events never alter displayed messages. */ }
+            break
+          // A partner who deleted their registration changes nothing on screen.
+          case 'user:disconnected':
+            break
+          default:
+            event satisfies never
         }
       }
       if (!signal.aborted) throw new Error('Live connection closed')

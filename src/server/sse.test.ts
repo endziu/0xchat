@@ -1,11 +1,14 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import {
   addClient,
-  notify,
+  publish,
   pushSuppressingConnectionCount,
   removeClient,
   updateClientAttention,
 } from './sse.ts';
+import type { LiveEvent } from '../shared/live-events.ts';
+
+const partnerLeft = (address: string): LiveEvent => ({ type: 'user:disconnected', data: { address } });
 
 function makeCtrl(): {
   ctrl: ReadableStreamDefaultController;
@@ -31,27 +34,26 @@ describe('SSE', () => {
     const { ctrl, chunks } = makeCtrl();
     const addr = `0xsse-${Date.now()}`;
     addClient(addr, ctrl);
-    notify(addr, 'message', { id: 'test' });
+    publish(addr, partnerLeft('0xpartner'));
     expect(chunks).toHaveLength(1);
     removeClient(addr, ctrl);
-    notify(addr, 'message', { id: 'after-removal' });
+    publish(addr, partnerLeft('0xafter-removal'));
     expect(chunks).toHaveLength(1);
   });
 
-  test('notify sends data to clients', () => {
+  test('publish sends the event to clients', () => {
     const { ctrl, chunks } = makeCtrl();
     const addr = `0xsse2-${Date.now()}`;
     addClient(addr, ctrl);
-    notify(addr, 'message', { id: 'test' });
+    publish(addr, partnerLeft('0xpartner'));
     expect(chunks).toHaveLength(1);
     const text = new TextDecoder().decode(chunks[0]!);
-    expect(text).toContain('event: message');
-    expect(text).toContain('"id":"test"');
+    expect(text).toBe('event: user:disconnected\ndata: {"address":"0xpartner"}\n\n');
     removeClient(addr, ctrl);
   });
 
-  test('notify to unknown address is a no-op', () => {
-    notify('0xnobody', 'ping', {});
+  test('publish to unknown address is a no-op', () => {
+    publish('0xnobody', partnerLeft('0xpartner'));
   });
 
   test('an attentive browser must renew push suppression while a terminal stream does not', () => {

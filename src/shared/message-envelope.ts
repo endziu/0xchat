@@ -61,7 +61,7 @@ export function advertisesDeliveryCapability(headers: Headers): boolean {
   return headers.get('X-0xChat-Delivery-Capability') === DELIVERY_CAPABILITY
 }
 
-const ADDRESS = /^0x[0-9a-f]{40}$/
+export const ADDRESS = /^0x[0-9a-f]{40}$/
 const MESSAGE_ID = /^0x[0-9a-f]{32}$/
 const SIGNATURE = /^0x[0-9a-f]{130}$/
 const HEX = /^0x(?:[0-9a-f]{2})+$/
@@ -137,19 +137,21 @@ export function parseMessageEnvelope(input: unknown): MessageEnvelope | null {
   return value as unknown as MessageEnvelope
 }
 
-export async function verifyMessageEnvelope(input: unknown): Promise<MessageEnvelope | null> {
-  const envelope = parseMessageEnvelope(input)
-  if (!envelope) return null
+async function signedBySender(envelope: MessageEnvelope): Promise<boolean> {
   try {
-    const { signature: _signature, ...unsigned } = envelope
     const recovered = await recoverMessageAddress({
-      message: canonicalMessageEnvelope(unsigned),
+      message: canonicalMessageEnvelope(envelope),
       signature: envelope.signature as `0x${string}`,
     })
-    return recovered.toLowerCase() === envelope.sender ? envelope : null
+    return recovered.toLowerCase() === envelope.sender
   } catch {
-    return null
+    return false
   }
+}
+
+export async function verifyMessageEnvelope(input: unknown): Promise<MessageEnvelope | null> {
+  const envelope = parseMessageEnvelope(input)
+  return envelope && await signedBySender(envelope) ? envelope : null
 }
 
 /** Validates server-assigned lifecycle metadata against a message's signed lifetime. */
@@ -170,15 +172,21 @@ export function parseDeliveryLifecycle(ttl: number, input: object): MessageLifec
   return { delivery_policy, created_at: accepted, opened_at: opened_at as number | null, expires_at: expires_at as number }
 }
 
-export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredMessage | null> {
+/** Structural check of a delivered message. Its signature is unverified: use verifyDeliveredMessage to trust it. */
+export function parseDeliveredMessage(input: unknown): DeliveredMessage | null {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
   const value = input as Record<string, unknown>
   if (Object.keys(value).sort().join(',') !== DELIVERED_KEYS.join(',')) return null
   const { delivery_policy: _policy, created_at: _created, opened_at: _opened, expires_at: _expires, ...candidate } = value
-  const envelope = await verifyMessageEnvelope(candidate)
+  const envelope = parseMessageEnvelope(candidate)
   if (!envelope) return null
   const lifecycle = parseDeliveryLifecycle(envelope.ttl, value)
   return lifecycle && { ...envelope, ...lifecycle }
+}
+
+export async function verifyDeliveredMessage(input: unknown): Promise<DeliveredMessage | null> {
+  const delivered = parseDeliveredMessage(input)
+  return delivered && await signedBySender(delivered) ? delivered : null
 }
 
 const EXPIRY_UPDATE_KEYS = ['id', 'sender', 'recipient', 'delivery_policy', 'created_at', 'opened_at', 'expires_at'].sort()

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { SseConnection } from './sse-connection'
+import type { LiveEvent } from '../../shared/live-events'
 
 /** Scriptable EventSource stand-in: tests drive open/message/error by hand. */
 class FakeEventSource {
@@ -19,7 +20,7 @@ class FakeEventSource {
     this.handlers.set(type, list)
   }
 
-  emit(type: 'open' | 'message' | 'user:disconnected', data?: string): void {
+  emit(type: string, data?: string): void {
     const event = new MessageEvent(type, { data })
     for (const fn of this.handlers.get(type) ?? []) fn(event)
   }
@@ -75,6 +76,8 @@ function makeClock() {
   }
 }
 
+const partner = `0x${'a1'.repeat(20)}`
+
 /** Token mints resolve in a microtask; flush before asserting sockets. */
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
@@ -84,23 +87,21 @@ interface Sut {
   mints: number
   opened: number
   disconnected: number
-  messages: unknown[]
-  peersLeft: string[]
+  events: LiveEvent[]
 }
 
 function makeSut(mintImpl?: () => Promise<string>): Sut {
   const clock = makeClock()
-  const state = { mints: 0, opened: 0, disconnected: 0, messages: [] as unknown[], peersLeft: [] as string[] }
+  const state = { mints: 0, opened: 0, disconnected: 0, events: [] as LiveEvent[] }
   const mint = mintImpl ?? (async () => `tok-${++state.mints}`)
   const connection = new SseConnection({
     getSseToken: mint,
     buildUrl: (t) => `/api/events?token=${t}`,
     onOpen: () => state.opened++,
     onDisconnect: () => state.disconnected++,
-    onMessage: (data) => state.messages.push(data),
-    onUserDisconnected: (address) => state.peersLeft.push(address),
+    onEvent: (event) => state.events.push(event),
     // Only the surface SseConnection touches is implemented (addEventListener
-    // for open/message/user:disconnected, onerror, close()); cast accordingly.
+    // for open and the live events, onerror, close()); cast accordingly.
     createEventSource: (url) => new FakeEventSource(url) as unknown as EventSource,
     setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
     clearTimeout: (id) => clock.clearTimeout(id as number),
@@ -111,8 +112,7 @@ function makeSut(mintImpl?: () => Promise<string>): Sut {
     get mints() { return state.mints },
     get opened() { return state.opened },
     get disconnected() { return state.disconnected },
-    get messages() { return state.messages },
-    get peersLeft() { return state.peersLeft },
+    get events() { return state.events },
   }
 }
 
@@ -282,17 +282,36 @@ describe('SseConnection', () => {
     expect(FakeEventSource.instances).toHaveLength(2)
   })
 
-  test('delivers messages and user:disconnected events', async () => {
+  test('delivers parsed live events', async () => {
     const sut = makeSut()
     sut.connection.connect()
     await tick()
     lastSocket().emit('open')
 
-    lastSocket().emit('message', JSON.stringify({ id: 'm1' }))
-    lastSocket().emit('user:disconnected', JSON.stringify({ address: '0xpeer' }))
+    lastSocket().emit('conversation-cleared', JSON.stringify({ address: partner, cleared_at: 2000 }))
+    lastSocket().emit('user:disconnected', JSON.stringify({ address: partner }))
 
-    expect(sut.messages).toEqual([{ id: 'm1' }])
-    expect(sut.peersLeft).toEqual(['0xpeer'])
+    expect(sut.events).toEqual([
+      { type: 'conversation-cleared', data: { address: partner, cleared_at: 2000 } },
+      { type: 'user:disconnected', data: { address: partner } },
+    ])
+  })
+
+  test('ignores live events from a suspended or replaced socket', async () => {
+    const sut = makeSut()
+    sut.connection.connect()
+    await tick()
+    const first = lastSocket()
+    first.emit('open')
+    sut.connection.setActive(false)
+    first.emit('user:disconnected', JSON.stringify({ address: partner }))
+    sut.connection.setActive(true)
+    await tick()
+    lastSocket().emit('open')
+    first.emit('user:disconnected', JSON.stringify({ address: partner }))
+
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(sut.events).toEqual([])
   })
 
   test('malformed event data does not break the connection', async () => {
@@ -303,8 +322,9 @@ describe('SseConnection', () => {
 
     lastSocket().emit('message', 'not-json')
     lastSocket().emit('user:disconnected', 'also-not-json')
+    lastSocket().emit('user:disconnected', JSON.stringify({ address: '0xpeer' }))
 
-    expect(sut.messages).toEqual([])
+    expect(sut.events).toEqual([])
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(lastSocket().readyState).toBe(0) // still open
   })

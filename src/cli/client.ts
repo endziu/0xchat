@@ -5,7 +5,7 @@ import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, parseExpiryUpdate, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
+import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
 const availabilityDeadline = Symbol('availabilityDeadline')
@@ -40,9 +40,8 @@ export function shouldRetainMessage(message: PlainMessage): boolean {
 }
 
 /** Applies a server-published first-opening lifecycle update to a loaded message. */
-export function applyExpiryUpdate(message: PlainMessage, input: unknown): boolean {
-  const update = parseExpiryUpdate(input)
-  if (!update || update.id !== message.id || update.sender !== message.sender || update.recipient !== message.recipient) return false
+export function applyExpiryUpdate(message: PlainMessage, update: ExpiryUpdate): boolean {
+  if (update.id !== message.id || update.sender !== message.sender || update.recipient !== message.recipient) return false
   const lifecycle = parseDeliveryLifecycle(message.ttl, update)
   if (!lifecycle || lifecycle.created_at !== message.created_at) return false
   // A message can move from its unopened deadline to its
@@ -330,6 +329,7 @@ export class ChatClient {
           buffer = buffer.slice(end + 2)
           const lines = frame.split('\n')
           yield {
+            // An unnamed frame is a 'message', as in the browser's EventSource.
             event: lines.find(line => line.startsWith('event:'))?.slice(6).trim() ?? 'message',
             data: lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n'),
           }
