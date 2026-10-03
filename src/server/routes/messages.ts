@@ -2,7 +2,7 @@ import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
 import { clearConversation, createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
 import { clearIpLimiter, clearLimiter, recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
-import { notify } from '../sse.ts';
+import { publish } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, VALID_TTLS } from '../constants.ts';
 import {
@@ -92,8 +92,8 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
   }
 
   const event = delivered(envelope, stored);
-  notify(envelope.recipient, 'message', event);
-  notify(envelope.sender, 'message', event);
+  publish(envelope.recipient, { type: 'message', data: event });
+  publish(envelope.sender, { type: 'message', data: event });
   void pushNotify(envelope.recipient, stored.expires_at);
 
   log('[msg]', envelope.id, envelope.sender, '→', envelope.recipient, `ttl=${envelope.ttl}s`,
@@ -169,8 +169,8 @@ export async function handleClearConversation({ req, path, ip }: Context): Promi
   const counterparty = path.split('/')[3]!.toLowerCase();
   const { cleared_at, deleted } = clearConversation(address, counterparty);
   // Each side hears which conversation was cleared, named by its partner.
-  notify(address, 'conversation-cleared', { address: counterparty, cleared_at });
-  notify(counterparty, 'conversation-cleared', { address, cleared_at });
+  publish(address, { type: 'conversation-cleared', data: { address: counterparty, cleared_at } });
+  publish(counterparty, { type: 'conversation-cleared', data: { address, cleared_at } });
   log('[clear]', address, counterparty, `deleted=${deleted}`);
   return json({ cleared_at });
 }
@@ -192,8 +192,8 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
   const { updates, server_time, results } = openMessages(address, counterparty, ids);
   const response: OpeningResponse = { server_time, results };
   for (const update of updates) {
-    notify(update.sender, 'expiry-update', update);
-    notify(update.recipient, 'expiry-update', update);
+    publish(update.sender, { type: 'expiry-update', data: update });
+    publish(update.recipient, { type: 'expiry-update', data: update });
   }
   log('[open]', address, counterparty, `requested=${ids.length}`, `opened=${updates.length}`);
   return json(response);

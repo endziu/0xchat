@@ -12,9 +12,11 @@ import { isWindowAttentive, useWindowAttention } from './useWindowAttention'
 import {
   canonicalMessageAad,
   isEnvelopeParticipant,
-  parseExpiryUpdate,
   verifyDeliveredMessage,
+  type DeliveredMessage,
+  type ExpiryUpdate,
 } from '../../shared/message-envelope'
+import type { ConversationCleared, LiveEvent } from '../../shared/live-events'
 
 const PAGE_SIZE = 50
 // The opening and state endpoints accept at most 100 IDs per request.
@@ -31,6 +33,9 @@ function batches<T>(items: T[], size: number): T[][] {
   return result
 }
 
+// Live events held until the view is synchronized, in arrival order.
+type BufferedEvent = Extract<LiveEvent, { type: 'message' | 'expiry-update' }>
+
 interface MessageWork {
   generation: number
   connectionEpoch: ConnectionEpoch | null
@@ -40,15 +45,6 @@ interface MessageWork {
 function sameWork(left: MessageWork | null, right: MessageWork): boolean {
   return left?.generation === right.generation && left.connectionEpoch === right.connectionEpoch
     && left.attentionEpoch === right.attentionEpoch
-}
-
-/** A `conversation-cleared` event: the partner's address and the clear time, or null if malformed. */
-export function parseConversationCleared(input: unknown): { address: string; cleared_at: number } | null {
-  if (typeof input !== 'object' || input === null) return null
-  const { address, cleared_at } = input as { address?: unknown; cleared_at?: unknown }
-  if (typeof address !== 'string' || !/^0x[0-9a-f]{40}$/.test(address)) return null
-  if (!Number.isSafeInteger(cleared_at) || (cleared_at as number) < 0) return null
-  return { address, cleared_at: cleared_at as number }
 }
 
 /** Drain a bounded recovery interval, checking validity at each async boundary. */
@@ -100,7 +96,7 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   const synchronizedConnection = useRef<ConnectionEpoch | null>(null)
   const recoveryCursor = useRef<string | null>(null)
   const finalVisibleIds = useRef(new Set<string>())
-  const buffered = useRef<Array<{ type: 'message' | 'expiry'; data: unknown }>>([])
+  const buffered = useRef<BufferedEvent[]>([])
   const attentive = useWindowAttention()
   const previousAttention = useRef(attentive)
   const attentionEpoch = useRef(0)
@@ -138,9 +134,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
   const captureWork = (): MessageWork => ({ generation: loadGenRef.current, connectionEpoch: connection.current, attentionEpoch: attentionEpoch.current })
   const isCurrentWork = (work: MessageWork) => sameWork(work, captureWork())
-  const bufferUntilSynchronized = (type: 'message' | 'expiry', data: unknown): boolean => {
+  const bufferUntilSynchronized = (event: BufferedEvent): boolean => {
     if (isSynchronized()) return false
-    buffered.current.push({ type, data })
+    buffered.current.push(event)
     return true
   }
 
@@ -224,9 +220,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
           const message = await decryptMessage(event.data)
           if (!current()) return false
           if (message) store.add([message])
-        } else {
-          const update = parseExpiryUpdate(event.data)
-          if (update && isEnvelopeParticipant(update, identity.address, recipientAddress)) store.applyLifecycle(update.id, update)
+        } else if (isEnvelopeParticipant(event.data, identity.address, recipientAddress)) {
+          store.applyLifecycle(event.data.id, event.data)
         }
       }
       if (!store.hasServerTime() && store.ids().length) {
@@ -486,8 +481,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
     }
   }
 
-  const addMessage = useCallback(async (input: unknown) => {
-    if (bufferUntilSynchronized('message', input)) return
+  const addMessage = useCallback(async (input: DeliveredMessage) => {
+    if (bufferUntilSynchronized({ type: 'message', data: input })) return
     const work = captureWork()
     const decrypted = await decryptMessage(input)
     if (!decrypted || !isCurrentWork(work) || !isSynchronized()) return
@@ -510,10 +505,9 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
   // The stream carries expiry updates for every conversation; only this
   // one's apply, and the store only lets lifecycles move forward.
-  const applyExpiryUpdate = useCallback((input: unknown) => {
-    if (bufferUntilSynchronized('expiry', input)) return
-    const update = parseExpiryUpdate(input)
-    if (!update || !identity || !recipientAddress
+  const applyExpiryUpdate = useCallback((update: ExpiryUpdate) => {
+    if (bufferUntilSynchronized({ type: 'expiry-update', data: update })) return
+    if (!identity || !recipientAddress
       || !isEnvelopeParticipant(update, identity.address, recipientAddress)) return
     storeRef.current.applyLifecycle(update.id, update)
     rerender()
@@ -521,9 +515,8 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
 
   // Clearing is a removal, so it applies whether or not the view is
   // synchronized; the store also rejects cleared messages that load later.
-  const applyConversationCleared = useCallback((input: unknown) => {
-    const cleared = parseConversationCleared(input)
-    if (!cleared || cleared.address !== recipientAddress?.toLowerCase()) return
+  const applyConversationCleared = useCallback((cleared: ConversationCleared) => {
+    if (cleared.address !== recipientAddress?.toLowerCase()) return
     storeRef.current.clear(cleared.cleared_at)
     rerender()
   }, [recipientAddress, rerender])

@@ -1,6 +1,6 @@
 import { deleteRegistration, getConversationPartners } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { notify } from '../sse.ts';
+import { publish } from '../sse.ts';
 import { isValidAddress } from '../validation.ts';
 import { log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
@@ -25,7 +25,7 @@ export async function handleDeleteAddress({ req, path, ip }: Context): Promise<R
   deleteRegistration(address);
 
   for (const partner of partners) {
-    notify(partner, 'user:disconnected', { address });
+    publish(partner, { type: 'user:disconnected', data: { address } });
   }
 
   log('[del]', address, 'deleted account, notified', partners.length, 'partners');

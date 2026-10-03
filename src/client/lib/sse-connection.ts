@@ -17,6 +17,8 @@
  * testable without a browser or a server.
  */
 
+import { LIVE_EVENT_TYPES, parseLiveEvent, type LiveEvent } from '../../shared/live-events'
+
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 30_000
 
@@ -27,12 +29,8 @@ export interface SseConnectionOptions {
   buildUrl: (sseToken: string) => string
   /** The socket is open (a 2xx text/event-stream response arrived). */
   onOpen?: (sseToken: string) => void
-  onMessage?: (data: unknown) => void
-  /** A message's authoritative lifecycle changed (its first opening). */
-  onExpiryUpdate?: (data: unknown) => void
-  onUserDisconnected?: (address: string) => void
-  /** A conversation's messages were deleted through `cleared_at`. */
-  onConversationCleared?: (data: unknown) => void
+  /** A well-formed live event arrived; malformed ones are dropped. */
+  onEvent?: (event: LiveEvent) => void
   /** A socket that was open has been lost (fires before the reconnect delay). */
   onDisconnect?: () => void
   // --- test seams (defaults are the production behavior) ---
@@ -45,10 +43,7 @@ export class SseConnection {
   private readonly getSseToken: () => Promise<string>
   private readonly buildUrl: (sseToken: string) => string
   private readonly onOpen: ((sseToken: string) => void) | undefined
-  private readonly onMessage: ((data: unknown) => void) | undefined
-  private readonly onExpiryUpdate: ((data: unknown) => void) | undefined
-  private readonly onUserDisconnected: ((address: string) => void) | undefined
-  private readonly onConversationCleared: ((data: unknown) => void) | undefined
+  private readonly onEvent: ((event: LiveEvent) => void) | undefined
   private readonly onDisconnect: (() => void) | undefined
   private readonly createEventSource: (url: string) => EventSource
   private readonly setTimer: (fn: () => void, ms: number) => unknown
@@ -68,10 +63,7 @@ export class SseConnection {
     this.getSseToken = options.getSseToken
     this.buildUrl = options.buildUrl
     this.onOpen = options.onOpen
-    this.onMessage = options.onMessage
-    this.onExpiryUpdate = options.onExpiryUpdate
-    this.onUserDisconnected = options.onUserDisconnected
-    this.onConversationCleared = options.onConversationCleared
+    this.onEvent = options.onEvent
     this.onDisconnect = options.onDisconnect
     this.createEventSource = options.createEventSource ?? ((url) => new EventSource(url))
     this.setTimer = options.setTimeout ?? ((fn, ms) => setTimeout(fn, ms))
@@ -150,41 +142,14 @@ export class SseConnection {
       this.onOpen?.(sseToken)
     })
 
-    es.addEventListener('message', (e: MessageEvent) => {
-      if (this.es !== es || this.closed || this.suspended) return
-      try {
-        this.onMessage?.(JSON.parse(e.data))
-      } catch (err) {
-        console.error('SSE: failed to parse message data:', err)
-      }
-    })
-
-    es.addEventListener('expiry-update', (e: MessageEvent) => {
-      if (this.es !== es || this.closed || this.suspended) return
-      try {
-        this.onExpiryUpdate?.(JSON.parse(e.data))
-      } catch (err) {
-        console.error('SSE: failed to parse expiry update:', err)
-      }
-    })
-
-    es.addEventListener('user:disconnected', (e: MessageEvent) => {
-      if (this.es !== es || this.closed || this.suspended) return
-      try {
-        this.onUserDisconnected?.((JSON.parse(e.data) as { address: string }).address)
-      } catch (err) {
-        console.error('SSE: failed to parse disconnect data:', err)
-      }
-    })
-
-    es.addEventListener('conversation-cleared', (e: MessageEvent) => {
-      if (this.es !== es || this.closed || this.suspended) return
-      try {
-        this.onConversationCleared?.(JSON.parse(e.data))
-      } catch (err) {
-        console.error('SSE: failed to parse conversation clear:', err)
-      }
-    })
+    for (const type of LIVE_EVENT_TYPES) {
+      es.addEventListener(type, (e: MessageEvent) => {
+        if (this.es !== es || this.closed || this.suspended) return
+        const event = parseLiveEvent(type, e.data)
+        if (event) this.onEvent?.(event)
+        else console.error(`SSE: rejected malformed ${type} event`)
+      })
+    }
 
     es.onerror = () => {
       // Ignore events from a socket that has been replaced or closed.

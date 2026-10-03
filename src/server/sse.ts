@@ -1,3 +1,5 @@
+import type { LiveEvent } from '../shared/live-events.ts';
+
 const clients = new Map<
   string,
   Map<ReadableStreamDefaultController, { suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
@@ -59,14 +61,10 @@ export function removeClient(
   if (set.size === 0) clients.delete(address);
 }
 
-export function notify(
-  address: string,
-  event: string,
-  data: object,
-): void {
+export function publish(address: string, event: LiveEvent): void {
   const set = clients.get(address);
   if (!set) return;
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  const payload = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
   const encoded = new TextEncoder().encode(payload);
   for (const ctrl of set.keys()) {
     try {

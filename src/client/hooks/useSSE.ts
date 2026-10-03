@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'preact/hooks'
 import { isWindowAttentive } from './useWindowAttention'
 import { api } from '../lib/api'
 import { SseConnection } from '../lib/sse-connection'
+import type { LiveEvent } from '../../shared/live-events'
 
 // Epochs are opaque identities: only equality has meaning to consumers.
 export type ConnectionEpoch = symbol
@@ -11,13 +12,7 @@ export interface LiveConnection { current: ConnectionEpoch | null }
 const ATTENTION_HEARTBEAT_MS = 20_000
 const ATTENTION_SETTLE_MS = 300
 
-export function useSSE(
-  token: string | null,
-  onMessage: (data: unknown) => void,
-  onDisconnect?: (address: string) => void,
-  onExpiryUpdate?: (data: unknown) => void,
-  onConversationCleared?: (data: unknown) => void,
-) {
+export function useSSE(token: string | null, onEvent: (event: LiveEvent) => void) {
   const [connected, setConnected] = useState<ConnectionEpoch | null>(null)
   // Updated synchronously at the transport boundary, before Preact renders.
   const connection = useRef<ConnectionEpoch | null>(null)
@@ -72,10 +67,7 @@ export function useSSE(
         connection.current = Symbol('SSE connection'); setConnected(connection.current)
       },
       onDisconnect: () => { streamToken = null; reported = null; connection.current = null; setConnected(null) },
-      onMessage,
-      onExpiryUpdate,
-      onUserDisconnected: onDisconnect,
-      onConversationCleared,
+      onEvent,
     })
     const update = () => {
       conn.setActive(document.visibilityState === 'visible')
@@ -102,7 +94,7 @@ export function useSSE(
       conn.close()
       setConnected(null)
     }
-  }, [token, onMessage, onDisconnect, onExpiryUpdate, onConversationCleared])
+  }, [token, onEvent])
 
   return { connected: connected !== null, connection }
 }
