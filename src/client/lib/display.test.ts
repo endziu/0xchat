@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { addressHue, displayName, fmtDay, fmtRemaining, shortAddr } from './display'
+import { displayName, fmtDay, fmtRemaining, shortAddr } from './display'
 
 const alice = `0xb9bb${'0'.repeat(32)}574b`
 const me = `0x32bd${'0'.repeat(32)}8b54`
@@ -9,12 +9,6 @@ test('displayName prefers You, then the label, then the short address', () => {
   expect(displayName(alice, { [alice]: 'Alice' }, me)).toBe('Alice')
   expect(displayName(alice, {}, me)).toBe(shortAddr(alice))
   expect(shortAddr(alice)).toBe(`${alice.slice(0, 6)}…${alice.slice(-4)}`)
-})
-
-test('addressHue is stable, case-insensitive and in range', () => {
-  expect(addressHue(alice)).toBe(addressHue(alice.toUpperCase()))
-  expect(addressHue(alice)).toBeGreaterThanOrEqual(0)
-  expect(addressHue(alice)).toBeLessThan(360)
 })
 
 test('fmtRemaining uses the largest whole unit', () => {

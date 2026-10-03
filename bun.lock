@@ -6,6 +6,7 @@
       "name": "0xchat",
       "dependencies": {
         "@noble/secp256k1": "3.1.0",
+        "glyphid": "0.1.0",
         "jsqr": "^1.4.0",
         "lucide-preact": "^1.31.0",
         "preact": "^10.29.8",
@@ -267,6 +268,8 @@
     "get-caller-file": ["get-caller-file@2.0.5", "", {}, "sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg=="],
 
     "get-east-asian-width": ["get-east-asian-width@1.6.0", "", {}, "sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA=="],
+
+    "glyphid": ["glyphid@0.1.0", "", {}, "sha512-W+KWXvaPJjpvtGxtUzJtExeUZ2qPchAQYhMBZe79A5fbALAvobkSvJCziDuscYN1rI4BvjGoNlLoYGEUubb4yw=="],
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 
