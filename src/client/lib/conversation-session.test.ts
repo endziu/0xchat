@@ -199,6 +199,7 @@ function setup({ attentive = true, connected = true } = {}) {
   const clock = new ManualClock()
   const server = new FakeServer(clock)
   const decrypted: string[] = []
+  let decryption: Promise<void> | null = null
   const create = (protocol: ConversationProtocol = server) => new ConversationSession({
     self: SELF,
     partner: PARTNER,
@@ -208,13 +209,20 @@ function setup({ attentive = true, connected = true } = {}) {
     decrypt: async input => {
       const message = input as DecryptedMessage
       decrypted.push(message.id)
+      await decryption
       return isEnvelopeParticipant(message, SELF, PARTNER) ? message : null
     },
     clock,
     connection: connected ? Symbol('stream') : null,
     attentive,
   })
-  return { clock, server, create, decrypted }
+  /** Delays every decryption that starts before release. */
+  const holdDecryption = () => {
+    let release!: () => void
+    decryption = new Promise<void>(resolve => { release = resolve })
+    return { release: () => { decryption = null; release() } }
+  }
+  return { clock, server, create, decrypted, holdDecryption }
 }
 
 const shown = (session: ConversationSession) => session.snapshot().messages.map(message => message.plaintext)
@@ -330,22 +338,25 @@ test('only the current request settles an opening, even when superseded work req
   expect(shown(session)).toEqual(['requested twice'])
 })
 
-test('a history page that arrives after the connection is lost is ignored', async () => {
+test.each([
+  ['the connection', (session: ConversationSession) => session.connectionChanged(null), (session: ConversationSession) => session.connectionChanged(Symbol('stream'))],
+  ['attention', (session: ConversationSession) => session.attentionChanged(false), (session: ConversationSession) => session.attentionChanged(true)],
+])('a history page that arrives after %s is lost is ignored', async (_lost, lose, regain) => {
   const { server, create } = setup()
-  const sent = server.accept('loaded while disconnected')
+  const sent = server.accept('loaded while away')
   const history = server.hold('history')
   const session = create()
   await settle()
-  session.connectionChanged(null)
+  lose(session)
   history.release()
   await settle()
   expect(messageRequests(server)).toEqual(['history'])
   expect(shown(session)).toEqual([])
 
-  session.connectionChanged(Symbol('stream'))
+  regain(session)
   await settle()
   expect(messageRequests(server)).toEqual(['history', 'history', `states ${sent.id}`, `open ${sent.id}`])
-  expect(shown(session)).toEqual(['loaded while disconnected'])
+  expect(shown(session)).toEqual(['loaded while away'])
 })
 
 test('a disposed session ignores late responses and live events, and opens nothing more', async () => {
@@ -498,6 +509,30 @@ test('regaining attention on a stream that stayed synchronized opens what arrive
   await settle()
   expect(server.log.slice(before)).toEqual([`open ${sent.id}`])
   expect(shown(session)).toEqual(['synchronized before blur', 'arrived before refocus'])
+})
+
+test('attention flipping while a resume decrypts loses no buffered message and stays synchronized', async () => {
+  const { server, create, holdDecryption } = setup()
+  server.accept('synchronized before blur')
+  const session = create()
+  await settle()
+  session.attentionChanged(false)
+  const sent = server.accept('arrived while away')
+  session.liveEvent(live(sent))
+  const decryption = holdDecryption()
+  session.attentionChanged(true)
+  await settle()
+  // Focus-follows-pointer: away and back while the first resume decrypts.
+  session.attentionChanged(false)
+  session.attentionChanged(true)
+  await settle()
+  const before = server.log.length
+
+  decryption.release()
+  await settle()
+  expect(session.snapshot().recovering).toBe(false)
+  expect(shown(session)).toEqual(['synchronized before blur', 'arrived while away'])
+  expect(server.log.slice(before)).toEqual([`open ${sent.id}`])
 })
 
 test('a resume that fails falls back to a full synchronization', async () => {

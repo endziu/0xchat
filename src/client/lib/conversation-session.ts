@@ -401,12 +401,13 @@ export class ConversationSession {
   }
 
   // Applies buffered live events in arrival order, including events arriving
-  // during decryption. False when the work was superseded partway.
+  // during decryption. Each leaves the buffer only once applied, so work
+  // superseded partway leaves the rest to the current work. False when
+  // superseded.
   private async drainBuffered(current: () => boolean): Promise<boolean> {
     const store = this.store
     while (this.buffered.length || (!store.hasServerTime() && store.ids().length)) {
-      const events = this.buffered.splice(0)
-      for (const event of events) {
+      for (let event = this.buffered[0]; event; event = this.buffered[0]) {
         if (event.type === 'message') {
           const message = await this.decrypt(event.data)
           if (!current()) return false
@@ -414,6 +415,7 @@ export class ConversationSession {
         } else if (isEnvelopeParticipant(event.data, this.self, this.partner)) {
           store.applyLifecycle(event.data.id, event.data)
         }
+        this.buffered.shift()
       }
       if (!store.hasServerTime() && store.ids().length) {
         const ids = store.ids().slice(0, ID_BATCH)
@@ -518,18 +520,13 @@ export class ConversationSession {
     const current = () => attempt === this.work
     let failed = false
     try {
-      if (!await this.drainBuffered(current)) {
-        // Events taken from the buffer may be lost; only recovery restores them.
-        this.synchronizedWork = null
-        return
-      }
+      if (!await this.drainBuffered(current)) return
       this.synchronizedWork = attempt
       this.store.sweep(this.store.now(), { synchronized: true })
       this.publish()
       void this.openPending()
     } catch (err) {
       console.error('Failed to resume messages:', err)
-      this.synchronizedWork = null
       failed = true
     } finally {
       if (this.syncing === attempt) this.syncing = null

@@ -413,6 +413,27 @@ test('switching identity discards in-flight opening results', async () => {
   await carol.close()
 })
 
+test("a new identity loads its conversation once, on its own stream", async () => {
+  const carolKey = parsePrivateKey('56'.repeat(32))
+  const carol = new ChatClient(origin, carolKey)
+  await carol.login()
+  const carolToken = await createSession(carolKey)
+  await alice.send(carolKey.address, 'for carol', 300)
+  const view = mount()
+  await waitFor(() => streamReady() && view.text().includes('No messages yet'))
+  const loads: string[] = []
+  intercept = (request, next) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === `/api/messages/${aliceAddress}`) loads.push(request.headers.get('Authorization') ?? '')
+    return next()
+  }
+
+  view.switchIdentity(carolKey, carolToken, aliceAddress)
+  await waitFor(() => view.text().includes('for carol'))
+  expect(loads).toEqual([`Bearer ${carolToken}`])
+  await carol.close()
+})
+
 test('a visible window keeps live delivery after blur without opening unattended messages', async () => {
   const view = mount()
   await waitFor(() => streamReady() && view.text().includes('No messages yet'))

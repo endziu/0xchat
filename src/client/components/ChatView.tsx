@@ -43,21 +43,23 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   // on it; these handlers call the message hook's latest functions.
   const handleConnectionChange = useLatest((epoch: ConnectionEpoch | null) => connectionChanged(epoch))
   const handleLiveEvent = useLatest((event: LiveEvent) => {
-    liveEvent(event)
     switch (event.type) {
       case 'message': {
         refreshConversations()
         // A departed partner who writes again has imported their key again.
         const { sender } = event.data
         if (departed.has(sender)) setDeparted(prev => { const next = new Set(prev); next.delete(sender); return next })
+        liveEvent(event)
         return
       }
       case 'expiry-update':
+        liveEvent(event)
         return
       // Nothing is left to read in a cleared conversation, open or not.
       case 'conversation-cleared':
         markConversationSeen(event.data.address, event.data.cleared_at)
         refreshConversations()
+        liveEvent(event)
         return
       case 'user:disconnected':
         handlePartnerRegistrationDeleted(event.data.address)

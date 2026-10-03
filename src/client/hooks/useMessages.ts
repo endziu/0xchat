@@ -87,17 +87,21 @@ export function useMessages(recipientAddress: string | null, identity: Keypair |
   // never render, not even for one frame; disposing the previous session
   // makes its in-flight work ignored.
   const scope = `${identity?.address ?? ''}:${recipientAddress ?? ''}:${token ?? ''}`
-  const selected = useRef<{ scope: string; session: ConversationSession | null } | null>(null)
+  const selected = useRef<{ scope: string; token: string | null; session: ConversationSession | null } | null>(null)
   if (selected.current?.scope !== scope) {
-    selected.current?.session?.dispose()
+    const previous = selected.current
+    previous?.session?.dispose()
     selected.current = {
       scope,
+      token,
       session: recipientAddress && identity && token ? new ConversationSession({
         self: identity.address,
         partner: recipientAddress,
         protocol: apiProtocol(identity, recipientAddress, token, refreshConversations),
         decrypt: decryptFor(identity, recipientAddress),
-        connection: connection.current,
+        // The stream belongs to the session token, and closes after this
+        // render when that changes; the new token's stream reports itself.
+        connection: previous?.token === token ? connection.current : null,
         attentive: isWindowAttentive(),
       }) : null,
     }
