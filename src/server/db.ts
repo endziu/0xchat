@@ -155,7 +155,7 @@ export function initDb(path = 'chat.db'): void {
   normalizeStoredAddresses();
 }
 
-// Unsigned legacy records can be address without invalidating sessions.
+// Unsigned legacy records can be normalized without invalidating sessions.
 // Message participants are signed: validate them on read, never rewrite them.
 function normalizeStoredAddresses(): void {
   db.transaction(() => {
