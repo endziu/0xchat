@@ -9,8 +9,9 @@ dist/
 chat.db*
 .env
 
-# Local tooling
-.claude/
+# Local tooling (project skills are shared)
+.claude/*
+!.claude/skills/
 .scratch/
 
 # Editor / OS
