@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact'
 import { useState, useEffect } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
 import { Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
+import { AddressAvatar } from './AddressAvatar'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
@@ -62,6 +63,9 @@ export function Layout({
         </div>
         {identity && (
           <div className="flex items-center gap-2 max-sm:gap-0 text-sm text-neutral-500">
+            {/* The glyph stays when the address text is hidden, so phones
+                still show which identity is active. */}
+            <AddressAvatar address={identity.address} size={20} />
             <span className="max-sm:hidden">{shortAddr(identity.address)}</span>
             <button onClick={() => copy(identity.address)} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
