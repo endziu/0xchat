@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { ConversationMessages, type DecryptedMessage } from './conversation-messages'
 import { errorMessage } from './errors'
 import type { MessagePage, RecoveryPage } from './api'
@@ -59,9 +60,9 @@ export const systemClock: SessionClock = {
 
 export interface SessionOptions {
   /** The identity's address. */
-  self: string
+  self: Address
   /** The conversation partner's address. */
-  partner: string
+  partner: Address
   protocol: ConversationProtocol
   /** Verifies and decrypts a delivered message of this conversation; null for anything else. */
   decrypt: (input: unknown) => Promise<DecryptedMessage | null>
@@ -116,8 +117,8 @@ function batches<T>(items: T[], size: number): T[][] {
  * open transport alone is not enough.
  */
 export class ConversationSession {
-  private readonly self: string
-  private readonly partner: string
+  private readonly self: Address
+  private readonly partner: Address
   private readonly protocol: ConversationProtocol
   private readonly decrypt: (input: unknown) => Promise<DecryptedMessage | null>
   private readonly clock: SessionClock
@@ -205,7 +206,7 @@ export class ConversationSession {
       // Clearing is a removal, so it applies whether or not the view is
       // synchronized; the store also rejects cleared messages that load later.
       case 'conversation-cleared':
-        if (event.data.address !== this.partner.toLowerCase()) return
+        if (event.data.address !== this.partner) return
         this.store.clear(event.data.cleared_at)
         this.publish()
         return

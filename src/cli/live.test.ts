@@ -1,3 +1,4 @@
+import { requireAddress } from '../shared/address'
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -352,7 +353,7 @@ test('chat drops messages when the partner clears the conversation', async () =>
   await alice.send(bob.identity.address, 'cleared by partner', 300)
   const cli = start('chat')
   await until(() => cli.screen().includes('cleared by partner'), 'initial message')
-  await alice['request'](`/api/messages/${bob.identity.address.toLowerCase()}`, 'DELETE')
+  await alice['request'](`/api/messages/${requireAddress(bob.identity.address)}`, 'DELETE')
   await until(() => cli.screen().includes('Conversation cleared'), 'clear event')
   expect(cli.screen()).not.toContain('cleared by partner')
   clock.mockReturnValue(accepted + 1)

@@ -1,6 +1,7 @@
+import type { Address } from '../../shared/address'
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks'
 import { api, Conversation } from '../lib/api'
-import { mergeContacts, loadContacts, markConversationRemoved, isRemoved } from '../lib/contacts'
+import { loadLabels, mergeContacts, loadContacts, markConversationRemoved, isRemoved } from '../lib/contacts'
 import { errorMessage } from '../lib/errors'
 
 export type ConversationRefreshResult = 'refreshed' | 'failed' | 'cancelled'
@@ -12,9 +13,9 @@ export interface MergedConversation extends Conversation {
 function withKnownContacts(live: Conversation[]): MergedConversation[] {
   const liveVisible = live.filter(c => !isRemoved(c.address, c.last_message_at))
   const known = mergeContacts(liveVisible)
-  const liveAddresses = new Set(liveVisible.map(c => c.address.toLowerCase()))
+  const liveAddresses = new Set(liveVisible.map(c => c.address))
   const stale = Object.values(known)
-    .filter(c => !liveAddresses.has(c.address.toLowerCase()))
+    .filter(c => !liveAddresses.has(c.address))
     .map(c => ({ address: c.address, last_message_at: c.last_message_at, stale: true }))
   return [...liveVisible, ...stale].sort((a, b) => b.last_message_at - a.last_message_at)
 }
@@ -27,13 +28,7 @@ export function useConversations(token: string | null) {
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [labels, setLabels] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('conversation_labels') ?? '{}')
-    } catch {
-      return {}
-    }
-  })
+  const [labels, setLabels] = useState(loadLabels)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const pendingRefreshRef = useRef(false)
   // Refreshes can overlap (token change, SSE, retry click). Only the newest one
@@ -79,10 +74,10 @@ export function useConversations(token: string | null) {
     return request
   }, [token])
 
-  const setLabel = useCallback((address: string, name: string) => {
+  const setLabel = useCallback((address: Address, name: string) => {
     setLabels(prev => {
-      const next = { ...prev, [address.toLowerCase()]: name.trim() }
-      if (!name.trim()) delete next[address.toLowerCase()]
+      const next: Record<Address, string> = { ...prev, [address]: name.trim() }
+      if (!name.trim()) delete next[address]
       localStorage.setItem('conversation_labels', JSON.stringify(next))
       return next
     })
@@ -90,15 +85,15 @@ export function useConversations(token: string | null) {
 
   // For a partner who is done with that address: off the list, name forgotten.
   // Their next message, if one ever comes, brings the conversation back unnamed.
-  const removeConversation = useCallback((address: string) => {
+  const removeConversation = useCallback((address: Address) => {
     markConversationRemoved(address)
     setLabels(prev => {
       const next = { ...prev }
-      delete next[address.toLowerCase()]
+      delete next[address]
       localStorage.setItem('conversation_labels', JSON.stringify(next))
       return next
     })
-    setConversations(prev => prev.filter(c => c.address.toLowerCase() !== address.toLowerCase()))
+    setConversations(prev => prev.filter(c => c.address !== address))
   }, [])
 
   // Debounced: SSE can fire a burst of these. A retry click wants `reload`

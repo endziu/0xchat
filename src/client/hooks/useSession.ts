@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
 import { getToken, saveToken, clearToken } from '../lib/session'
 import { Keypair, signEIP191 } from '../lib/burner'
@@ -22,7 +23,7 @@ export function useSession(identity: Keypair | null) {
     return newToken
   }, [])
 
-  const commitSession = useCallback((address: string, newToken: string): void => {
+  const commitSession = useCallback((address: Address, newToken: string): void => {
     saveToken(address, newToken)
     setToken(newToken)
     setError(null)

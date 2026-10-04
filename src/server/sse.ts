@@ -1,14 +1,15 @@
+import type { Address } from '../shared/address'
 import type { LiveEvent } from '../shared/live-events.ts';
 
 const clients = new Map<
-  string,
+  Address,
   Map<ReadableStreamDefaultController, { suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
 >();
 
 const ATTENTION_TTL_MS = 45_000;
 
 export function addClient(
-  address: string,
+  address: Address,
   ctrl: ReadableStreamDefaultController,
   suppressPush = true,
   tracksAttention = false,
@@ -22,7 +23,7 @@ export function addClient(
 }
 
 /** Only an attentive browser or a live terminal stream suppresses push. */
-export function pushSuppressingConnectionCount(address: string): number {
+export function pushSuppressingConnectionCount(address: Address): number {
   const now = Date.now();
   return [...(clients.get(address)?.values() ?? [])].filter(client =>
     client.suppressPush && (!client.tracksAttention || now - client.attentionAt < ATTENTION_TTL_MS)
@@ -30,7 +31,7 @@ export function pushSuppressingConnectionCount(address: string): number {
 }
 
 export function updateClientAttention(
-  address: string,
+  address: Address,
   ctrl: ReadableStreamDefaultController,
   attentive: boolean,
   sequence: number,
@@ -46,13 +47,13 @@ export function updateClientAttention(
 
 /** Number of live SSE streams currently registered for an address. */
 export function connectionCount(
-  address: string,
+  address: Address,
 ): number {
   return clients.get(address)?.size ?? 0;
 }
 
 export function removeClient(
-  address: string,
+  address: Address,
   ctrl: ReadableStreamDefaultController,
 ): void {
   const set = clients.get(address);
@@ -61,7 +62,7 @@ export function removeClient(
   if (set.size === 0) clients.delete(address);
 }
 
-export function publish(address: string, event: LiveEvent): void {
+export function publish(address: Address, event: LiveEvent): void {
   const set = clients.get(address);
   if (!set) return;
   const payload = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;

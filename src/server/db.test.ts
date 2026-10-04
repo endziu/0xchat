@@ -1,3 +1,4 @@
+import { requireAddress, type Address } from '../shared/address'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { unlinkSync } from 'node:fs';
@@ -24,16 +25,16 @@ import {
 
 const TEST_DB = `test-chat-${Date.now()}.db`;
 
-function registerAt(address: string, pubkey: string, at: number): void {
+function registerAt(address: Address, pubkey: string, at: number): void {
   registerPubkey(address, pubkey);
   getDb().query('UPDATE pubkeys SET last_active_at = ? WHERE address = ?')
-    .run(at, address.toLowerCase());
+    .run(at, address);
 }
 
 function createMessage(
   id: string,
-  sender: string,
-  recipient: string,
+  sender: Address,
+  recipient: Address,
   ctRecipient: string,
   ephPubRecipient: string,
   ivRecipient: string,
@@ -70,50 +71,50 @@ afterEach(() => {
 
 describe('pubkeys', () => {
   test('register and get pubkey', () => {
-    registerPubkey('0xabc', 'pubkey123');
-    expect(getPubkey('0xabc')).toBe('pubkey123');
+    registerPubkey(requireAddress('0xabc0000000000000000000000000000000000000'), 'pubkey123');
+    expect(getPubkey(requireAddress('0xabc0000000000000000000000000000000000000'))).toBe('pubkey123');
   });
 
   test('returns null for unknown address', () => {
-    expect(getPubkey('0xunknown')).toBeNull();
+    expect(getPubkey(requireAddress('0xb23a6a8439c0dde5515893e7c90c1e3233b8616e'))).toBeNull();
   });
 
   test('upserts on re-register', () => {
-    registerPubkey('0xabc', 'key1');
-    registerPubkey('0xabc', 'key2');
-    expect(getPubkey('0xabc')).toBe('key2');
+    registerPubkey(requireAddress('0xabc0000000000000000000000000000000000000'), 'key1');
+    registerPubkey(requireAddress('0xabc0000000000000000000000000000000000000'), 'key2');
+    expect(getPubkey(requireAddress('0xabc0000000000000000000000000000000000000'))).toBe('key2');
   });
 
   test('prunes a registration after its inactive retention window', () => {
-    registerAt('0xstale', 'stale-key', 1_000);
-    registerAt('0xrecent', 'recent-key', 2_000);
+    registerAt(requireAddress('0xa03f2386ae06b21109577020844df367857b72c2'), 'stale-key', 1_000);
+    registerAt(requireAddress('0x034a7e52c5c9534b709dc1dba403868399b0949f'), 'recent-key', 2_000);
 
     expect(deleteInactivePubkeys(1_500)).toBe(1);
-    expect(getPubkey('0xstale')).toBeNull();
-    expect(getPubkey('0xrecent')).toBe('recent-key');
+    expect(getPubkey(requireAddress('0xa03f2386ae06b21109577020844df367857b72c2'))).toBeNull();
+    expect(getPubkey(requireAddress('0x034a7e52c5c9534b709dc1dba403868399b0949f'))).toBe('recent-key');
   });
 
   test('keeps a registration active when it creates a session', () => {
-    registerAt('0xactive', 'active-key', 1_000);
-    createSession('active-token', '0xactive', Date.now() + 60_000);
+    registerAt(requireAddress('0x96879611650f80a81392a52e0db9b0237669087c'), 'active-key', 1_000);
+    createSession('active-token', requireAddress('0x96879611650f80a81392a52e0db9b0237669087c'), Date.now() + 60_000);
 
     expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
-    expect(getPubkey('0xactive')).toBe('active-key');
+    expect(getPubkey(requireAddress('0x96879611650f80a81392a52e0db9b0237669087c'))).toBe('active-key');
   });
 
   test('keeps both registrations active when they share a message', () => {
-    registerAt('0xsender', 'sender-key', 1_000);
-    registerAt('0xrecipient', 'recipient-key', 1_000);
+    registerAt(requireAddress('0x0a367b92cf0b037dfd89960ee832d56f7fc15168'), 'sender-key', 1_000);
+    registerAt(requireAddress('0x665d0698dbc8fb95afc25c3a4d9cf280d87a585b'), 'recipient-key', 1_000);
     createMessage(
-      'active-message', '0xsender', '0xrecipient',
+      'active-message', requireAddress('0x0a367b92cf0b037dfd89960ee832d56f7fc15168'), requireAddress('0x665d0698dbc8fb95afc25c3a4d9cf280d87a585b'),
       'ct_r', 'eph_r', 'iv_r',
       'ct_s', 'eph_s', 'iv_s',
       3600,
     );
 
     expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
-    expect(getPubkey('0xsender')).toBe('sender-key');
-    expect(getPubkey('0xrecipient')).toBe('recipient-key');
+    expect(getPubkey(requireAddress('0x0a367b92cf0b037dfd89960ee832d56f7fc15168'))).toBe('sender-key');
+    expect(getPubkey(requireAddress('0x665d0698dbc8fb95afc25c3a4d9cf280d87a585b'))).toBe('recipient-key');
   });
 
   test('migration gives existing registrations a fresh retention window', () => {
@@ -123,49 +124,49 @@ describe('pubkeys', () => {
     }
     const legacy = new Database(TEST_DB);
     legacy.run('CREATE TABLE pubkeys (address TEXT PRIMARY KEY, pubkey TEXT NOT NULL)');
-    legacy.query('INSERT INTO pubkeys (address, pubkey) VALUES (?, ?)').run('0xlegacy', 'legacy-key');
+    legacy.query('INSERT INTO pubkeys (address, pubkey) VALUES (?, ?)').run(requireAddress('0xc49fea7425fa7f8699897a97c159c6690267d900'), 'legacy-key');
     legacy.close();
 
     initDb(TEST_DB);
 
     expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
-    expect(getPubkey('0xlegacy')).toBe('legacy-key');
+    expect(getPubkey(requireAddress('0xc49fea7425fa7f8699897a97c159c6690267d900'))).toBe('legacy-key');
   });
 
   test('re-registration alone does not extend the inactive retention window', () => {
-    registerAt('0xstale', 'old-key', 1_000);
-    registerPubkey('0xstale', 'new-key');
-    expect(getPubkey('0xstale')).toBe('new-key');
+    registerAt(requireAddress('0xa03f2386ae06b21109577020844df367857b72c2'), 'old-key', 1_000);
+    registerPubkey(requireAddress('0xa03f2386ae06b21109577020844df367857b72c2'), 'new-key');
+    expect(getPubkey(requireAddress('0xa03f2386ae06b21109577020844df367857b72c2'))).toBe('new-key');
     expect(deleteInactivePubkeys(1_500)).toBe(1);
-    expect(getPubkey('0xstale')).toBeNull();
+    expect(getPubkey(requireAddress('0xa03f2386ae06b21109577020844df367857b72c2'))).toBeNull();
   });
 
   test('keeps registrations exactly at the retention cutoff', () => {
-    registerAt('0xboundary', 'key', 1_500);
+    registerAt(requireAddress('0x931534c0c145d0a99631a32025f23f88c67fc6b3'), 'key', 1_500);
     expect(deleteInactivePubkeys(1_500)).toBe(0);
-    expect(getPubkey('0xboundary')).toBe('key');
+    expect(getPubkey(requireAddress('0x931534c0c145d0a99631a32025f23f88c67fc6b3'))).toBe('key');
   });
 });
 
 describe('sessions', () => {
-  test('normalizes session addresses and refreshes the matching pubkey', () => {
-    registerAt('0xAbC', 'key', 1_000);
-    createSession('mixed-case-token', '0xAbC', Date.now() + 60_000);
-    expect(getSession('mixed-case-token')?.address).toBe('0xabc');
+  test('creates a session and refreshes the matching pubkey', () => {
+    registerAt(requireAddress('0xabc0000000000000000000000000000000000000'), 'key', 1_000);
+    createSession('mixed-case-token', requireAddress('0xabc0000000000000000000000000000000000000'), Date.now() + 60_000);
+    expect(getSession('mixed-case-token')?.address).toBe(requireAddress('0xabc0000000000000000000000000000000000000'));
     expect(deleteInactivePubkeys(Date.now() - 1_000)).toBe(0);
-    expect(getPubkey('0xAbC')).toBe('key');
+    expect(getPubkey(requireAddress('0xabc0000000000000000000000000000000000000'))).toBe('key');
   });
   test('create and get session', () => {
     const expires = Date.now() + 60_000;
-    createSession('tok1', '0xabc', expires);
+    createSession('tok1', requireAddress('0xabc0000000000000000000000000000000000000'), expires);
     const s = getSession('tok1');
     expect(s).not.toBeNull();
-    expect(s!.address).toBe('0xabc');
+    expect(s!.address).toBe(requireAddress('0xabc0000000000000000000000000000000000000'));
   });
 
   test('stores sha256(token) at rest, never the raw token', () => {
     const raw = 'ab'.repeat(32); // same shape as real 256-bit session tokens
-    createSession(raw, '0xabc', Date.now() + 60_000);
+    createSession(raw, requireAddress('0xabc0000000000000000000000000000000000000'), Date.now() + 60_000);
 
     const stored = (getDb().query('SELECT token FROM sessions').all() as Array<{ token: string }>)
       .map((row) => row.token);
@@ -173,7 +174,7 @@ describe('sessions', () => {
     expect(stored).toContain(createHash('sha256').update(raw).digest('hex'));
 
     // the raw token still resolves through the public seam
-    expect(getSession(raw)?.address).toBe('0xabc');
+    expect(getSession(raw)?.address).toBe(requireAddress('0xabc0000000000000000000000000000000000000'));
   });
 
   test('returns null for unknown token', () => {
@@ -188,7 +189,7 @@ describe('sessions', () => {
     const legacy = new Database(TEST_DB);
     legacy.run('CREATE TABLE sessions (token TEXT PRIMARY KEY, address TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)');
     legacy.query('INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run('raw-legacy-token', '0xabc', Date.now(), Date.now() + 60_000);
+      .run('raw-legacy-token', requireAddress('0xabc0000000000000000000000000000000000000'), Date.now(), Date.now() + 60_000);
     legacy.close();
 
     initDb(TEST_DB);
@@ -199,18 +200,18 @@ describe('sessions', () => {
     expect((getDb().query('SELECT COUNT(*) AS count FROM sessions').get() as { count: number }).count).toBe(0);
 
     // new-format sessions still work after the cutover
-    createSession('tok-after-cutover', '0xabc', Date.now() + 60_000);
+    createSession('tok-after-cutover', requireAddress('0xabc0000000000000000000000000000000000000'), Date.now() + 60_000);
     expect(getSession('tok-after-cutover')).not.toBeNull();
   });
 
   test('returns null for expired session', () => {
-    createSession('tok2', '0xabc', Date.now() - 1000);
+    createSession('tok2', requireAddress('0xabc0000000000000000000000000000000000000'), Date.now() - 1000);
     expect(getSession('tok2')).toBeNull();
   });
 
   test('deleteExpiredSessions removes old entries', () => {
-    createSession('tok3', '0xabc', Date.now() - 1000);
-    createSession('tok4', '0xdef', Date.now() + 60_000);
+    createSession('tok3', requireAddress('0xabc0000000000000000000000000000000000000'), Date.now() - 1000);
+    createSession('tok4', requireAddress('0xdef0000000000000000000000000000000000000'), Date.now() + 60_000);
     deleteExpiredSessions();
     expect(getSession('tok3')).toBeNull();
     expect(getSession('tok4')).not.toBeNull();
@@ -218,8 +219,8 @@ describe('sessions', () => {
 });
 
 describe('messages', () => {
-  const alice = '0xalice';
-  const bob = '0xbob';
+  const alice = requireAddress('0x2bd806c97f0e00af1a1fc3328fa763a9269723c8');
+  const bob = requireAddress('0x81b637d8fcd2c6da6359e6963113a1170de795e4');
 
   test('hard-cutover deletes legacy unauthenticated messages', () => {
     getDb().close();
@@ -368,33 +369,33 @@ describe('messages', () => {
 describe('conversations', () => {
   test('lists unique counterparties', () => {
     createMessage(
-      'c1', '0xa', '0xb',
+      'c1', requireAddress('0xa000000000000000000000000000000000000000'), requireAddress('0xb000000000000000000000000000000000000000'),
       'ct_r', 'eph_r', 'iv_r',
       'ct_s', 'eph_s', 'iv_s',
       3600,
     );
     createMessage(
-      'c2', '0xc', '0xa',
+      'c2', requireAddress('0xc000000000000000000000000000000000000000'), requireAddress('0xa000000000000000000000000000000000000000'),
       'ct_r', 'eph_r', 'iv_r',
       'ct_s', 'eph_s', 'iv_s',
       3600,
     );
-    const convs = getConversations('0xa');
+    const convs = getConversations(requireAddress('0xa000000000000000000000000000000000000000'));
     expect(convs).toHaveLength(2);
     const parties = convs.map(c => c.counterparty);
-    expect(parties).toContain('0xb');
-    expect(parties).toContain('0xc');
+    expect(parties).toContain(requireAddress('0xb000000000000000000000000000000000000000'));
+    expect(parties).toContain(requireAddress('0xc000000000000000000000000000000000000000'));
   });
 
   test('returns empty for no conversations', () => {
-    expect(getConversations('0xnobody')).toHaveLength(0);
+    expect(getConversations(requireAddress('0x6382b3cc881412b77bfcaeed026001c00d9e3025'))).toHaveLength(0);
   });
 });
 
 describe('cascade deletion (logout)', () => {
-  const alice = '0xalice';
-  const bob = '0xbob';
-  const charlie = '0xcharlie';
+  const alice = requireAddress('0x2bd806c97f0e00af1a1fc3328fa763a9269723c8');
+  const bob = requireAddress('0x81b637d8fcd2c6da6359e6963113a1170de795e4');
+  const charlie = requireAddress('0xb9dd960c1753459a78115d3cb845a57d924b6877');
 
   beforeEach(() => {
     // Setup: Alice has conversations with Bob and Charlie
@@ -444,7 +445,7 @@ describe('cascade deletion (logout)', () => {
   });
 
   test('getConversationPartners returns empty for no conversations', () => {
-    const partners = getConversationPartners('0xnobody');
+    const partners = getConversationPartners(requireAddress('0x6382b3cc881412b77bfcaeed026001c00d9e3025'));
     expect(partners).toHaveLength(0);
   });
 
@@ -505,9 +506,8 @@ describe('cascade deletion (logout)', () => {
     expect(bobConvs.some(c => c.counterparty === charlie)).toBe(true);
   });
 
-  test('address normalization in cascade deletion', () => {
-    // getPubkey/registerPubkey now normalize addresses
-    const upperAlice = '0xALICE';
+  test('cascade deletion uses the canonical address', () => {
+    const upperAlice = requireAddress('0x2bd806c97f0e00af1a1fc3328fa763a9269723c8');
     deleteAddress(upperAlice);
     expect(getPubkey(alice)).toBeNull();
     expect(getPubkey(upperAlice)).toBeNull();

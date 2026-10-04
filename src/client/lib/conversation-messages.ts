@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { parseDeliveryLifecycle, type DeliveredMessage, type MessageLifecycle } from '../../shared/message-envelope'
 
 export type DecryptedMessage = DeliveredMessage & { plaintext: string }
@@ -83,13 +84,13 @@ export class ConversationMessages {
   private readonly entries = new Map<string, Entry>()
   private readonly removed = new Set<string>()
   private readonly updatesBeforeLoad = new Map<string, MessageLifecycle>()
-  private readonly self: string
+  private readonly self: Address
   private serverOffset: number | null = null
   private clearedThrough = -Infinity
 
   /** `monotonic` measures elapsed time, as `performance.now()` does. */
-  constructor(identityAddress: string, private readonly monotonic: () => number = () => performance.now()) {
-    this.self = identityAddress.toLowerCase()
+  constructor(identityAddress: Address, private readonly monotonic: () => number = () => performance.now()) {
+    this.self = identityAddress
   }
 
   /** Server time plus elapsed monotonic time; request latency shortens availability conservatively. */

@@ -1,3 +1,4 @@
+import { checksumAddress } from '../../shared/address'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
 import { Check, Copy, Flame, X } from 'lucide-preact'
@@ -73,7 +74,7 @@ export function SettingsModal({
           <div className="mt-2 flex flex-col items-center gap-1">
             <AddressQR address={identity.address} size={160} />
             <button
-              onClick={() => copy(identity.address)}
+              onClick={() => copy(checksumAddress(identity.address))}
               className="text-sm"
             >
               {copied ? <Check size={14} /> : <Copy size={14} />} Copy address

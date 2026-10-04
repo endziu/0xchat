@@ -1,3 +1,4 @@
+import { parseAddress, requireAddress, isCanonicalAddress, type Address } from '../shared/address'
 import { Database } from 'bun:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
@@ -16,10 +17,10 @@ function tableColumns(table: 'pubkeys' | 'sessions' | 'messages'): Set<string> {
   return new Set(columns.map((column) => column.name));
 }
 
-function markAddressesActive(addresses: string[], at: number): void {
+function markAddressesActive(addresses: Address[], at: number): void {
   const placeholders = addresses.map(() => '?').join(', ');
   db.query(`UPDATE pubkeys SET last_active_at = ? WHERE address IN (${placeholders})`)
-    .run(at, ...addresses.map((address) => address.toLowerCase()));
+    .run(at, ...addresses);
 }
 
 export function initDb(path = 'chat.db'): void {
@@ -151,21 +152,50 @@ export function initDb(path = 'chat.db'): void {
   }).immediate();
   // Cipher and canonicalization changes cannot be upgraded without plaintext.
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
+  normalizeStoredAddresses();
 }
 
-export function registerPubkey(address: string, pubkey: string): void {
-  const normalized = address.toLowerCase();
+// Unsigned legacy records can be address without invalidating sessions.
+// Message participants are signed: validate them on read, never rewrite them.
+function normalizeStoredAddresses(): void {
+  db.transaction(() => {
+    const registrations = db.query('SELECT address, pubkey, last_active_at FROM pubkeys').all() as
+      Array<{ address: string; pubkey: string; last_active_at: number }>;
+    for (const row of registrations) {
+      const address = parseAddress(row.address);
+      if (!address || address === row.address) continue;
+      db.query(`INSERT INTO pubkeys VALUES (?, ?, ?) ON CONFLICT(address) DO UPDATE SET
+        last_active_at = MAX(pubkeys.last_active_at, excluded.last_active_at)`)
+        .run(address, row.pubkey, row.last_active_at);
+      db.query('DELETE FROM pubkeys WHERE address = ?').run(row.address);
+    }
+    for (const table of ['sessions', 'push_subscriptions']) {
+      const rows = db.query(`SELECT DISTINCT address FROM ${table}`).all() as Array<{ address: string }>;
+      for (const row of rows) {
+        const address = parseAddress(row.address);
+        if (address && address !== row.address) {
+          db.query(`UPDATE ${table} SET address = ? WHERE address = ?`).run(address, row.address);
+        }
+      }
+    }
+  }).immediate();
+}
+
+function validMessageAddresses<T extends { sender: string; recipient: string }>(row: T): row is T & { sender: Address; recipient: Address } {
+  return isCanonicalAddress(row.sender) && isCanonicalAddress(row.recipient);
+}
+
+export function registerPubkey(address: Address, pubkey: string): void {
   db.query(
     `INSERT INTO pubkeys (address, pubkey, last_active_at) VALUES (?, ?, ?)
      ON CONFLICT(address) DO UPDATE SET pubkey = excluded.pubkey`,
-  ).run(normalized, pubkey, Date.now());
+  ).run(address, pubkey, Date.now());
 }
 
-export function getPubkey(address: string): string | null {
-  const normalized = address.toLowerCase();
+export function getPubkey(address: Address): string | null {
   const row = db
     .query('SELECT pubkey FROM pubkeys WHERE address = ?')
-    .get(normalized) as { pubkey: string } | null;
+    .get(address) as { pubkey: string } | null;
   return row?.pubkey ?? null;
 }
 
@@ -178,19 +208,18 @@ export function deleteInactivePubkeys(cutoff: number): number {
 
 export function createSession(
   token: string,
-  address: string,
+  address: Address,
   expiresAt: number,
 ): void {
-  const normalized = address.toLowerCase();
   const createdAt = Date.now();
   db.query(
     'INSERT INTO sessions (token, address, created_at, expires_at) VALUES (?, ?, ?, ?)',
-  ).run(hashToken(token), normalized, createdAt, expiresAt);
-  markAddressesActive([normalized], createdAt);
+  ).run(hashToken(token), address, createdAt, expiresAt);
+  markAddressesActive([address], createdAt);
 }
 
 export interface SessionRow {
-  address: string;
+  address: Address;
   expires_at: number;
 }
 
@@ -200,13 +229,14 @@ export function getSession(token: string): SessionRow | null {
     .query(
       'SELECT address, expires_at FROM sessions WHERE token = ?',
     )
-    .get(hash) as SessionRow | null;
+    .get(hash) as { address: unknown; expires_at: number } | null;
   if (!row) return null;
   if (row.expires_at < Date.now()) {
     db.query('DELETE FROM sessions WHERE token = ?').run(hash);
     return null;
   }
-  return row;
+  const address = parseAddress(row.address);
+  return address ? { ...row, address } : null;
 }
 
 export function deleteSession(token: string): void {
@@ -244,8 +274,8 @@ export function createMessage(envelope: MessageEnvelope): MessageLifecycle | nul
 export interface MessageRow extends MessageLifecycle {
   version: number;
   id: string;
-  sender: string;
-  recipient: string;
+  sender: Address;
+  recipient: Address;
   ct_recipient: string;
   ephemeral_pub_recipient: string;
   iv_recipient: string;
@@ -255,6 +285,8 @@ export interface MessageRow extends MessageLifecycle {
   ttl_seconds: number;
   signature: string;
 }
+
+type StoredMessageRow = Omit<MessageRow, 'sender' | 'recipient'> & { sender: string; recipient: string };
 
 export interface ConversationPage {
   rows: Array<MessageRow & { seq: number }>;
@@ -267,8 +299,8 @@ export interface ConversationPage {
 // (or endlessly re-return) messages sharing a millisecond. rowid makes the
 // cursor total and strictly advancing.
 function readConversationMessages(
-  addr1: string,
-  addr2: string,
+  addr1: Address,
+  addr2: Address,
   limit = 50,
   before?: number,
   beforeRowid?: number,
@@ -297,10 +329,10 @@ function readConversationMessages(
        ORDER BY created_at DESC, rowid DESC
        LIMIT ?`,
     )
-    .all(now, ...cutoffParams, addr1, addr2, addr2, addr1, limit) as Array<MessageRow & { seq: number }>;
+    .all(now, ...cutoffParams, addr1, addr2, addr2, addr1, limit) as Array<StoredMessageRow & { seq: number }>;
   const oldest = rows[rows.length - 1];
   return {
-    rows,
+    rows: rows.filter(validMessageAddresses),
     next_before: oldest ? oldest.created_at : null,
     next_before_rowid: oldest ? oldest.seq : null,
   };
@@ -308,7 +340,7 @@ function readConversationMessages(
 
 // Capture the initial recovery checkpoint in the same SQLite snapshot as history.
 export function getConversationMessages(
-  addr1: string, addr2: string, limit = 50, before?: number, beforeRowid?: number,
+  addr1: Address, addr2: Address, limit = 50, before?: number, beforeRowid?: number,
 ): ConversationPage & { recovery_sequence: number } {
   return db.transaction(() => ({
     recovery_sequence: recoveryMetadata().high_water,
@@ -321,7 +353,7 @@ export function recoveryMetadata(): { high_water: number; cursor_key: string } {
     .get() as { high_water: number; cursor_key: string };
 }
 
-export function recoverMessages(address: string, counterparty: string, lower: number, upper?: number) {
+export function recoverMessages(address: Address, counterparty: Address, lower: number, upper?: number) {
   return db.transaction(() => {
     const bound = upper ?? recoveryMetadata().high_water;
     const now = Date.now();
@@ -329,19 +361,19 @@ export function recoverMessages(address: string, counterparty: string, lower: nu
       WHERE acceptance_seq > ? AND acceptance_seq <= ? AND expires_at > ?
       AND ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))
       ORDER BY acceptance_seq LIMIT 101`)
-      .all(lower, bound, now, address, counterparty, counterparty, address) as Array<MessageRow & { acceptance_seq: number }>;
+      .all(lower, bound, now, address, counterparty, counterparty, address) as Array<StoredMessageRow & { acceptance_seq: number }>;
     const exhausted = rows.length <= 100;
-    return { rows: rows.slice(0, 100), upper: bound, exhausted, server_time: now };
+    return { rows: rows.slice(0, 100).filter(validMessageAddresses), last_sequence: rows.slice(0, 100).at(-1)?.acceptance_seq, upper: bound, exhausted, server_time: now };
   })();
 }
 
 export interface ConversationSummary {
-  counterparty: string;
+  counterparty: Address;
   last_message_at: number;
 }
 
 export function getConversations(
-  address: string,
+  address: Address,
 ): ConversationSummary[] {
   const now = Date.now();
   return db
@@ -355,7 +387,8 @@ export function getConversations(
        GROUP BY counterparty
        ORDER BY last_message_at DESC`,
     )
-    .all(address, now, address, address) as ConversationSummary[];
+    .all(address, now, address, address)
+    .map(row => { const value = row as { counterparty: string; last_message_at: number }; return { ...value, counterparty: requireAddress(value.counterparty) }; });
 }
 
 export function deleteExpiredMessages(): void {
@@ -366,7 +399,7 @@ export function deleteExpiredMessages(): void {
  * Deletes every message between two identities accepted up to now, in both
  * directions. Clients drop what they hold through the returned time.
  */
-export function clearConversation(address: string, counterparty: string): { cleared_at: number; deleted: number } {
+export function clearConversation(address: Address, counterparty: Address): { cleared_at: number; deleted: number } {
   return db.transaction(() => {
     const now = Date.now();
     const { changes } = db.query(`DELETE FROM messages WHERE created_at <= ?
@@ -376,25 +409,22 @@ export function clearConversation(address: string, counterparty: string): { clea
   }).immediate();
 }
 
-export function deleteAddressSessions(address: string): void {
-  const normalized = address.toLowerCase();
-  db.query('DELETE FROM sessions WHERE address = ?').run(normalized);
+export function deleteAddressSessions(address: Address): void {
+  db.query('DELETE FROM sessions WHERE address = ?').run(address);
 }
 
-export function deleteAddressConversations(address: string): void {
-  const normalized = address.toLowerCase();
-  db.query('DELETE FROM messages WHERE sender = ? OR recipient = ?').run(normalized, normalized);
+export function deleteAddressConversations(address: Address): void {
+  db.query('DELETE FROM messages WHERE sender = ? OR recipient = ?').run(address, address);
 }
 
-export function deleteAddress(address: string): void {
-  const normalized = address.toLowerCase();
+export function deleteAddress(address: Address): void {
   db.transaction(() => {
-    deletePushSubscriptionsForAddress(normalized);
-    db.query('DELETE FROM pubkeys WHERE address = ?').run(normalized);
+    deletePushSubscriptionsForAddress(address);
+    db.query('DELETE FROM pubkeys WHERE address = ?').run(address);
   }).immediate();
 }
 
-export function deleteRegistration(address: string): void {
+export function deleteRegistration(address: Address): void {
   db.transaction(() => {
     deleteAddressSessions(address);
     deleteAddressConversations(address);
@@ -402,8 +432,8 @@ export function deleteRegistration(address: string): void {
   }).immediate();
 }
 
-function deletePushSubscriptionsForAddress(address: string): void {
-  db.query('DELETE FROM push_subscriptions WHERE address = ?').run(address.toLowerCase());
+function deletePushSubscriptionsForAddress(address: Address): void {
+  db.query('DELETE FROM push_subscriptions WHERE address = ?').run(address);
 }
 
 export interface PushSubscriptionRow {
@@ -418,39 +448,37 @@ export const MAX_PUSH_SUBSCRIPTIONS = 5;
  * An endpoint belongs to the identity that uploaded it last. Past the cap the
  * oldest subscriptions of that identity are dropped rather than refusing a new one.
  */
-export function savePushSubscription(address: string, subscription: PushSubscriptionRow): void {
-  const normalized = address.toLowerCase();
+export function savePushSubscription(address: Address, subscription: PushSubscriptionRow): void {
   db.transaction(() => {
     db.query(`INSERT INTO push_subscriptions (endpoint, address, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(endpoint) DO UPDATE SET address = excluded.address, p256dh = excluded.p256dh,
         auth = excluded.auth, created_at = excluded.created_at`)
-      .run(subscription.endpoint, normalized, subscription.p256dh, subscription.auth, Date.now());
+      .run(subscription.endpoint, address, subscription.p256dh, subscription.auth, Date.now());
     db.query(`DELETE FROM push_subscriptions WHERE address = ? AND endpoint NOT IN (
       SELECT endpoint FROM push_subscriptions WHERE address = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)`)
-      .run(normalized, normalized, MAX_PUSH_SUBSCRIPTIONS);
+      .run(address, address, MAX_PUSH_SUBSCRIPTIONS);
   }).immediate();
 }
 
-export function deletePushSubscription(endpoint: string, address?: string): void {
+export function deletePushSubscription(endpoint: string, address?: Address): void {
   if (address === undefined) db.query('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
-  else db.query('DELETE FROM push_subscriptions WHERE endpoint = ? AND address = ?').run(endpoint, address.toLowerCase());
+  else db.query('DELETE FROM push_subscriptions WHERE endpoint = ? AND address = ?').run(endpoint, address);
 }
 
-export function getPushSubscriptionsForAddress(address: string): PushSubscriptionRow[] {
+export function getPushSubscriptionsForAddress(address: Address): PushSubscriptionRow[] {
   return db.query('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE address = ?')
-    .all(address.toLowerCase()) as PushSubscriptionRow[];
+    .all(address) as PushSubscriptionRow[];
 }
 
-export function getConversationPartners(address: string): string[] {
-  const normalized = address.toLowerCase();
+export function getConversationPartners(address: Address): Address[] {
   const rows = db
     .query(
       `SELECT DISTINCT CASE WHEN sender = ? THEN recipient ELSE sender END AS partner
        FROM messages
        WHERE sender = ? OR recipient = ?`,
     )
-    .all(normalized, normalized, normalized) as Array<{ partner: string }>;
-  return rows.map(r => r.partner);
+    .all(address, address, address) as Array<{ partner: string }>;
+  return rows.map(r => requireAddress(r.partner));
 }
 
 export function getDb(): Database {
@@ -458,7 +486,7 @@ export function getDb(): Database {
 }
 
 /** The write lock covers the clock read, availability check and transition. */
-export function openMessages(recipient: string, sender: string, ids: string[]): {
+export function openMessages(recipient: Address, sender: Address, ids: string[]): {
   server_time: number; results: OpeningResult[]; updates: ExpiryUpdate[];
 } {
   return db.transaction(() => {
@@ -467,8 +495,8 @@ export function openMessages(recipient: string, sender: string, ids: string[]): 
     const results = ids.map((id): OpeningResult => {
       const row = db.query(`SELECT * FROM messages
         WHERE id = ? AND recipient = ? AND sender = ? AND expires_at > ?`)
-        .get(id, recipient, sender, now) as MessageRow | null;
-      if (!row) return { id, status: 'unavailable' };
+        .get(id, recipient, sender, now) as StoredMessageRow | null;
+      if (!row || !validMessageAddresses(row)) return { id, status: 'unavailable' };
       if (row.opened_at === null) {
         row.opened_at = now;
         row.expires_at = now + row.ttl_seconds * 1000;
@@ -485,7 +513,7 @@ export function openMessages(recipient: string, sender: string, ids: string[]): 
 }
 
 /** Read a consistent lifecycle snapshot without acknowledging opening. */
-export function getMessageStates(address: string, counterparty: string, ids: string[]): {
+export function getMessageStates(address: Address, counterparty: Address, ids: string[]): {
   server_time: number; results: OpeningResult[];
 } {
   return db.transaction(() => {

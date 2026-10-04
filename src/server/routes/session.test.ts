@@ -1,9 +1,10 @@
+import { requireAddress } from '../../shared/address'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { createSession, initDb } from '../db.ts'
 import { createFetch } from '../router.ts'
 
 const token = 'session-route-token'
-const address = `0x${'a'.repeat(40)}`
+const address = requireAddress(`0x${'a'.repeat(40)}`)
 const server = { requestIP: () => ({ address: '127.0.0.1' }) }
 
 describe('session route', () => {

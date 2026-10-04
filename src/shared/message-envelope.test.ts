@@ -1,3 +1,4 @@
+import { requireAddress } from './address'
 import { describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
@@ -23,8 +24,8 @@ async function signedEnvelope(): Promise<MessageEnvelope> {
   const unsigned = {
     version: MESSAGE_ENVELOPE_VERSION,
     id: `0x${'44'.repeat(16)}`,
-    sender: sender.address.toLowerCase(),
-    recipient: recipient.address.toLowerCase(),
+    sender: requireAddress(sender.address),
+    recipient: requireAddress(recipient.address),
     ttl: 300,
     ct_recipient: `0x${'55'.repeat(32)}`,
     ephemeral_pub_recipient: ephemeral,
@@ -45,10 +46,10 @@ describe('message envelope protocol', () => {
     const envelope = await signedEnvelope()
     const { signature: _, ...unsigned } = envelope
     expect(canonicalMessageAad(envelope)).toBe(
-      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300`,
+      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300`,
     )
     expect(canonicalMessageEnvelope(unsigned)).toBe(
-      `0xChat signed message envelope v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300\nRecipient ciphertext: 0x${'55'.repeat(32)}\nRecipient ephemeral public key: ${ephemeral}\nRecipient IV: 0x${'66'.repeat(12)}\nSender ciphertext: 0x${'77'.repeat(32)}\nSender ephemeral public key: ${ephemeral}\nSender IV: 0x${'88'.repeat(12)}`,
+      `0xChat signed message envelope v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300\nRecipient ciphertext: 0x${'55'.repeat(32)}\nRecipient ephemeral public key: ${ephemeral}\nRecipient IV: 0x${'66'.repeat(12)}\nSender ciphertext: 0x${'77'.repeat(32)}\nSender ephemeral public key: ${ephemeral}\nSender IV: 0x${'88'.repeat(12)}`,
     )
     expect(envelope.signature).toBe(
       '0x6cd306a871ad6df8447ce426fca91939a3fe4d58a969199ce0e33d699988a51d6298d00de84b3aeffe78985cd33cb59a9ba7c0b9fbb0445fde5ee7c09813ab4d1b',
@@ -61,8 +62,8 @@ describe('message envelope protocol', () => {
     const mutations: Partial<Record<keyof MessageEnvelope, unknown>>[] = [
       { version: 1 },
       { id: `0x${'45'.repeat(16)}` },
-      { sender: recipient.address.toLowerCase() },
-      { recipient: sender.address.toLowerCase() },
+      { sender: requireAddress(recipient.address) },
+      { recipient: requireAddress(sender.address) },
       { ttl: 60 },
       { ct_recipient: `0x${'56'.repeat(32)}` },
       { ephemeral_pub_recipient: bytesToHex(secp.getPublicKey(hexToBytes(`0x${'34'.repeat(32)}`), true)) },

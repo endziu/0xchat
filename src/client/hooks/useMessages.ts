@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'preact/hooks'
 import { api } from '../lib/api'
 import type { ConversationRefreshResult } from './useConversations'
@@ -23,7 +24,7 @@ const NO_CONVERSATION: SessionSnapshot = {
   hasMore: false, loadingOlder: false, openingFailed: false, recipientPubkey: null, seenThrough: null,
 }
 
-function apiProtocol(identity: Keypair, partner: string, token: string, refreshConversations: () => Promise<ConversationRefreshResult>): ConversationProtocol {
+function apiProtocol(identity: Keypair, partner: Address, token: string, refreshConversations: () => Promise<ConversationRefreshResult>): ConversationProtocol {
   return {
     partnerPubkey: async () => (await api.getPubkey(partner)).pubkey,
     history: (limit, before) => api.getMessages(partner, token, before?.before, before?.rowid ?? undefined, limit),
@@ -43,7 +44,7 @@ function apiProtocol(identity: Keypair, partner: string, token: string, refreshC
   }
 }
 
-function decryptFor(identity: Keypair, partner: string) {
+function decryptFor(identity: Keypair, partner: Address) {
   return async (input: unknown): Promise<DecryptedMessage | null> => {
     const msg = await verifyDeliveredMessage(input)
     if (!msg || !isEnvelopeParticipant(msg, identity.address)) {
@@ -52,7 +53,7 @@ function decryptFor(identity: Keypair, partner: string) {
     }
     // Live events from other conversations share the stream.
     if (!isEnvelopeParticipant(msg, identity.address, partner)) return null
-    const isMine = msg.sender === identity.address.toLowerCase()
+    const isMine = msg.sender === identity.address
     const ciphertext = isMine ? msg.ct_sender : msg.ct_recipient
     const ephPub = isMine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient
     const iv = isMine ? msg.iv_sender : msg.iv_recipient
@@ -80,7 +81,7 @@ function decryptFor(identity: Keypair, partner: string) {
  * changes through the returned `connectionChanged`, and its events through
  * `liveEvent`.
  */
-export function useMessages(recipientAddress: string | null, identity: Keypair | null, token: string | null, connection: LiveConnection, refreshConversations: () => Promise<ConversationRefreshResult>) {
+export function useMessages(recipientAddress: Address | null, identity: Keypair | null, token: string | null, connection: LiveConnection, refreshConversations: () => Promise<ConversationRefreshResult>) {
   const [, setVersion] = useState(0)
   const rerender = useCallback(() => setVersion(version => version + 1), [])
   // Chosen during render, so a previous conversation's or identity's messages

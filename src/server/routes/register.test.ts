@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address'
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
@@ -19,7 +20,7 @@ beforeEach(() => {
 });
 
 const privateKey = `0x${'77'.repeat(32)}` as const;
-const address = privateKeyToAccount(privateKey).address.toLowerCase();
+const address = requireAddress(privateKeyToAccount(privateKey).address);
 const publicKey = bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true));
 
 function context(
@@ -123,7 +124,7 @@ describe('registration write rate limit', () => {
 
     for (let count = 1; count <= 11; count++) {
       const identityPrivateKey = `0x${count.toString(16).padStart(2, '0').repeat(32)}` as const;
-      const identityAddress = privateKeyToAccount(identityPrivateKey).address.toLowerCase();
+      const identityAddress = requireAddress(privateKeyToAccount(identityPrivateKey).address);
       const identityPubkey = bytesToHex(secp.getPublicKey(hexToBytes(identityPrivateKey), true));
       const challengeResponse = await handleRegisterChallenge(context(
         `challenge-${count}-${Math.random()}`, '/api/register/challenge',

@@ -1,10 +1,11 @@
+import { requireAddress } from '../../shared/address'
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { ConversationMessages, type DecryptedMessage } from './conversation-messages'
 import { UNOPENED_RETENTION_MS, type MessageLifecycle } from '../../shared/message-envelope'
 
 // This store receives envelopes only after signature verification and decryption.
 const message: DecryptedMessage = {
-  version: 2, id: 'one', sender: 'alice', recipient: 'bob', ttl: 5,
+  version: 2, id: 'one', sender: requireAddress('0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1'), recipient: requireAddress('0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2'), ttl: 5,
   ct_recipient: '', ephemeral_pub_recipient: '', iv_recipient: '',
   ct_sender: '', ephemeral_pub_sender: '', iv_sender: '', signature: '',
   plaintext: 'confirmed content', delivery_policy: 'recipient-opening',
@@ -24,7 +25,7 @@ test('confirmation expires on server time plus elapsed time despite wall-clock s
   let elapsed = 100
   spyOn(performance, 'now').mockImplementation(() => elapsed)
   spyOn(Date, 'now').mockReturnValue(10 ** 12)
-  const store = new ConversationMessages('bob')
+  const store = new ConversationMessages(requireAddress('0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2'))
   store.add([message])
   store.sweep(store.now(), conditions)
   expect(store.takePending()).toEqual([message.id])
@@ -46,7 +47,7 @@ test('malformed confirmation time and conflicting final deadlines require retry'
     { ...response(opened), server_time: -1 },
     response({ ...opened, opened_at: 2_001, expires_at: 7_001 }, 2_001),
   ]) {
-    const store = new ConversationMessages('bob')
+    const store = new ConversationMessages(requireAddress('0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2'))
     store.add([{ ...message, ...opened }])
     store.takePending()
     store.confirmOpening([message.id], invalid)
@@ -60,7 +61,7 @@ test('malformed confirmation time and conflicting final deadlines require retry'
 })
 
 test('state refresh rejects inconsistent metadata and malformed server time', () => {
-  const store = new ConversationMessages('alice')
+  const store = new ConversationMessages(requireAddress('0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1'))
   store.add([message])
   expect(store.applyStates([message.id], response({ ...opened, created_at: 999 }))).toBe(false)
   expect(store.applyStates([message.id], response({
@@ -74,7 +75,7 @@ test('state refresh rejects inconsistent metadata and malformed server time', ()
 test('stale unopened state preserves the final deadline and later samples never extend availability', () => {
   let elapsed = 100
   spyOn(performance, 'now').mockImplementation(() => elapsed)
-  const store = new ConversationMessages('alice')
+  const store = new ConversationMessages(requireAddress('0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1'))
   store.add([message])
   expect(store.applyStates([message.id], response(opened), 100)).toBe(true)
   elapsed = 200
@@ -87,7 +88,7 @@ test('stale unopened state preserves the final deadline and later samples never 
 })
 
 test('clearing removes messages accepted through the clear time, including ones that load later', () => {
-  const store = new ConversationMessages('alice')
+  const store = new ConversationMessages(requireAddress('0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1'))
   const later = { ...message, id: 'later', created_at: 3_000 }
   store.add([message, later])
   store.clear(2_000)

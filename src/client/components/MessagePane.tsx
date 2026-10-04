@@ -1,3 +1,4 @@
+import { checksumAddress, type Address } from '../../shared/address'
 import { Fragment } from 'preact'
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, ImagePlus, X, Trash2, Timer, LoaderCircle } from 'lucide-preact'
@@ -13,9 +14,9 @@ import { useCopied } from '../hooks/useCopied'
 import { displayName, fmtDay, fmtRemaining, fmtTime, shortAddr } from '../lib/display'
 
 interface MessagePaneProps {
-  recipientAddress: string
-  selfAddress: string
-  labels: Record<string, string>
+  recipientAddress: Address
+  selfAddress: Address
+  labels: Record<Address, string>
   // An empty name removes the label.
   onRename: (name: string) => void
   // The partner burned their identity, so nothing more can be delivered.
@@ -62,7 +63,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
   useEffect(() => subscribeDefaultLifetimeSetting(() => setTtl(resolveComposerLifetime())), [])
   const [sending, setSending] = useState(false)
   const [copied, copy] = useCopied()
-  const label = labels[recipientAddress.toLowerCase()]
+  const label = labels[recipientAddress]
   const [renaming, setRenaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -269,13 +270,13 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
               <span className="max-w-full truncate text-xs text-neutral-500">
                 {label ? (
                   <>
-                    <span className="max-sm:hidden">{recipientAddress}</span>
+                    <span className="max-sm:hidden">{checksumAddress(recipientAddress)}</span>
                     <span className="sm:hidden">{shortAddr(recipientAddress)}</span>
                   </>
                 ) : 'Add a name'}
               </span>
             </button>
-            <button onClick={() => copy(recipientAddress)} title="Copy address" aria-label="Copy address" className="border-0 header-action">
+            <button onClick={() => copy(checksumAddress(recipientAddress))} title="Copy address" aria-label="Copy address" className="border-0 header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
             <button
@@ -324,13 +325,13 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
           </div>
         )}
         {messages.map((msg, i) => {
-          const isMine = msg.sender.toLowerCase() !== recipientAddress.toLowerCase()
+          const isMine = msg.sender !== recipientAddress
           const isImage = msg.plaintext.startsWith('data:image/')
           const prev = messages[i - 1]
           // A conversation can span midnight: mark where each earlier day starts.
           const day = fmtDay(msg.created_at, now)
           const newDay = prev ? day !== fmtDay(prev.created_at, now) : day !== null
-          const sameSender = !newDay && prev && prev.sender.toLowerCase() === msg.sender.toLowerCase()
+          const sameSender = !newDay && prev && prev.sender === msg.sender
           const sameMinute = sameSender && fmtTime(prev.created_at) === fmtTime(msg.created_at)
           const remaining = fmtRemaining(msg.expires_at, now)
 

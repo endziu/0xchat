@@ -1,3 +1,5 @@
+import { conversationPath } from '../lib/address-links'
+import { checksumAddress } from '../../shared/address'
 import type { ComponentChildren } from 'preact'
 import { useState, useEffect } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
@@ -67,10 +69,10 @@ export function Layout({
                 still show which identity is active. */}
             <AddressAvatar address={identity.address} size={20} />
             <span className="max-sm:hidden">{shortAddr(identity.address)}</span>
-            <button onClick={() => copy(identity.address)} title="Copy Address" aria-label="Copy address" className="header-action">
+            <button onClick={() => copy(checksumAddress(identity.address))} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
-            <button onClick={() => copyLink(`${window.location.origin}/chat/${identity.address}`)} title="Copy conversation link" aria-label="Copy conversation link" className="header-action">
+            <button onClick={() => copyLink(`${window.location.origin}${conversationPath(identity.address)}`)} title="Copy conversation link" aria-label="Copy conversation link" className="header-action">
               {linkCopied ? <Check size={14} /> : <Link size={14} />}
             </button>
             <button onClick={() => setShowQR(true)} title="Show QR code" aria-label="Show QR code" className="header-action">
@@ -106,7 +108,7 @@ export function Layout({
           mode="show"
           address={identity.address}
           onClose={() => setShowQR(false)}
-          onScan={(addr) => { setShowQR(false); navigate?.(`/chat/${addr.toLowerCase()}`) }}
+          onScan={(addr) => { setShowQR(false); navigate?.(`/chat/${addr}`) }}
         />
       )}
     </div>

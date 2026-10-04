@@ -1,3 +1,4 @@
+import { requireAddress, type Address } from './address'
 import * as secp from '@noble/secp256k1'
 import { hexToBytes, keccak256 } from 'viem'
 
@@ -6,7 +7,7 @@ export type AddressBoundPublicKeyResult =
   | { ok: false; reason: 'invalid-public-key' | 'address-mismatch' }
 
 export function verifyAddressBoundPublicKey(
-  address: string,
+  address: Address,
   candidatePublicKey: unknown,
 ): AddressBoundPublicKeyResult {
   if (typeof candidatePublicKey !== 'string') return { ok: false, reason: 'invalid-public-key' }
@@ -20,8 +21,8 @@ export function verifyAddressBoundPublicKey(
   try {
     const point = secp.Point.fromBytes(hexToBytes(`0x${publicKey}`))
     const uncompressed = point.toBytes(false)
-    const derivedAddress = `0x${keccak256(uncompressed.slice(1)).slice(-40)}`.toLowerCase()
-    if (derivedAddress !== address.toLowerCase()) {
+    const derivedAddress = requireAddress(`0x${keccak256(uncompressed.slice(1)).slice(-40)}`)
+    if (derivedAddress !== address) {
       return { ok: false, reason: 'address-mismatch' }
     }
   } catch {

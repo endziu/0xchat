@@ -1,4 +1,4 @@
-import { getAddress } from 'viem'
+import { requireAddress, type Address } from '../shared/address'
 import { signEIP191, type Keypair } from '../client/lib/burner'
 import { decrypt } from '../client/lib/crypto'
 import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
@@ -11,8 +11,8 @@ export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
 const availabilityDeadline = Symbol('availabilityDeadline')
 export interface PlainMessage extends MessageLifecycle {
   id: string
-  sender: string
-  recipient: string
+  sender: Address
+  recipient: Address
   ttl: number
   plaintext: string
   [availabilityDeadline]: number
@@ -55,10 +55,7 @@ export function applyExpiryUpdate(message: PlainMessage, update: ExpiryUpdate): 
   return true
 }
 
-export function address(value: string): string {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error('Expected an Ethereum address (0x followed by 40 hex digits)')
-  return getAddress(value).toLowerCase()
-}
+export const address = requireAddress
 
 export function serverOrigin(value: string): string {
   if (value === 'prod') value = 'https://chat.endziu.xyz'
@@ -172,9 +169,9 @@ export class ChatClient {
     finally { this.token = null }
   }
 
-  async send(to: string, plaintext: string, ttl = 300): Promise<PlainMessage> {
-    const recipient = address(to)
-    if (recipient === this.identity.address.toLowerCase()) throw new Error('Cannot message yourself')
+  async send(to: Address, plaintext: string, ttl = 300): Promise<PlainMessage> {
+    const recipient = to
+    if (recipient === this.identity.address) throw new Error('Cannot message yourself')
     if (!LIFETIMES.includes(ttl)) throw new Error(`Lifetime must be one of: ${LIFETIMES.join(', ')} seconds`)
     if (!plaintext.trim()) throw new Error('Message must not be empty')
     if (new TextEncoder().encode(plaintext).length > MAX_PLAINTEXT_BYTES) throw new Error('Message is too large')
@@ -187,10 +184,10 @@ export class ChatClient {
     return message
   }
 
-  async decode(input: unknown, partner: string): Promise<PlainMessage | null> {
+  async decode(input: unknown, partner: Address): Promise<PlainMessage | null> {
     const msg = await verifyDeliveredMessage(input)
     if (!msg || !isEnvelopeParticipant(msg, this.identity.address, partner)) throw new Error('Rejected unauthenticated or misaddressed message')
-    const mine = msg.sender === this.identity.address.toLowerCase()
+    const mine = msg.sender === this.identity.address
     const plaintext = await decrypt(
       mine ? msg.ct_sender : msg.ct_recipient,
       mine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient,
@@ -203,12 +200,13 @@ export class ChatClient {
       [availabilityDeadline]: performance.now() + Math.max(0, msg.expires_at - Date.now()) }
   }
 
-  conversations(): Promise<{ conversations: { address: string; last_message_at: number }[] }> {
-    return this.request('/api/conversations')
+  async conversations(): Promise<{ conversations: { address: Address; last_message_at: number }[] }> {
+    const result = await this.request<{ conversations: { address: unknown; last_message_at: number }[] }>('/api/conversations')
+    return { conversations: result.conversations.map(item => ({ ...item, address: requireAddress(item.address) })) }
   }
 
   private async confirmMessages(
-    partner: string,
+    partner: Address,
     messages: Array<{ raw: unknown; message: PlainMessage }>,
     action: 'open' | 'state',
   ): Promise<Map<string, MessageLifecycle>> {
@@ -239,8 +237,7 @@ export class ChatClient {
     return confirmed
   }
 
-  async read(partner: string, before?: number, rowid?: number, options: ReadOptions = {}): Promise<MessagePage> {
-    partner = address(partner)
+  async read(partner: Address, before?: number, rowid?: number, options: ReadOptions = {}): Promise<MessagePage> {
     const query = new URLSearchParams({ limit: '100' })
     if (before !== undefined) query.set('before', String(before))
     if (rowid !== undefined) query.set('before_rowid', String(rowid))
@@ -252,7 +249,7 @@ export class ChatClient {
       } catch { return null }
     }))
     const messages = decoded.filter((item): item is { raw: unknown; message: PlainMessage } => item !== null)
-    const identity = this.identity.address.toLowerCase()
+    const identity = this.identity.address
     const isIncoming = (message: PlainMessage) => message.recipient === identity
     const incoming = messages.filter(item => isIncoming(item.message))
     const confirmAvailability = options.confirmAvailability ?? true
@@ -273,15 +270,15 @@ export class ChatClient {
   }
 
   /** Decrypts a live delivery, then confirms its current availability before exposing it. */
-  async confirmLiveMessage(partner: string, raw: unknown): Promise<PlainMessage | null> {
+  async confirmLiveMessage(partner: Address, raw: unknown): Promise<PlainMessage | null> {
     const message = await this.decode(raw, partner)
     if (!message) return null
-    const incoming = message.recipient === this.identity.address.toLowerCase()
+    const incoming = message.recipient === this.identity.address
     const lifecycle = (await this.confirmMessages(partner, [{ raw, message }], incoming ? 'open' : 'state')).get(message.id)
     return lifecycle ? { ...message, ...lifecycle } : null
   }
 
-  async *history(partner: string, options: ReadOptions = {}): AsyncGenerator<PlainMessage[]> {
+  async *history(partner: Address, options: ReadOptions = {}): AsyncGenerator<PlainMessage[]> {
     let before: number | undefined
     let rowid: number | undefined
     const cursors = new Set<string>()

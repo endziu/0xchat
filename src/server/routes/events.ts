@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { randomBytes } from 'node:crypto';
 import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
@@ -9,7 +10,7 @@ import type { Context } from '../http.ts';
 const SSE_TOKEN_TTL_MS = 30_000;
 
 interface SseTokenEntry {
-  address: string;
+  address: Address;
   expiresAt: number;
 }
 
@@ -30,14 +31,14 @@ export class SseTokenStore {
     private readonly now: () => number = Date.now,
   ) {}
 
-  mint(address: string): string {
+  mint(address: Address): string {
     const token = randomBytes(16).toString('hex');
     this.tokens.set(token, { address, expiresAt: this.now() + this.ttlMs });
     return token;
   }
 
   /** Address bound to a live token, without consuming it. */
-  lookup(token: string): string | null {
+  lookup(token: string): Address | null {
     const entry = this.tokens.get(token);
     if (!entry || entry.expiresAt < this.now()) {
       this.tokens.delete(token);
@@ -47,7 +48,7 @@ export class SseTokenStore {
   }
 
   /** Consume a token (single-use); the bound address if live, else null. */
-  consume(token: string): string | null {
+  consume(token: string): Address | null {
     const address = this.lookup(token);
     if (address === null) return null;
     this.tokens.delete(token);
@@ -64,7 +65,7 @@ export class SseTokenStore {
 }
 
 const sseTokenStore = new SseTokenStore(SSE_TOKEN_TTL_MS);
-const liveStreams = new Map<string, { address: string; controller: ReadableStreamDefaultController }>();
+const liveStreams = new Map<string, { address: Address; controller: ReadableStreamDefaultController }>();
 
 export function cleanupSseTokens(): void {
   sseTokenStore.prune();

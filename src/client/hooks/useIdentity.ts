@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { useState, useEffect, useCallback } from 'preact/hooks'
 import { Keypair, loadKeypair, generateKeypair, saveKeypair, clearKeypair, signEIP191 } from '../lib/burner'
 import { api } from '../lib/api'
@@ -9,7 +10,7 @@ export function useIdentity() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const isAddressRegistered = useCallback(async (address: string): Promise<boolean> => {
+  const isAddressRegistered = useCallback(async (address: Address): Promise<boolean> => {
     const { pubkey } = await api.getPubkey(address)
     return !!pubkey
   }, [])

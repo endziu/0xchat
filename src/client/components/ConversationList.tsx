@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { UserX } from 'lucide-preact'
 import { MergedConversation } from '../hooks/useConversations'
@@ -8,12 +9,12 @@ import { ErrorState } from './ErrorState'
 
 interface ConversationListProps {
   conversations: MergedConversation[]
-  activeAddress: string | null
-  onSelect: (address: string) => void
+  activeAddress: Address | null
+  onSelect: (address: Address) => void
   onNewConversation: () => void
   // Takes the conversation off the list and forgets its label, on this device.
-  onRemove: (address: string) => void
-  labels?: Record<string, string>
+  onRemove: (address: Address) => void
+  labels?: Record<Address, string>
   error: string | null
   onRetry: () => void
 }
@@ -26,10 +27,10 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
   const removeConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(removeConfirmTimeout.current), [])
 
-  const handleRemove = (e: Event, address: string) => {
+  const handleRemove = (e: Event, address: Address) => {
     e.stopPropagation()
     clearTimeout(removeConfirmTimeout.current)
-    const addr = address.toLowerCase()
+    const addr = address
     if (removeConfirm === addr) {
       setRemoveConfirm(null)
       onRemove(address)
@@ -49,7 +50,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
     const map: Record<string, boolean> = {}
     for (const conv of conversations) {
       const lastSeen = localStorage.getItem(getLastSeenKey(conv.address))
-      map[conv.address.toLowerCase()] = !lastSeen || Number(lastSeen) < conv.last_message_at
+      map[conv.address] = !lastSeen || Number(lastSeen) < conv.last_message_at
     }
     setUnreadMap(map)
   }, [conversations, seenVersion])
@@ -74,8 +75,8 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
       {errorNotice}
       <ul className="list-none m-0 p-0">
         {conversations.map((conv) => {
-          const addr = conv.address.toLowerCase()
-          const isActive = activeAddress?.toLowerCase() === addr
+          const addr = conv.address
+          const isActive = activeAddress === addr
           const isUnread = unreadMap[addr]
           const label = labels[addr]
           const confirming = removeConfirm === addr

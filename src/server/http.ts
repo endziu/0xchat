@@ -1,3 +1,4 @@
+import type { Address } from '../shared/address'
 import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
 import { resolveClientIp } from './trusted-proxy.ts';
@@ -39,7 +40,7 @@ export function getClientIp(
   return resolveClientIp(peer, req.headers.get('x-forwarded-for'), trustedProxies);
 }
 
-export function getSessionAddress(req: Request): string | null {
+export function getSessionAddress(req: Request): Address | null {
   const token = getBearerToken(req);
   if (!token) return null;
   const session = getSession(token);

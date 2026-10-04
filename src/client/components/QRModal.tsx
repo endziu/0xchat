@@ -1,3 +1,5 @@
+import { conversationPath, parseScannedAddress } from '../lib/address-links'
+import { checksumAddress, type Address } from '../../shared/address'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
@@ -6,34 +8,22 @@ import { Modal } from './Modal'
 
 interface QRModalProps {
   mode: 'show' | 'scan'
-  address?: string
+  address?: Address
   onClose: () => void
-  onScan: (address: string) => void
-}
-
-function parseScannedAddress(text: string): string | null {
-  let candidate = text.trim()
-  try {
-    const url = new URL(text)
-    const match = url.pathname.match(/\/chat\/([^/]+)/)
-    if (match) candidate = match[1]
-  } catch {
-    // not a URL — treat the raw text as the address
-  }
-  return /^0x[0-9a-fA-F]{40}$/.test(candidate) ? candidate : null
+  onScan: (address: Address) => void
 }
 
 // Your address as a scannable conversation link, with the address beneath it.
-export function AddressQR({ address, size = 220 }: { address: string; size?: number }) {
+export function AddressQR({ address, size = 220 }: { address: Address; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     if (!canvasRef.current) return
-    QRCode.toCanvas(canvasRef.current, `${window.location.origin}/chat/${address}`, { margin: 1, width: size }).catch(() => {})
+    QRCode.toCanvas(canvasRef.current, `${window.location.origin}${conversationPath(address)}`, { margin: 1, width: size }).catch(() => {})
   }, [address, size])
   return (
     <>
       <canvas ref={canvasRef} className="bg-white" />
-      <p className="text-sm text-neutral-500 break-all text-center">{address}</p>
+      <p className="text-sm text-neutral-500 break-all text-center">{checksumAddress(address)}</p>
     </>
   )
 }

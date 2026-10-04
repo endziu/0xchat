@@ -1,23 +1,24 @@
+import type { Address } from '../shared/address'
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { recoveryMetadata } from './db.ts';
 
 interface RecoveryCursor {
   version: 1;
-  address: string;
-  counterparty: string;
+  address: Address;
+  counterparty: Address;
   lower: number;
   upper: number | null;
 }
 
 // A persisted key keeps cursors valid after restart, without storing a growing token log.
-export function issueRecoveryCursor(address: string, counterparty: string, lower: number, upper: number | null = null): string {
+export function issueRecoveryCursor(address: Address, counterparty: Address, lower: number, upper: number | null = null): string {
   const payload: RecoveryCursor = { version: 1, address, counterparty, lower, upper };
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const mac = createHmac('sha256', recoveryMetadata().cursor_key).update(encoded).digest('base64url');
   return `${encoded}.${mac}`;
 }
 
-export function readRecoveryCursor(token: string, address: string, counterparty: string): RecoveryCursor | null {
+export function readRecoveryCursor(token: string, address: Address, counterparty: Address): RecoveryCursor | null {
   if (token.length > 1024) return null;
   const parts = token.split('.');
   if (parts.length !== 2) return null;

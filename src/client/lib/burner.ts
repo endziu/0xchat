@@ -1,5 +1,6 @@
+import { requireAddress, type Address } from '../../shared/address'
 import * as secp from '@noble/secp256k1'
-import { keccak256, hexToBytes, bytesToHex, getAddress } from 'viem'
+import { keccak256, hexToBytes, bytesToHex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { ensure0x } from './hex'
 import { migrateKey } from './storage-migration'
@@ -7,7 +8,7 @@ import { migrateKey } from './storage-migration'
 export interface Keypair {
   privateKey: string
   publicKey: string
-  address: string
+  address: Address
 }
 
 export function generateKeypair(): Keypair {
@@ -27,7 +28,7 @@ export function deriveKeypair(privKey: string): Keypair {
   // 4. Take last 20 bytes
   const uncompressedPub = secp.getPublicKey(privBytes, false)
   const hash = keccak256(uncompressedPub.slice(1))
-  const address = getAddress(`0x${hash.slice(-40)}`)
+  const address = requireAddress(`0x${hash.slice(-40)}`)
   
   return { privateKey: privKey, publicKey, address }
 }
@@ -50,7 +51,11 @@ export function loadKeypair(): Keypair | null {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) return null
   try {
-    return JSON.parse(stored)
+    const value = JSON.parse(stored)
+    if (!value || typeof value.privateKey !== 'string' || typeof value.publicKey !== 'string') return null
+    const keypair: Keypair = { privateKey: value.privateKey, publicKey: value.publicKey, address: requireAddress(value.address) }
+    saveKeypair(keypair)
+    return keypair
   } catch {
     return null
   }

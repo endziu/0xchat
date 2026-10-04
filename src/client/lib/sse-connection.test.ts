@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { SseConnection } from './sse-connection'
 import type { LiveEvent } from '../../shared/live-events'
@@ -76,7 +77,7 @@ function makeClock() {
   }
 }
 
-const partner = `0x${'a1'.repeat(20)}`
+const partner = requireAddress(`0x${'a1'.repeat(20)}`)
 
 /** Token mints resolve in a microtask; flush before asserting sockets. */
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))

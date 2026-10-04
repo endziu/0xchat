@@ -1,3 +1,4 @@
+import { checksumAddress } from '../../shared/address'
 import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair, deriveKeypair } from '../lib/burner'
 import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
@@ -81,7 +82,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
             </div>
             <div className="mt-1 flex items-center gap-2 text-sm text-neutral-400">
               <AddressAvatar address={previewKeypair.address} />
-              <span className="min-w-0 break-all">{previewKeypair.address}</span>
+              <span className="min-w-0 break-all">{checksumAddress(previewKeypair.address)}</span>
             </div>
             <button className="mt-2" onClick={() => {
               if (confirmTimeout) { handleImportConfirm() } else {
