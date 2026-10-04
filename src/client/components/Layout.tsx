@@ -52,7 +52,13 @@ export function Layout({
       {error && <div className="p-2 text-center text-neutral-500 border-b border-neutral-800">{error}</div>}
       <header className="flex items-center justify-between min-h-11 px-2 sm:py-2 border-b border-neutral-800 shrink-0 gap-2">
         <div className="flex items-center gap-2">
-          <a href="/chat" onClick={(e) => { e.preventDefault(); navigate?.('/chat') }} className="whitespace-nowrap">⬡ 0xChat</a>
+          <a href="/chat" onClick={(e) => { e.preventDefault(); navigate?.('/chat') }} className="flex items-center gap-2 whitespace-nowrap">
+            {/* Phones have no room for the identity beside the buttons, so its
+                glyph takes the hexagon's place by the title. */}
+            {identity && <span className="flex sm:hidden"><AddressAvatar address={identity.address} size={20} /></span>}
+            <span className={identity ? 'max-sm:hidden' : undefined}>⬡</span>
+            0xChat
+          </a>
           {sseConnected !== undefined && (
             <span className="flex items-center gap-1 text-neutral-500 text-sm" title={sseConnected ? 'Live' : 'Connecting'}>
               <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-neutral-700'}`} />
@@ -64,12 +70,11 @@ export function Layout({
         </div>
         {identity && (
           <div className="flex items-center gap-2 max-sm:gap-1 text-sm text-neutral-500">
-            {/* The glyph stays when the address text is hidden, so phones
-                still show which identity is active. Text sits above its line
-                box's centre, so the pair moves down onto the buttons' centre. */}
-            <span className="flex items-center gap-2 translate-y-[0.05em]">
+            {/* On phones the glyph moves beside the title. Text sits above its
+                line box's centre, so the pair moves down onto the buttons' centre. */}
+            <span className="flex items-center gap-2 translate-y-[0.05em] max-sm:hidden">
               <AddressAvatar address={identity.address} size={20} />
-              <span className="max-sm:hidden">{shortAddress(identity.address)}</span>
+              <span>{shortAddress(identity.address)}</span>
             </span>
             <button onClick={() => copy(checksumAddress(identity.address))} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
