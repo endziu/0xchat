@@ -235,16 +235,3 @@ test('conversation responses parse legacy casing and reject invalid addresses', 
   globalThis.fetch = Object.assign(async () => Response.json({ conversations: [{ address: 'bad', last_message_at: 123 }] }), { preconnect: originalFetch.preconnect })
   await expect(api.getConversations('token')).rejects.toThrow('address')
 })
-
-test('message acknowledgements reject noncanonical protocol addresses', async () => {
-  const { deriveKeypair } = await import('./burner')
-  const { createSignedMessageEnvelope } = await import('./message-envelope')
-  const sender = deriveKeypair(`0x${'11'.repeat(32)}`)
-  const recipient = deriveKeypair(`0x${'22'.repeat(32)}`)
-  const envelope = await createSignedMessageEnvelope('hello', 300, sender, recipient.address, recipient.publicKey)
-  const delivered = { ...envelope, delivery_policy: 'recipient-opening' as const, created_at: 1000, opened_at: null, expires_at: 86401000 }
-  globalThis.fetch = Object.assign(async () => Response.json(delivered), { preconnect: originalFetch.preconnect })
-  expect(await api.sendMessage(envelope, 'token')).toEqual(delivered)
-  globalThis.fetch = Object.assign(async () => Response.json({ ...delivered, recipient: recipient.address.toUpperCase() }), { preconnect: originalFetch.preconnect })
-  await expect(api.sendMessage(envelope, 'token')).rejects.toThrow('Invalid message acknowledgement')
-})

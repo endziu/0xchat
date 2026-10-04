@@ -4,7 +4,7 @@ import { verifyEncryptionPublicKey } from './encryption-key'
 import { isApiErrorCode, type ApiErrorCode } from '../../shared/api-error'
 import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import { buildSessionChallenge } from '../../shared/session-challenge'
-import { DELIVERY_CAPABILITY, parseDeliveredMessage, type DeliveredMessage, type MessageEnvelope } from '../../shared/message-envelope'
+import { DELIVERY_CAPABILITY, type DeliveredMessage, type MessageEnvelope } from '../../shared/message-envelope'
 
 
 export type Message = DeliveredMessage
@@ -141,16 +141,12 @@ export const api = {
 
   // --- Authenticated endpoints (a session token is required) ---
 
-  sendMessage: async (data: MessageEnvelope, token: string): Promise<DeliveredMessage> => {
-    const response = await request<unknown>('/api/messages', {
+  sendMessage: (data: MessageEnvelope, token: string): Promise<DeliveredMessage> =>
+    request('/api/messages', {
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Content-Type': 'application/json' },
-    }, token)
-    const delivered = parseDeliveredMessage(response)
-    if (!delivered) throw new Error('Invalid message acknowledgement')
-    return delivered
-  },
+    }, token),
 
   getMessages: (address: Address, token: string, before?: number, beforeRowid?: number, limit?: number): Promise<MessagePage> => {
     const params = new URLSearchParams()

@@ -51,11 +51,8 @@ export function loadKeypair(): Keypair | null {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) return null
   try {
-    const value = JSON.parse(stored)
-    if (!value || typeof value.privateKey !== 'string' || typeof value.publicKey !== 'string') return null
-    const keypair: Keypair = { privateKey: value.privateKey, publicKey: value.publicKey, address: requireAddress(value.address) }
-    saveKeypair(keypair)
-    return keypair
+    // Derived again rather than read: older identities stored a checksummed address.
+    return deriveKeypair(JSON.parse(stored).privateKey)
   } catch {
     return null
   }

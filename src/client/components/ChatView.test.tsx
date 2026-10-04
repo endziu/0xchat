@@ -151,9 +151,10 @@ function mount(recipient: Address | null = aliceAddress) {
   let selected = recipient
   let identity = bobKey
   let token = bobToken
+  const navigations: string[] = []
   const view = () => (
     <ToastProvider>
-      <ChatView recipientAddress={selected} identity={identity} token={token} navigate={() => {}} />
+      <ChatView recipientAddress={selected} identity={identity} token={token} navigate={to => { navigations.push(to) }} />
     </ToastProvider>
   )
   render(view(), container)
@@ -162,6 +163,7 @@ function mount(recipient: Address | null = aliceAddress) {
   return {
     container,
     unmount,
+    navigations,
     text: () => container.textContent ?? '',
     select(address: Address | null) { selected = address; render(view(), container) },
     switchIdentity(next: Keypair, nextToken: string, address: Address) {
@@ -852,4 +854,22 @@ test('conversation address display and copying use its checksum', async () => {
   } finally {
     copy.mockRestore()
   }
+})
+
+test('selecting or starting a conversation navigates to its checksummed link', async () => {
+  const link = '/chat/0x1C5A77d9FA7eF466951B2F01F724BCa3A5820b63'
+  await alice.send(bobKey.address, 'hello', 300)
+  const view = mount(null)
+  await waitFor(() => view.container.querySelector('nav li') !== null)
+  view.container.querySelector<HTMLElement>('nav li')!.click()
+
+  button('New conversation').click()
+  await waitFor(() => view.container.querySelector('input[aria-label="Address"]') !== null)
+  const input = view.container.querySelector<HTMLInputElement>('input[aria-label="Address"]')!
+  input.value = aliceAddress
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await Bun.sleep(0)
+  ;[...view.container.querySelectorAll('button')].find(b => b.textContent === 'Start')!.click()
+  await waitFor(() => view.navigations.length === 2)
+  expect(view.navigations).toEqual([link, link])
 })

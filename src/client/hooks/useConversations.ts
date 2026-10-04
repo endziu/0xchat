@@ -1,7 +1,7 @@
 import type { Address } from '../../shared/address'
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks'
 import { api, Conversation } from '../lib/api'
-import { loadLabels, mergeContacts, loadContacts, markConversationRemoved, isRemoved } from '../lib/contacts'
+import { loadLabels, saveLabels, mergeContacts, loadContacts, markConversationRemoved, isRemoved } from '../lib/contacts'
 import { errorMessage } from '../lib/errors'
 
 export type ConversationRefreshResult = 'refreshed' | 'failed' | 'cancelled'
@@ -78,7 +78,7 @@ export function useConversations(token: string | null) {
     setLabels(prev => {
       const next: Record<Address, string> = { ...prev, [address]: name.trim() }
       if (!name.trim()) delete next[address]
-      localStorage.setItem('conversation_labels', JSON.stringify(next))
+      saveLabels(next)
       return next
     })
   }, [])
@@ -90,7 +90,7 @@ export function useConversations(token: string | null) {
     setLabels(prev => {
       const next = { ...prev }
       delete next[address]
-      localStorage.setItem('conversation_labels', JSON.stringify(next))
+      saveLabels(next)
       return next
     })
     setConversations(prev => prev.filter(c => c.address !== address))

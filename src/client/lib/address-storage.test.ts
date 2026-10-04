@@ -1,8 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { requireAddress } from '../../shared/address'
-import { loadKeypair } from './burner'
-import { getToken } from './session'
-import { loadContacts, isRemoved, getLastSeenKey, loadLabels } from './contacts'
+import { checksumAddress } from '../../shared/address'
+import { deriveKeypair, loadKeypair } from './burner'
 
 const values = new Map<string, string>()
 globalThis.localStorage = {
@@ -15,24 +13,10 @@ globalThis.localStorage = {
 } as Storage
 beforeEach(() => values.clear())
 
-test('legacy casing preserves identity, session, labels, removals and newest read markers', () => {
-  const legacy = '0x52908400098527886E0F7030069857D2E4169EE7'
-  const address = requireAddress(legacy)
-  values.set('eth_chat_burner_v1', JSON.stringify({ address: legacy, privateKey: 'key', publicKey: 'pubkey' }))
-  values.set('eth_chat_session_v1', JSON.stringify({ address: legacy, token: 'token' }))
-  values.set('eth_chat_known_contacts_v1', JSON.stringify({ [legacy]: { address: legacy, last_message_at: 20 }, [address]: { address, last_message_at: 10 } }))
-  values.set('conversation_labels', JSON.stringify({ [legacy]: 'Alice' }))
-  values.set('eth_chat_deleted_contacts_v1', JSON.stringify({ [legacy]: 30, [address]: 10 }))
-  values.set(`last_seen_${legacy}`, '25')
-  values.set(`last_seen_${address}`, '15')
-
-  expect(loadKeypair()?.address).toBe(address)
-  expect(getToken(address)).toBe('token')
-  expect(loadContacts()).toEqual({ [address]: { address, last_message_at: 20 } })
-  expect(loadLabels()).toEqual({ [address]: 'Alice' })
-  expect(isRemoved(address, 29)).toBe(true)
-  expect(localStorage.getItem(getLastSeenKey(address))).toBe('25')
-  expect(JSON.parse(values.get('0xchat_session_v1')!).address).toBe(address)
-  expect(JSON.parse(values.get('0xchat_burner_v1')!).address).toBe(address)
-  expect(values.has(`last_seen_${legacy}`)).toBe(false)
+test('a stored identity loads by its private key, whatever its stored address says', () => {
+  const keypair = deriveKeypair(`0x${'12'.repeat(32)}`)
+  for (const address of [checksumAddress(keypair.address), 'corrupt', undefined]) {
+    values.set('eth_chat_burner_v1', JSON.stringify({ ...keypair, address }))
+    expect(loadKeypair()).toEqual(keypair)
+  }
 })

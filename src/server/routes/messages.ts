@@ -223,7 +223,7 @@ export async function handleRecoverMessages({ req, url, path, ip }: Context): Pr
     messages: page.rows.map(deliveredRow),
     server_time: page.server_time,
     exhausted: page.exhausted,
-    next_cursor: page.exhausted ? null : issueRecoveryCursor(address, counterparty, page.last_sequence!, page.upper),
+    next_cursor: page.exhausted ? null : issueRecoveryCursor(address, counterparty, page.rows.at(-1)!.acceptance_seq, page.upper),
     recovery_cursor: page.exhausted ? issueRecoveryCursor(address, counterparty, page.upper) : null,
   });
 }

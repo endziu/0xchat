@@ -1,4 +1,4 @@
-import { parseAddress, type Address } from '../../shared/address'
+import type { Address } from '../../shared/address'
 import { migrateKey } from './storage-migration'
 
 const SESSION_KEY = '0xchat_session_v1'
@@ -25,15 +25,10 @@ export function getToken(address: Address): string | null {
 
   try {
     const session = JSON.parse(raw) as Partial<StoredSession>
-    if (
-      typeof session.address !== 'string'
-      || typeof session.token !== 'string'
-      || parseAddress(session.address) !== address
-    ) {
+    if (typeof session.token !== 'string' || session.address !== address) {
       localStorage.removeItem(SESSION_KEY)
       return null
     }
-    saveToken(address, session.token)
     return session.token
   } catch {
     localStorage.removeItem(SESSION_KEY)

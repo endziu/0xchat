@@ -1,4 +1,5 @@
-import { parseAddress, type Address } from '../../shared/address'
+import { checksumAddress, parseAddress, type Address } from '../../shared/address'
+import { conversationPath } from '../lib/address-links'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { ConversationList } from './ConversationList'
 import { MessagePane } from './MessagePane'
@@ -105,7 +106,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       const { pubkey } = await api.getPubkey(addr)
       if (!pubkey) { setNewChatError('Address not registered yet.'); return }
       if (newChatName.trim()) setLabel(addr, newChatName)
-      navigate(`/chat/${addr}`)
+      navigate(conversationPath(addr))
       setNewChatAddr(null)
     } catch (err: any) {
       setNewChatError(err.message || 'Failed to check registration.')
@@ -122,9 +123,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     else if (e.key === 'Escape') closeNewChat()
   }
 
-  const handleScan = (addr: string) => {
+  const handleScan = (addr: Address) => {
     setShowScanner(false)
-    setNewChatAddr(addr)
+    setNewChatAddr(checksumAddress(addr))
     resolveAndNavigate(addr)
   }
 
@@ -181,7 +182,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             <ConversationList
               conversations={conversations}
               activeAddress={recipientAddress}
-              onSelect={(addr) => navigate(`/chat/${addr}`)}
+              onSelect={(addr) => navigate(conversationPath(addr))}
               onNewConversation={openNewChat}
               onRemove={handleRemoveConversation}
               labels={labels}

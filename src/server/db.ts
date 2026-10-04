@@ -1,4 +1,4 @@
-import { parseAddress, requireAddress, isCanonicalAddress, type Address } from '../shared/address'
+import type { Address } from '../shared/address'
 import { Database } from 'bun:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
@@ -152,37 +152,6 @@ export function initDb(path = 'chat.db'): void {
   }).immediate();
   // Cipher and canonicalization changes cannot be upgraded without plaintext.
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
-  normalizeStoredAddresses();
-}
-
-// Unsigned legacy records can be normalized without invalidating sessions.
-// Message participants are signed: validate them on read, never rewrite them.
-function normalizeStoredAddresses(): void {
-  db.transaction(() => {
-    const registrations = db.query('SELECT address, pubkey, last_active_at FROM pubkeys').all() as
-      Array<{ address: string; pubkey: string; last_active_at: number }>;
-    for (const row of registrations) {
-      const address = parseAddress(row.address);
-      if (!address || address === row.address) continue;
-      db.query(`INSERT INTO pubkeys VALUES (?, ?, ?) ON CONFLICT(address) DO UPDATE SET
-        last_active_at = MAX(pubkeys.last_active_at, excluded.last_active_at)`)
-        .run(address, row.pubkey, row.last_active_at);
-      db.query('DELETE FROM pubkeys WHERE address = ?').run(row.address);
-    }
-    for (const table of ['sessions', 'push_subscriptions']) {
-      const rows = db.query(`SELECT DISTINCT address FROM ${table}`).all() as Array<{ address: string }>;
-      for (const row of rows) {
-        const address = parseAddress(row.address);
-        if (address && address !== row.address) {
-          db.query(`UPDATE ${table} SET address = ? WHERE address = ?`).run(address, row.address);
-        }
-      }
-    }
-  }).immediate();
-}
-
-function validMessageAddresses<T extends { sender: string; recipient: string }>(row: T): row is T & { sender: Address; recipient: Address } {
-  return isCanonicalAddress(row.sender) && isCanonicalAddress(row.recipient);
 }
 
 export function registerPubkey(address: Address, pubkey: string): void {
@@ -229,14 +198,13 @@ export function getSession(token: string): SessionRow | null {
     .query(
       'SELECT address, expires_at FROM sessions WHERE token = ?',
     )
-    .get(hash) as { address: unknown; expires_at: number } | null;
+    .get(hash) as SessionRow | null;
   if (!row) return null;
   if (row.expires_at < Date.now()) {
     db.query('DELETE FROM sessions WHERE token = ?').run(hash);
     return null;
   }
-  const address = parseAddress(row.address);
-  return address ? { ...row, address } : null;
+  return row;
 }
 
 export function deleteSession(token: string): void {
@@ -286,8 +254,6 @@ export interface MessageRow extends MessageLifecycle {
   signature: string;
 }
 
-type StoredMessageRow = Omit<MessageRow, 'sender' | 'recipient'> & { sender: string; recipient: string };
-
 export interface ConversationPage {
   rows: Array<MessageRow & { seq: number }>;
   next_before: number | null;
@@ -329,10 +295,10 @@ function readConversationMessages(
        ORDER BY created_at DESC, rowid DESC
        LIMIT ?`,
     )
-    .all(now, ...cutoffParams, addr1, addr2, addr2, addr1, limit) as Array<StoredMessageRow & { seq: number }>;
+    .all(now, ...cutoffParams, addr1, addr2, addr2, addr1, limit) as Array<MessageRow & { seq: number }>;
   const oldest = rows[rows.length - 1];
   return {
-    rows: rows.filter(validMessageAddresses),
+    rows,
     next_before: oldest ? oldest.created_at : null,
     next_before_rowid: oldest ? oldest.seq : null,
   };
@@ -361,9 +327,9 @@ export function recoverMessages(address: Address, counterparty: Address, lower: 
       WHERE acceptance_seq > ? AND acceptance_seq <= ? AND expires_at > ?
       AND ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))
       ORDER BY acceptance_seq LIMIT 101`)
-      .all(lower, bound, now, address, counterparty, counterparty, address) as Array<StoredMessageRow & { acceptance_seq: number }>;
+      .all(lower, bound, now, address, counterparty, counterparty, address) as Array<MessageRow & { acceptance_seq: number }>;
     const exhausted = rows.length <= 100;
-    return { rows: rows.slice(0, 100).filter(validMessageAddresses), last_sequence: rows.slice(0, 100).at(-1)?.acceptance_seq, upper: bound, exhausted, server_time: now };
+    return { rows: rows.slice(0, 100), upper: bound, exhausted, server_time: now };
   })();
 }
 
@@ -387,8 +353,7 @@ export function getConversations(
        GROUP BY counterparty
        ORDER BY last_message_at DESC`,
     )
-    .all(address, now, address, address)
-    .map(row => { const value = row as { counterparty: string; last_message_at: number }; return { ...value, counterparty: requireAddress(value.counterparty) }; });
+    .all(address, now, address, address) as ConversationSummary[];
 }
 
 export function deleteExpiredMessages(): void {
@@ -477,8 +442,8 @@ export function getConversationPartners(address: Address): Address[] {
        FROM messages
        WHERE sender = ? OR recipient = ?`,
     )
-    .all(address, address, address) as Array<{ partner: string }>;
-  return rows.map(r => requireAddress(r.partner));
+    .all(address, address, address) as Array<{ partner: Address }>;
+  return rows.map(r => r.partner);
 }
 
 export function getDb(): Database {
@@ -495,8 +460,8 @@ export function openMessages(recipient: Address, sender: Address, ids: string[])
     const results = ids.map((id): OpeningResult => {
       const row = db.query(`SELECT * FROM messages
         WHERE id = ? AND recipient = ? AND sender = ? AND expires_at > ?`)
-        .get(id, recipient, sender, now) as StoredMessageRow | null;
-      if (!row || !validMessageAddresses(row)) return { id, status: 'unavailable' };
+        .get(id, recipient, sender, now) as MessageRow | null;
+      if (!row) return { id, status: 'unavailable' };
       if (row.opened_at === null) {
         row.opened_at = now;
         row.expires_at = now + row.ttl_seconds * 1000;

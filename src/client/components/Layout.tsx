@@ -108,7 +108,7 @@ export function Layout({
           mode="show"
           address={identity.address}
           onClose={() => setShowQR(false)}
-          onScan={(addr) => { setShowQR(false); navigate?.(`/chat/${addr}`) }}
+          onScan={(addr) => { setShowQR(false); navigate?.(conversationPath(addr)) }}
         />
       )}
     </div>
