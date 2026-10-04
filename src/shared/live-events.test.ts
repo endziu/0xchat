@@ -1,11 +1,12 @@
+import { requireAddress } from './address'
 import { expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
 import { LIVE_EVENT_TYPES, parseLiveEvent } from './live-events'
 import { MESSAGE_ENVELOPE_VERSION } from './message-envelope'
 
-const alice = `0x${'a1'.repeat(20)}`
-const bob = `0x${'b2'.repeat(20)}`
+const alice = requireAddress(`0x${'a1'.repeat(20)}`)
+const bob = requireAddress(`0x${'b2'.repeat(20)}`)
 const ephemeral = bytesToHex(secp.getPublicKey(hexToBytes(`0x${'33'.repeat(32)}`), true))
 
 // Structurally valid, but the signature is never checked: that is the consumer's trust decision.

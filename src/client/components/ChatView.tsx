@@ -1,3 +1,5 @@
+import { checksumAddress, parseAddress, type Address } from '../../shared/address'
+import { conversationPath } from '../lib/address-links'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { ConversationList } from './ConversationList'
 import { MessagePane } from './MessagePane'
@@ -15,7 +17,7 @@ import { Plus, X, QrCode } from 'lucide-preact'
 import { QRModal } from './QRModal'
 
 interface ChatViewProps {
-  recipientAddress: string | null
+  recipientAddress: Address | null
   identity: Keypair
   token: string
   navigate: (to: string) => void
@@ -29,12 +31,12 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const [newChatError, setNewChatError] = useState('')
   const newChatInputRef = useRef<HTMLInputElement>(null)
   // Partners who burned their identity this session: nothing can reach them.
-  const [departed, setDeparted] = useState<ReadonlySet<string>>(new Set())
+  const [departed, setDeparted] = useState<ReadonlySet<Address>>(new Set())
   const [showScanner, setShowScanner] = useState(false)
 
   // Not the stream's own disconnect: the partner deleted their registration,
   // so nothing can reach them.
-  const handlePartnerRegistrationDeleted = (address: string) => {
+  const handlePartnerRegistrationDeleted = (address: Address) => {
     refreshConversations()
     setDeparted(prev => new Set(prev).add(address))
   }
@@ -83,9 +85,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     refreshConversations()
   }
 
-  const handleRemoveConversation = (address: string) => {
+  const handleRemoveConversation = (address: Address) => {
     removeConversation(address)
-    if (recipientAddress?.toLowerCase() === address.toLowerCase()) navigate('/chat')
+    if (recipientAddress === address) navigate('/chat')
   }
 
   const openNewChat = () => { setNewChatAddr(''); setNewChatName(''); setNewChatError('') }
@@ -94,8 +96,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
   const newChatOpen = newChatAddr !== null
   useEffect(() => { if (newChatOpen) newChatInputRef.current?.focus() }, [newChatOpen])
 
-  const resolveAndNavigate = async (addr: string) => {
-    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+  const resolveAndNavigate = async (input: string) => {
+    const addr = parseAddress(input.trim())
+    if (!addr) {
       setNewChatError('Invalid address. Must be 0x followed by 40 hex characters.')
       return
     }
@@ -103,7 +106,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       const { pubkey } = await api.getPubkey(addr)
       if (!pubkey) { setNewChatError('Address not registered yet.'); return }
       if (newChatName.trim()) setLabel(addr, newChatName)
-      navigate(`/chat/${addr.toLowerCase()}`)
+      navigate(conversationPath(addr))
       setNewChatAddr(null)
     } catch (err: any) {
       setNewChatError(err.message || 'Failed to check registration.')
@@ -120,9 +123,9 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
     else if (e.key === 'Escape') closeNewChat()
   }
 
-  const handleScan = (addr: string) => {
+  const handleScan = (addr: Address) => {
     setShowScanner(false)
-    setNewChatAddr(addr)
+    setNewChatAddr(checksumAddress(addr))
     resolveAndNavigate(addr)
   }
 
@@ -179,7 +182,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
             <ConversationList
               conversations={conversations}
               activeAddress={recipientAddress}
-              onSelect={(addr) => navigate(`/chat/${addr}`)}
+              onSelect={(addr) => navigate(conversationPath(addr))}
               onNewConversation={openNewChat}
               onRemove={handleRemoveConversation}
               labels={labels}
@@ -197,7 +200,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
               selfAddress={identity.address}
               labels={labels}
               onRename={(name) => setLabel(recipientAddress, name)}
-              departed={departed.has(recipientAddress.toLowerCase())}
+              departed={departed.has(recipientAddress)}
               messages={messages}
               now={now}
               recovering={recovering}

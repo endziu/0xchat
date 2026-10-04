@@ -1,10 +1,11 @@
+import { parseAddress } from '../../shared/address.ts';
 import { randomBytes } from 'node:crypto';
 import { ChallengeStore } from '../challenge.ts';
 import { createSession } from '../db.ts';
 import { json } from '../http.ts';
 import { requestOrigin } from '../origin.ts';
 import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
-import { isValidAddress, isValidSig } from '../validation.ts';
+import { isValidSig } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn, SESSION_TTL_MS } from '../constants.ts';
 import { buildSessionChallenge } from '../../shared/session-challenge.ts';
@@ -26,9 +27,9 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  const address = typeof body.address === 'string' ? body.address.trim().toLowerCase() : '';
-  if (!isValidAddress(address)) {
-    warn('[invalid] auth-challenge bad address', address);
+  const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
+  if (!address) {
+    warn('[invalid] auth-challenge bad address', body.address);
     return json({ error: 'invalid address' }, 400);
   }
 
@@ -63,10 +64,10 @@ export async function handleAuthSession({ req, ip }: Context): Promise<Response>
 
   const nonce = typeof body.nonce === 'string' ? body.nonce : '';
   const signature = typeof body.signature === 'string' ? body.signature : '';
-  const address = typeof body.address === 'string' ? body.address.trim().toLowerCase() : '';
+  const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
 
-  if (!isValidAddress(address)) {
-    warn('[invalid] auth-session bad address', address);
+  if (!address) {
+    warn('[invalid] auth-session bad address', body.address);
     return json({ error: 'invalid address' }, 400);
   }
   if (!isValidSig(signature)) {

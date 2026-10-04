@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { bytesToHex } from 'viem'
 import type { Keypair } from './burner'
 import { signEIP191 } from './burner'
@@ -14,14 +15,14 @@ export async function createSignedMessageEnvelope(
   plaintext: string,
   ttl: number,
   sender: Keypair,
-  recipientAddress: string,
+  recipientAddress: Address,
   recipientPublicKey: string,
 ): Promise<MessageEnvelope> {
   const metadata: MessageMetadata = {
     version: MESSAGE_ENVELOPE_VERSION,
     id: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
-    sender: sender.address.toLowerCase(),
-    recipient: recipientAddress.toLowerCase(),
+    sender: sender.address,
+    recipient: recipientAddress,
     ttl,
   }
   const aad = canonicalMessageAad(metadata)

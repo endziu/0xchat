@@ -1,9 +1,10 @@
+import { parseAddress, type Address } from '../../shared/address.ts';
 import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
 import { json } from '../http.ts';
 import { requestOrigin } from '../origin.ts';
 import { registerChallengeLimiter, registerLimiter } from '../rate-limiters.ts';
-import { isValidAddress, isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
+import { isValidSig, normalizeAddressBoundPubkey } from '../validation.ts';
 import { verifySig } from '../verify.ts';
 import { log, warn } from '../constants.ts';
 import { buildRegistrationChallenge } from '../../shared/registration-challenge.ts';
@@ -11,7 +12,7 @@ import type { Context } from '../http.ts';
 
 export const regStore = new ChallengeStore();
 
-function registrationSubject(address: string, pubkey: string): string {
+function registrationSubject(address: Address, pubkey: string): string {
   return `${address}:${pubkey}`;
 }
 
@@ -28,9 +29,9 @@ export async function handleRegisterChallenge({ req, ip }: Context): Promise<Res
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  const address = typeof body.address === 'string' ? body.address.trim().toLowerCase() : '';
-  if (!isValidAddress(address)) {
-    warn('[invalid]', '/api/register/challenge', 'bad address', address);
+  const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
+  if (!address) {
+    warn('[invalid]', '/api/register/challenge', 'bad address', body.address);
     return json({ error: 'Invalid address' }, 400);
   }
 
@@ -66,12 +67,12 @@ export async function handleRegister({ req, ip }: Context): Promise<Response> {
     return json({ error: 'Invalid JSON' }, 400);
   }
 
-  const address = typeof body.address === 'string' ? body.address.trim().toLowerCase() : '';
+  const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
   const signature = typeof body.signature === 'string' ? body.signature : '';
   const nonce = typeof body.nonce === 'string' ? body.nonce : '';
 
-  if (!isValidAddress(address)) {
-    warn('[invalid] register bad address', address);
+  if (!address) {
+    warn('[invalid] register bad address', body.address);
     return json({ error: 'invalid address' }, 400);
   }
   const pubkey = normalizeAddressBoundPubkey(address, body.pubkey);

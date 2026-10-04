@@ -1,8 +1,9 @@
+import { checksumAddress, requireAddress } from '../shared/address'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { chmod, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { ChatClient, address, serverOrigin } from './client'
+import { ChatClient, serverOrigin } from './client'
 import { createIdentity, loadIdentity, parsePrivateKey } from './identity'
 import { terminalText } from './main'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
@@ -47,7 +48,7 @@ describe('local identity and input boundaries', () => {
     for (const url of ['http://example.com', 'https://u:p@example.com', 'https://example.com/api', 'https://example.com/?x=1', 'file:///tmp/a']) {
       expect(() => serverOrigin(url)).toThrow()
     }
-    expect(() => address('../conversations')).toThrow()
+    expect(() => requireAddress('../conversations')).toThrow()
   })
 
   test('failed init identifies the server and preserves the identity for register', async () => {
@@ -69,7 +70,7 @@ describe('local identity and input boundaries', () => {
     expect(result.stderr).toContain('--server prod')
     expect(result.stderr).toContain('Run register')
     const saved = await loadIdentity(identityPath)
-    expect((await run('address')).stdout.trim()).toBe(saved.address)
+    expect((await run('address')).stdout.trim()).toBe(checksumAddress(saved.address))
     expect((await run('register')).stderr).toContain(`Cannot connect to ${origin}`)
     expect(await loadIdentity(identityPath)).toEqual(saved)
   })
@@ -161,12 +162,12 @@ describe('unchanged server interoperability', () => {
       expect(response.status).toBe(201)
       const delivered = await response.json()
       expect((await bob.decode(delivered, alice.identity.address))?.plaintext).toBe('hello from browser')
-      await expect(bob.decode({ ...delivered, sender: bob.identity.address.toLowerCase() }, alice.identity.address)).rejects.toThrow()
+      await expect(bob.decode({ ...delivered, sender: requireAddress(bob.identity.address) }, alice.identity.address)).rejects.toThrow()
       await expect(bob.decode(delivered, parsePrivateKey('22'.repeat(32)).address)).rejects.toThrow()
     } finally {
       await fetch(origin + '/api/session', { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' } })
     }
-    expect((await bob.conversations()).conversations.some(conversation => conversation.address === alice.identity.address.toLowerCase())).toBe(true)
+    expect((await bob.conversations()).conversations.some(conversation => conversation.address === requireAddress(alice.identity.address))).toBe(true)
   })
 
   async function browserSession(client: ChatClient): Promise<string> {
@@ -254,7 +255,7 @@ describe('unchanged server interoperability', () => {
 
   test('renews an invalidated session without losing the operation', async () => {
     const db = new Database(join(directory, 'server', 'chat.db'))
-    try { db.query('DELETE FROM sessions WHERE address = ?').run(bob.identity.address.toLowerCase()) }
+    try { db.query('DELETE FROM sessions WHERE address = ?').run(requireAddress(bob.identity.address)) }
     finally { db.close() }
     const sent = await bob.send(alice.identity.address, 'after session renewal')
     expect((await alice.read(bob.identity.address)).messages.find(message => message.id === sent.id)?.plaintext).toBe('after session renewal')

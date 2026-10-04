@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { migrateKey } from './storage-migration'
 
 const SESSION_KEY = '0xchat_session_v1'
@@ -5,32 +6,26 @@ const OLD_SESSION_KEY = 'eth_chat_session_v1'
 const LEGACY_TOKEN_KEY = 'eth_chat_token'
 
 interface StoredSession {
-  address: string
+  address: Address
   token: string
 }
 
-export function saveToken(address: string, token: string): void {
-  const normalized = address.toLowerCase()
+export function saveToken(address: Address, token: string): void {
   localStorage.removeItem(LEGACY_TOKEN_KEY)
   localStorage.removeItem(OLD_SESSION_KEY)
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ address: normalized, token }))
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ address, token }))
 }
 
-export function getToken(address: string): string | null {
+export function getToken(address: Address): string | null {
   localStorage.removeItem(LEGACY_TOKEN_KEY)
   migrateKey(OLD_SESSION_KEY, SESSION_KEY)
-  const normalized = address.toLowerCase()
 
   const raw = localStorage.getItem(SESSION_KEY)
   if (!raw) return null
 
   try {
     const session = JSON.parse(raw) as Partial<StoredSession>
-    if (
-      typeof session.address !== 'string'
-      || typeof session.token !== 'string'
-      || session.address.toLowerCase() !== normalized
-    ) {
+    if (typeof session.token !== 'string' || session.address !== address) {
       localStorage.removeItem(SESSION_KEY)
       return null
     }

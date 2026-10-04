@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
+import { checksumAddress, requireAddress, type Address } from '../shared/address'
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 import { parseLiveEvent } from '../shared/live-events'
 import { isEnvelopeParticipant } from '../shared/message-envelope'
@@ -52,8 +53,8 @@ export function terminalText(value: string): string {
   })
 }
 
-function displayMessage(message: PlainMessage, identity: string): string {
-  const who = message.sender === identity.toLowerCase() ? 'you' : 'peer'
+function displayMessage(message: PlainMessage, identity: Address): string {
+  const who = message.sender === identity ? 'you' : 'peer'
   const text = message.plaintext.startsWith('data:image/') ? '[image attachment — use the browser to view]' : message.plaintext
   return `${new Date(message.created_at).toLocaleTimeString()} ${who}: ${terminalText(text)}`
 }
@@ -78,7 +79,7 @@ function positiveInteger(value: string | undefined, name: string): number | unde
 
 async function follow(
   client: ChatClient,
-  partner: string,
+  partner: Address,
   signal: AbortSignal,
   receive: (message: PlainMessage) => void,
   lifecycle: (message: PlainMessage) => void,
@@ -167,7 +168,7 @@ async function follow(
   }
 }
 
-async function chat(client: ChatClient, partner: string, ttl: number, controller: AbortController): Promise<void> {
+async function chat(client: ChatClient, partner: Address, ttl: number, controller: AbortController): Promise<void> {
   const messages = new Map<string, PlainMessage>()
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 0 })
   let status = 'Connecting…'
@@ -185,7 +186,7 @@ async function chat(client: ChatClient, partner: string, ttl: number, controller
       .slice(-rows).flatMap(message => Bun.wrapAnsi(displayMessage(message, client.identity.address), width, { hard: true }).split('\n'))
       .slice(-rows)
     process.stdout.write('\x1b[2J\x1b[H' + [
-      `0xChat · ${partner}`, `Lifetime: ${ttl}s · /quit /ttl /help`, terminalText(status), '', ...lines, '',
+      `0xChat · ${checksumAddress(partner)}`, `Lifetime: ${ttl}s · /quit /ttl /help`, terminalText(status), '', ...lines, '',
     ].map(line => clipLine(line, width)).join('\n') + '\n')
     rl.setPrompt('> ')
     rl.prompt(true)
@@ -252,7 +253,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     throw new Error(`Unknown command: ${command}. Use --help.`)
   }
   const needsPartner = ['send', 'read', 'watch', 'chat'].includes(command!)
-  const partner = needsPartner ? address(partnerArg ?? '') : ''
+  const partner = needsPartner ? requireAddress(partnerArg ?? '') : null
   if (!needsPartner && partnerArg !== undefined || command !== 'send' && textArgs.length) throw new Error('Unexpected positional arguments')
   if (values['key-file'] !== undefined && command !== 'import') throw new Error('--key-file is only valid with import')
   if ((values.all || values.before || values['before-rowid']) && command !== 'read') throw new Error('Pagination options are only valid with read')
@@ -284,7 +285,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       throw error
     }
   }
-  if (command === 'address') { output({ address: identity.address }, identity.address); return }
+  if (command === 'address') { output({ address: identity.address }, checksumAddress(identity.address)); return }
   if (command === 'export') { output({ privateKey: identity.privateKey }, identity.privateKey); return }
   const controller = new AbortController()
   const stop = () => controller.abort()
@@ -294,25 +295,25 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   try {
     if (['init', 'import', 'register'].includes(command!)) {
       await client.register()
-      output({ address: identity.address, server: client.origin }, `Registered ${identity.address} on ${client.origin}`)
+      output({ address: identity.address, server: client.origin }, `Registered ${checksumAddress(identity.address)} on ${client.origin}`)
     } else if (command === 'conversations') {
       const result = await client.conversations()
       if (values.json) console.log(JSON.stringify(result))
-      else console.log(result.conversations.map(conversation => `${terminalText(conversation.address)}  ${new Date(conversation.last_message_at).toISOString()}`).join('\n') || 'No conversations')
+      else console.log(result.conversations.map(conversation => `${checksumAddress(conversation.address)}  ${new Date(conversation.last_message_at).toISOString()}`).join('\n') || 'No conversations')
     } else if (command === 'send') {
       let text = textArgs.join(' ')
       if (!text || text === '-') {
         if (process.stdin.isTTY) throw new Error('Provide message text, or pipe it to stdin')
         text = await Bun.stdin.text()
       }
-      const result = await client.send(partner, text, ttl)
+      const result = await client.send(partner!, text, ttl)
       output(result, `Sent ${result.id}`)
     } else if (command === 'read') {
       let result: MessagePage
       if (values.all) {
         result = { messages: [], next_before: null, next_before_rowid: null }
-        for await (const page of client.history(partner)) result.messages.unshift(...page)
-      } else result = await client.read(partner, before, rowid)
+        for await (const page of client.history(partner!)) result.messages.unshift(...page)
+      } else result = await client.read(partner!, before, rowid)
       if (values.json) {
         let serialized: string
         do {
@@ -326,7 +327,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         if (isMessageAvailable(message)) console.log(text)
       }
     } else if (command === 'watch') {
-      await follow(client, partner, controller.signal,
+      await follow(client, partner!, controller.signal,
         message => console.log(values.json ? JSON.stringify(message) : displayMessage(message, identity.address)),
         message => {
           if (values.json) console.log(JSON.stringify({
@@ -335,7 +336,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
           }))
         },
         text => console.error(terminalText(text)))
-    } else if (command === 'chat') await chat(client, partner, ttl, controller)
+    } else if (command === 'chat') await chat(client, partner!, ttl, controller)
   } catch (error) {
     // Leaving chat aborts the controller, but an update requirement must still be reported.
     if (!controller.signal.aborted || error instanceof ClientUpdateRequiredError) {

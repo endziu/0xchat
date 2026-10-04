@@ -1,3 +1,4 @@
+import { requireAddress } from '../shared/address'
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -117,7 +118,7 @@ async function runCommand(command: string[]) {
 test('CLI listing leaves messages unopened and cursor flags open only that page', async () => {
   for (let index = 0; index < 101; index++) await alice.send(bob.identity.address, `command page ${index}`)
   const conversations = JSON.parse(await runCommand(['conversations', '--json']))
-  expect(conversations.conversations.some((item: { address: string }) => item.address === alice.identity.address.toLowerCase())).toBe(true)
+  expect(conversations.conversations.some((item: { address: string }) => item.address === requireAddress(alice.identity.address))).toBe(true)
   expect(openingBodies).toEqual([])
 
   const latest = JSON.parse(await runRead())

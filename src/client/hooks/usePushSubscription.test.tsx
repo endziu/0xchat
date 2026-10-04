@@ -1,3 +1,4 @@
+import { requireAddress, type Address } from '../../shared/address'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { render } from 'preact'
@@ -14,8 +15,8 @@ const globals = new Map(['fetch', 'Request', 'Response', 'Headers', 'URL', 'URLS
   .map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
 let usePushSubscription: typeof import('./usePushSubscription').usePushSubscription
 let server: ReturnType<typeof Bun.serve>
-const alice = `0x${'a'.repeat(40)}`
-const bob = `0x${'b'.repeat(40)}`
+const alice = requireAddress(`0x${'a'.repeat(40)}`)
+const bob = requireAddress(`0x${'b'.repeat(40)}`)
 const keys = { p256dh: Buffer.alloc(65, 1).toString('base64url'), auth: Buffer.alloc(16, 2).toString('base64url') }
 let browserSub: PushSubscription | null
 let vapidKey: string
@@ -88,7 +89,7 @@ afterEach(() => {
   getDb().close()
 })
 
-function Harness({ address }: { address: string }) {
+function Harness({ address }: { address: Address }) {
   push = usePushSubscription(address, address)
   return <SettingsModal
     identity={{ address, publicKey: 'test-key', privateKey: '1'.repeat(64) }}

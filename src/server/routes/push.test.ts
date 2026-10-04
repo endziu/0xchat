@@ -1,11 +1,12 @@
+import { requireAddress, type Address } from '../../shared/address.ts'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { createSession, getPushSubscriptionsForAddress, initDb, registerPubkey } from '../db.ts'
 import { pushMutationLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { handleSubscribePush, handleUnsubscribePush } from './push.ts'
 import type { Context } from '../http.ts'
-const alice = `0x${'a'.repeat(40)}`
-const bob = `0x${'b'.repeat(40)}`
+const alice = requireAddress(`0x${'a'.repeat(40)}`)
+const bob = requireAddress(`0x${'b'.repeat(40)}`)
 const keys = {
   p256dh: Buffer.alloc(65, 1).toString('base64url'),
   auth: Buffer.alloc(16, 2).toString('base64url'),
@@ -32,7 +33,7 @@ function context(path: string, body: unknown, token: string | null = alice): Con
 }
 const subscribe = (body: unknown, token?: string | null) => handleSubscribePush(context('/api/push/subscribe', body, token))
 const unsubscribe = (body: unknown, token?: string | null) => handleUnsubscribePush(context('/api/push/unsubscribe', body, token))
-const endpoints = (address: string) => getPushSubscriptionsForAddress(address).map(row => row.endpoint)
+const endpoints = (address: Address) => getPushSubscriptionsForAddress(address).map(row => row.endpoint)
 
 describe('push subscribe route', () => {
   test('stores the canonical endpoint for the session identity', async () => {

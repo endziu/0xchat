@@ -33,7 +33,7 @@ afterEach(() => {
   directory = undefined;
   for (const limiter of Object.values(limiters)) limiter.reset();
 });
-function request(suffix = '', address = bob.address, body?: unknown, partner = alice.address) {
+function request(suffix = '', address: string = bob.address, body?: unknown, partner = alice.address) {
   return fetch(new URL(`/api/messages/${partner}${suffix}`, server.url), {
     method: body === undefined ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },

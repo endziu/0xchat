@@ -1,3 +1,4 @@
+import { requireAddress, type Address } from '../../shared/address'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { render } from 'preact'
@@ -37,7 +38,7 @@ let focused: boolean
 let visible: boolean
 const aliceKey = parsePrivateKey('12'.repeat(32))
 const bobKey = parsePrivateKey('34'.repeat(32))
-const aliceAddress = aliceKey.address.toLowerCase()
+const aliceAddress = requireAddress(aliceKey.address)
 const mounted: Array<() => void> = []
 
 class TestEventSource {
@@ -119,14 +120,14 @@ async function createSession(identity: Keypair): Promise<string> {
   const post = async (path: string, body: object) => (await bunFetch(origin + path, {
     method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })).json()
-  const { challenge, nonce } = await post('/api/auth/challenge', { address: identity.address.toLowerCase() })
+  const { challenge, nonce } = await post('/api/auth/challenge', { address: requireAddress(identity.address) })
   const signature = await signEIP191(challenge, identity.privateKey)
-  return (await post('/api/auth/session', { address: identity.address.toLowerCase(), nonce, signature })).token
+  return (await post('/api/auth/session', { address: requireAddress(identity.address), nonce, signature })).token
 }
 
 /** Authoritative lifecycle, read through the sender's state lookup (never opens). */
 async function lifecycle(id: string): Promise<(MessageLifecycle & { status: string }) | { status: string }> {
-  const response = await bunFetch(`${origin}/api/messages/${bobKey.address.toLowerCase()}/state`, {
+  const response = await bunFetch(`${origin}/api/messages/${requireAddress(bobKey.address)}/state`, {
     method: 'POST',
     headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
     body: JSON.stringify({ ids: [id] }),
@@ -144,15 +145,16 @@ async function waitFor(condition: () => boolean | Promise<boolean>, timeout = 3_
   }
 }
 
-function mount(recipient: string | null = aliceAddress) {
+function mount(recipient: Address | null = aliceAddress) {
   const container = document.createElement('div')
   document.body.append(container)
   let selected = recipient
   let identity = bobKey
   let token = bobToken
+  const navigations: string[] = []
   const view = () => (
     <ToastProvider>
-      <ChatView recipientAddress={selected} identity={identity} token={token} navigate={() => {}} />
+      <ChatView recipientAddress={selected} identity={identity} token={token} navigate={to => { navigations.push(to) }} />
     </ToastProvider>
   )
   render(view(), container)
@@ -161,9 +163,10 @@ function mount(recipient: string | null = aliceAddress) {
   return {
     container,
     unmount,
+    navigations,
     text: () => container.textContent ?? '',
-    select(address: string | null) { selected = address; render(view(), container) },
-    switchIdentity(next: Keypair, nextToken: string, address: string) {
+    select(address: Address | null) { selected = address; render(view(), container) },
+    switchIdentity(next: Keypair, nextToken: string, address: Address) {
       identity = next
       token = nextToken
       selected = address
@@ -283,7 +286,7 @@ test('switching conversations discards in-flight opening results', async () => {
   const opening = gate(request => isOpening(request) && request.url.includes(aliceAddress))
   const view = mount()
   await waitFor(() => opening.seen())
-  view.select(carolKey.address.toLowerCase())
+  view.select(requireAddress(carolKey.address))
   await waitFor(() => view.text().includes('carol secret'))
   opening.release()
   await Bun.sleep(150)
@@ -368,7 +371,7 @@ test('selecting a conversation leaves it unread until its messages are confirmed
 })
 
 const latestStream = () => TestEventSource.instances.at(-1)!
-const bobAddress = bobKey.address.toLowerCase()
+const bobAddress = requireAddress(bobKey.address)
 
 // The rules for what a refresh accepts are the session's; this covers the
 // notice and its retry once the stream reconnects.
@@ -704,7 +707,7 @@ test('a conversation cleared by the partner disappears from the open view live',
   await waitFor(() => view.text().includes('before the clear'))
   await waitFor(streamReady)
 
-  const response = await bunFetch(`${origin}/api/messages/${bobKey.address.toLowerCase()}`, {
+  const response = await bunFetch(`${origin}/api/messages/${requireAddress(bobKey.address)}`, {
     method: 'DELETE', headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
   })
   expect(response.status).toBe(200)
@@ -762,7 +765,7 @@ test('removing a conversation takes two taps and forgets its label', async () =>
 
   // Should the address ever write again, it comes back unnamed.
   await alice.send(bobKey.address, 'back again', 300)
-  await waitFor(() => view.container.querySelector('nav li')?.textContent?.includes(aliceAddress.slice(0, 6)) ?? false)
+  await waitFor(() => view.container.querySelector('nav li')?.textContent?.includes('0x1C5A…0b63') ?? false)
 })
 
 test('remaining lifetimes count down while the conversation is open, without any other update', async () => {
@@ -806,4 +809,67 @@ test('a departed partner who writes again can be messaged again', async () => {
   await alice.send(bobKey.address, 'I imported my key again', 300)
   await waitFor(() => view.container.querySelector('textarea') !== null)
   expect(view.text()).not.toContain('deleted their identity')
+})
+
+test('identity presentation copies checksums and uses the same checksummed link for QR', async () => {
+  const { Layout } = await import('./Layout')
+  const { default: QRCode } = await import('qrcode')
+  const address = requireAddress('0x52908400098527886e0f7030069857d2e4169ee7')
+  const checksum = '0x52908400098527886E0F7030069857D2E4169EE7'
+  const writes: string[] = []
+  const copy = spyOn(navigator.clipboard, 'writeText').mockImplementation(async text => { writes.push(text) })
+  const qr = spyOn(QRCode, 'toCanvas')
+  const container = document.createElement('div')
+  document.body.append(container)
+  try {
+    render(<Layout identity={{ ...bobKey, address }} onLogout={() => {}}>Chat</Layout>, container)
+    expect(container.textContent).toContain('0x5290…9EE7')
+    container.querySelector<HTMLButtonElement>('[aria-label="Copy address"]')!.click()
+    container.querySelector<HTMLButtonElement>('[aria-label="Copy conversation link"]')!.click()
+    expect(writes).toEqual([checksum, `${window.location.origin}/chat/${checksum}`])
+    container.querySelector<HTMLButtonElement>('[aria-label="Show QR code"]')!.click()
+    await waitFor(() => qr.mock.calls.length > 0)
+    expect(qr.mock.calls[0]![1]).toBe(`${window.location.origin}/chat/${checksum}`)
+    expect(container.textContent).toContain(checksum)
+  } finally {
+    render(null, container)
+    container.remove()
+    copy.mockRestore()
+    qr.mockRestore()
+  }
+})
+
+test('conversation address display and copying use its checksum', async () => {
+  // Independently known checksum for the deterministic 0x12… private key.
+  const checksum = '0x1C5A77d9FA7eF466951B2F01F724BCa3A5820b63'
+  localStorage.setItem('conversation_labels', JSON.stringify({ [aliceAddress]: 'Alice' }))
+  const view = mount()
+  const writes: string[] = []
+  const copy = spyOn(navigator.clipboard, 'writeText').mockImplementation(async text => { writes.push(text) })
+  try {
+    await waitFor(() => view.container.querySelector('[aria-label="Copy address"]') !== null)
+    view.container.querySelector<HTMLButtonElement>('[aria-label="Copy address"]')!.click()
+    expect(writes).toEqual([checksum])
+    expect(view.text()).toContain(checksum)
+  } finally {
+    copy.mockRestore()
+  }
+})
+
+test('selecting or starting a conversation navigates to its checksummed link', async () => {
+  const link = '/chat/0x1C5A77d9FA7eF466951B2F01F724BCa3A5820b63'
+  await alice.send(bobKey.address, 'hello', 300)
+  const view = mount(null)
+  await waitFor(() => view.container.querySelector('nav li') !== null)
+  view.container.querySelector<HTMLElement>('nav li')!.click()
+
+  button('New conversation').click()
+  await waitFor(() => view.container.querySelector('input[aria-label="Address"]') !== null)
+  const input = view.container.querySelector<HTMLInputElement>('input[aria-label="Address"]')!
+  input.value = aliceAddress
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await Bun.sleep(0)
+  ;[...view.container.querySelectorAll('button')].find(b => b.textContent === 'Start')!.click()
+  await waitFor(() => view.navigations.length === 2)
+  expect(view.navigations).toEqual([link, link])
 })

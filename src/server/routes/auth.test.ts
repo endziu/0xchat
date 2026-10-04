@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address.ts';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { unlinkSync } from 'node:fs';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -7,10 +8,10 @@ import { authChallengeLimiter, authSessionLimiter } from '../rate-limiters.ts';
 import { noOpSchedule } from '../rate-limit.test-utils.ts';
 import type { Context } from '../http.ts';
 
-const address = `0x${'2'.repeat(40)}`;
+const address = requireAddress(`0x${'2'.repeat(40)}`);
 
 const signer = privateKeyToAccount(`0x${'99'.repeat(32)}` as `0x${string}`);
-const signerAddress = signer.address.toLowerCase();
+const signerAddress = requireAddress(signer.address);
 
 const TEST_DB = `auth-route-test-${Date.now()}.db`;
 

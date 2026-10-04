@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { api, ApiError } from '../lib/api'
 import { UNSUPPORTED_PUSH_SERVICE_CODE } from '../../shared/api-error'
@@ -16,9 +17,9 @@ function pushApisAvailable(): boolean {
   return 'serviceWorker' in navigator && typeof window.PushManager !== 'undefined' && typeof Notification !== 'undefined'
 }
 
-const optInKey = (address: string) => `0xchat.push.${address.toLowerCase()}`
+const optInKey = (address: Address) => `0xchat.push.${address}`
 
-function isOptedIn(address: string): boolean {
+function isOptedIn(address: Address): boolean {
   try {
     return (JSON.parse(localStorage.getItem(optInKey(address)) ?? 'null') as { enabled?: unknown } | null)?.enabled === true
   } catch {
@@ -27,7 +28,7 @@ function isOptedIn(address: string): boolean {
 }
 
 // A lost write is harmless: the rule above reconciles it on the next load.
-function setOptedIn(address: string, enabled: boolean): void {
+function setOptedIn(address: Address, enabled: boolean): void {
   try {
     localStorage.setItem(optInKey(address), JSON.stringify({ enabled }))
   } catch { /* storage blocked */ }
@@ -68,7 +69,7 @@ function withTimeout<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /** Apply the rule for this identity; resolves whether notifications are on. */
-async function reconcile(address: string, token: string): Promise<boolean> {
+async function reconcile(address: Address, token: string): Promise<boolean> {
   const sub = await (await pushManager()).getSubscription()
   if (!sub) return false
   if (!isOptedIn(address) || !matchesKey(sub, await vapidKey())) {
@@ -88,7 +89,7 @@ function enableErrorMessage(err: unknown): string {
   return 'Could not enable notifications. Please try again.'
 }
 
-export function usePushSubscription(token: string | null, address: string | null) {
+export function usePushSubscription(token: string | null, address: Address | null) {
   const [supported, setSupported] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address.ts';
 import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
 import { clearConversation, createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
@@ -109,8 +110,7 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
   }
   if (isOutdatedClient(req)) return clientUpdateRequired();
 
-  const match = path.match(/^\/api\/messages\/(0x[0-9a-fA-F]{40})$/);
-  const counterparty = match![1]!.toLowerCase();
+  const counterparty = requireAddress(path.split('/')[3]);
 
   const beforeParam = url.searchParams.get('before');
   const beforeNum = beforeParam ? Number(beforeParam) : null;
@@ -166,7 +166,7 @@ export async function handleClearConversation({ req, path, ip }: Context): Promi
     warn('[rate-limit] clear conversation', address, ip);
     return json({ error: 'Too many requests' }, 429);
   }
-  const counterparty = path.split('/')[3]!.toLowerCase();
+  const counterparty = requireAddress(path.split('/')[3]);
   const { cleared_at, deleted } = clearConversation(address, counterparty);
   // Each side hears which conversation was cleared, named by its partner.
   publish(address, { type: 'conversation-cleared', data: { address: counterparty, cleared_at } });
@@ -188,7 +188,7 @@ export async function handleOpenMessages({ req, path, ip }: Context): Promise<Re
   }
   const ids = await readMessageIds(req);
   if (ids instanceof Response) return ids;
-  const counterparty = path.split('/')[3]!.toLowerCase();
+  const counterparty = requireAddress(path.split('/')[3]);
   const { updates, server_time, results } = openMessages(address, counterparty, ids);
   const response: OpeningResponse = { server_time, results };
   for (const update of updates) {
@@ -204,7 +204,7 @@ export async function handleRecoverMessages({ req, url, path, ip }: Context): Pr
   if (!address) return json({ error: 'Unauthorized' }, 401);
   if (isOutdatedClient(req)) return clientUpdateRequired();
   if (recoveryIpLimiter.hit(ip) || recoveryLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
-  const counterparty = path.split('/')[3]!.toLowerCase();
+  const counterparty = requireAddress(path.split('/')[3]);
   const after = url.searchParams.get('after');
   const continuation = url.searchParams.get('cursor');
   if ((after === null) === (continuation === null)
@@ -264,5 +264,6 @@ export async function handleMessageStates({ req, path, ip }: Context): Promise<R
   if (stateIpLimiter.hit(ip) || stateLimiter.hit(address)) return json({ error: 'Too many requests' }, 429);
   const ids = await readMessageIds(req);
   if (ids instanceof Response) return ids;
-  return json(getMessageStates(address, path.split('/')[3]!.toLowerCase(), ids));
+  const counterparty = requireAddress(path.split('/')[3]);
+  return json(getMessageStates(address, counterparty, ids));
 }

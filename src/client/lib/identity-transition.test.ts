@@ -1,10 +1,11 @@
+import { requireAddress } from '../../shared/address'
 import { describe, expect, test } from 'bun:test'
 import { createIdentityTransition, type IdentityTransitionDeps } from './identity-transition'
 import type { Keypair } from './burner'
 
-const oldIdentity = { address: '0xold', privateKey: 'old-private', publicKey: 'old-public' }
-const identityB = { address: '0xb', privateKey: 'b-private', publicKey: 'b-public' }
-const identityC = { address: '0xc', privateKey: 'c-private', publicKey: 'c-public' }
+const oldIdentity = { address: requireAddress('0xcba06b5736faf67e54b07b561eae94395e774c51'), privateKey: 'old-private', publicKey: 'old-public' }
+const identityB = { address: requireAddress('0xb000000000000000000000000000000000000000'), privateKey: 'b-private', publicKey: 'b-public' }
+const identityC = { address: requireAddress('0xc000000000000000000000000000000000000000'), privateKey: 'c-private', publicKey: 'c-public' }
 
 function harness(overrides: Partial<IdentityTransitionDeps> = {}) {
   const events: string[] = []
@@ -32,10 +33,10 @@ describe('identity transition', () => {
       'unsubscribe',
       'revoke-session',
       'clear-session',
-      'prepare:0xb',
-      'login:0xb',
+      'prepare:0xb000000000000000000000000000000000000000',
+      'login:0xb000000000000000000000000000000000000000',
       'clear-session',
-      'commit:0xb:token:0xb',
+      'commit:0xb000000000000000000000000000000000000000:token:0xb000000000000000000000000000000000000000',
       'transitioning:false',
     ])
   })
@@ -48,7 +49,7 @@ describe('identity transition', () => {
     await transition(identityB)
 
     expect(events).toContain('clear-session')
-    expect(events.slice(-2)).toEqual(['commit:0xb:token:0xb', 'transitioning:false'])
+    expect(events.slice(-2)).toEqual(['commit:0xb000000000000000000000000000000000000000:token:0xb000000000000000000000000000000000000000', 'transitioning:false'])
   })
 
   test.each(['registration', 'login'] as const)('keeps the old identity and clears auth when %s fails', async (failure: 'registration' | 'login') => {
@@ -86,14 +87,14 @@ describe('identity transition', () => {
     })
 
     const first = transition(identityB)
-    const resolveB = await waitForPreparation('0xb')
+    const resolveB = await waitForPreparation(requireAddress('0xb000000000000000000000000000000000000000'))
     resolveB()
     await Promise.resolve()
     const second = transition(identityC)
-    const resolveC = await waitForPreparation('0xc')
+    const resolveC = await waitForPreparation(requireAddress('0xc000000000000000000000000000000000000000'))
     resolveC()
     await Promise.all([first, second])
 
-    expect(commits).toEqual(['0xc'])
+    expect(commits).toEqual([requireAddress('0xc000000000000000000000000000000000000000')])
   })
 })

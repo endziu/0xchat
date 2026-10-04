@@ -1,3 +1,4 @@
+import { requireAddress } from '../shared/address.ts'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -12,7 +13,7 @@ import { identity } from './test-identity.ts'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts'
 import { DELIVERY_CAPABILITY } from '../shared/message-envelope.ts'
 
-const alice = `0x${'a'.repeat(40)}`
+const alice = requireAddress(`0x${'a'.repeat(40)}`)
 const keys = { p256dh: 'p256dh-key', auth: 'auth-key' }
 const endpoint = (name: string) => `https://fcm.googleapis.com/fcm/send/${name}`
 let sent: Array<{ endpoint: string; TTL: number }>

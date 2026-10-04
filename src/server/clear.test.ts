@@ -1,3 +1,4 @@
+import type { Address } from '../shared/address.ts';
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
@@ -47,7 +48,7 @@ function clear(partner: string, identity: string) {
 function remainingIds(): string[] {
   return (getDb().query('SELECT id FROM messages ORDER BY rowid').all() as { id: string }[]).map(row => row.id);
 }
-function listen(address: string): { events: string[]; stop: () => void } {
+function listen(address: Address): { events: string[]; stop: () => void } {
   const events: string[] = [];
   let ctrl!: ReadableStreamDefaultController;
   new ReadableStream({ start(c) { ctrl = c; } });

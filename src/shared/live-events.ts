@@ -1,20 +1,21 @@
-import { ADDRESS, parseDeliveredMessage, parseExpiryUpdate } from './message-envelope'
+import { isCanonicalAddress, type Address } from './address'
+import { parseDeliveredMessage, parseExpiryUpdate } from './message-envelope'
 
 /** A conversation's messages were deleted through `cleared_at`; `address` is the conversation partner. */
 export interface ConversationCleared {
-  address: string
+  address: Address
   cleared_at: number
 }
 
 /** A conversation partner deleted their registration. */
 export interface RegistrationDeleted {
-  address: string
+  address: Address
 }
 
 function parseConversationCleared(input: unknown): ConversationCleared | null {
   if (typeof input !== 'object' || input === null) return null
   const { address, cleared_at } = input as { address?: unknown; cleared_at?: unknown }
-  if (typeof address !== 'string' || !ADDRESS.test(address)) return null
+  if (!isCanonicalAddress(address)) return null
   if (!Number.isSafeInteger(cleared_at) || (cleared_at as number) < 0) return null
   return { address, cleared_at: cleared_at as number }
 }
@@ -22,7 +23,7 @@ function parseConversationCleared(input: unknown): ConversationCleared | null {
 function parseRegistrationDeleted(input: unknown): RegistrationDeleted | null {
   if (typeof input !== 'object' || input === null) return null
   const { address } = input as { address?: unknown }
-  return typeof address === 'string' && ADDRESS.test(address) ? { address } : null
+  return isCanonicalAddress(address) ? { address } : null
 }
 
 /**

@@ -1,3 +1,4 @@
+import { requireAddress, type Address } from '../../shared/address'
 import { clearTokenIfMatches } from './session'
 import { verifyEncryptionPublicKey } from './encryption-key'
 import { isApiErrorCode, type ApiErrorCode } from '../../shared/api-error'
@@ -34,7 +35,7 @@ export interface MessagePage {
 }
 
 export interface Conversation {
-  address: string
+  address: Address
   last_message_at: number
 }
 
@@ -82,17 +83,16 @@ async function request<T>(path: string, options: RequestInit, token: string | nu
 export const api = {
   // --- Public / pre-auth endpoints (no session required) ---
 
-  getRegChallenge: async (address: string, pubkey: string): Promise<{ challenge: string; nonce: string }> => {
-    const normalizedAddress = address.toLowerCase()
-    const normalizedPubkey = verifyEncryptionPublicKey(normalizedAddress, pubkey)
+  getRegChallenge: async (address: Address, pubkey: string): Promise<{ challenge: string; nonce: string }> => {
+    const normalizedPubkey = verifyEncryptionPublicKey(address, pubkey)
     const result = await request<{ challenge: string; nonce: string }>('/api/register/challenge', {
       method: 'POST',
-      body: JSON.stringify({ address: normalizedAddress, pubkey: normalizedPubkey }),
+      body: JSON.stringify({ address, pubkey: normalizedPubkey }),
       headers: { 'Content-Type': 'application/json' },
     }, null)
     const expected = buildRegistrationChallenge(
       window.location.origin,
-      normalizedAddress,
+      address,
       normalizedPubkey,
       result.nonce,
     )
@@ -100,37 +100,36 @@ export const api = {
     return result
   },
 
-  register: (address: string, pubkey: string, signature: string, nonce: string) =>
+  register: (address: Address, pubkey: string, signature: string, nonce: string) =>
     request('/api/register', {
       method: 'POST',
       body: JSON.stringify({ address, pubkey, signature, nonce }),
       headers: { 'Content-Type': 'application/json' },
     }, null),
 
-  getPubkey: async (address: string): Promise<{ pubkey: string | null }> => {
+  getPubkey: async (address: Address): Promise<{ pubkey: string | null }> => {
     const result = await request<{ pubkey: string | null }>(`/api/pubkey/${address}`, {}, null)
     return {
       pubkey: result.pubkey === null ? null : verifyEncryptionPublicKey(address, result.pubkey),
     }
   },
 
-  getChallenge: async (address: string): Promise<{ challenge: string; nonce: string }> => {
-    const normalizedAddress = address.toLowerCase()
+  getChallenge: async (address: Address): Promise<{ challenge: string; nonce: string }> => {
     const result = await request<{ challenge: string; nonce: string }>('/api/auth/challenge', {
       method: 'POST',
-      body: JSON.stringify({ address: normalizedAddress }),
+      body: JSON.stringify({ address }),
       headers: { 'Content-Type': 'application/json' },
     }, null)
     const expected = buildSessionChallenge(
       window.location.origin,
-      normalizedAddress,
+      address,
       result.nonce,
     )
     if (result.challenge !== expected) throw new Error('Invalid session challenge')
     return result
   },
 
-  createSession: (address: string, signature: string, nonce: string): Promise<{ token: string }> =>
+  createSession: (address: Address, signature: string, nonce: string): Promise<{ token: string }> =>
     request('/api/auth/session', {
       method: 'POST',
       body: JSON.stringify({ address, signature, nonce }),
@@ -149,7 +148,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  getMessages: (address: string, token: string, before?: number, beforeRowid?: number, limit?: number): Promise<MessagePage> => {
+  getMessages: (address: Address, token: string, before?: number, beforeRowid?: number, limit?: number): Promise<MessagePage> => {
     const params = new URLSearchParams()
     if (before != null) params.set('before', String(before))
     if (beforeRowid != null) params.set('before_rowid', String(beforeRowid))
@@ -158,30 +157,32 @@ export const api = {
     return request(`/api/messages/${address}${query ? `?${query}` : ''}`, {}, token)
   },
 
-  recoverMessages: (address: string, token: string, cursor: { after: string } | { cursor: string }): Promise<RecoveryPage> =>
+  recoverMessages: (address: Address, token: string, cursor: { after: string } | { cursor: string }): Promise<RecoveryPage> =>
     request(`/api/messages/${address}/recover?${new URLSearchParams(cursor)}`, {}, token),
 
   // Opening starts message lifetimes; state lookup never does. Both
   // responses are server input and are validated by the caller.
-  openMessages: (address: string, ids: string[], token: string): Promise<unknown> =>
+  openMessages: (address: Address, ids: string[], token: string): Promise<unknown> =>
     request(`/api/messages/${address}/open`, {
       method: 'POST',
       body: JSON.stringify({ ids }),
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  getMessageStates: (address: string, ids: string[], token: string): Promise<unknown> =>
+  getMessageStates: (address: Address, ids: string[], token: string): Promise<unknown> =>
     request(`/api/messages/${address}/state`, {
       method: 'POST',
       body: JSON.stringify({ ids }),
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  clearConversation: (address: string, token: string): Promise<{ cleared_at: number }> =>
+  clearConversation: (address: Address, token: string): Promise<{ cleared_at: number }> =>
     request(`/api/messages/${address}`, { method: 'DELETE' }, token),
 
-  getConversations: (token: string): Promise<{ conversations: Conversation[] }> =>
-    request('/api/conversations', {}, token),
+  getConversations: async (token: string): Promise<{ conversations: Conversation[] }> => {
+    const result = await request<{ conversations: { address: unknown; last_message_at: number }[] }>('/api/conversations', {}, token)
+    return { conversations: result.conversations.map(item => ({ ...item, address: requireAddress(item.address) })) }
+  },
 
   getSseToken: (token: string): Promise<{ sse_token: string }> =>
     request('/api/events/token', { method: 'POST' }, token),
@@ -197,7 +198,7 @@ export const api = {
   deleteSession: (token: string) =>
     request('/api/session', { method: 'DELETE' }, token),
 
-  deleteAddress: (address: string, token: string) =>
+  deleteAddress: (address: Address, token: string) =>
     request(`/api/addresses/${address}`, { method: 'DELETE' }, token),
 
   subscribePush: (subscription: PushSubscriptionJSON, token: string) =>

@@ -39,7 +39,7 @@ function start(path = ':memory:') {
   }
   server = Bun.serve({ port: 0, fetch: createFetch() });
 }
-function request(path: string, identity = bob.address, body?: unknown) {
+function request(path: string, identity: string = bob.address, body?: unknown) {
   return fetch(new URL(path, server.url), { method: body === undefined ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
     body: body === undefined ? undefined : JSON.stringify(body) });
@@ -50,7 +50,7 @@ async function send(ttl = 5) {
   expect(response.status).toBe(201);
   return (await verifyDeliveredMessage(await response.json()))!;
 }
-function open(ids: string[], identity = bob.address) {
+function open(ids: string[], identity: string = bob.address) {
   return request(`/api/messages/${alice.address}/open`, identity, { ids });
 }
 

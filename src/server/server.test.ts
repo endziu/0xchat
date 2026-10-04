@@ -1,3 +1,4 @@
+import { requireAddress } from '../shared/address.ts';
 import {
   afterAll,
   beforeAll,
@@ -23,7 +24,7 @@ function registrationIdentity(byte: string) {
   const privateKey = `0x${byte.repeat(64)}` as `0x${string}`;
   return {
     privateKey,
-    address: privateKeyToAccount(privateKey).address.toLowerCase(),
+    address: requireAddress(privateKeyToAccount(privateKey).address),
     pubkey: bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true)),
   };
 }

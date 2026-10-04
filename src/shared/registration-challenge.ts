@@ -1,6 +1,7 @@
+import type { Address } from './address'
 export function buildRegistrationChallenge(
   origin: string,
-  address: string,
+  address: Address,
   publicKey: string,
   nonce: string,
 ): string {
@@ -8,7 +9,7 @@ export function buildRegistrationChallenge(
   return [
     '0xChat key registration v1',
     `Origin: ${origin}`,
-    `Address: ${address.toLowerCase()}`,
+    `Address: ${address}`,
     `Public key: 0x${normalizedPublicKey}`,
     `Nonce: ${nonce}`,
   ].join('\n')

@@ -1,14 +1,11 @@
+import type { Address } from '../shared/address.ts';
 import { verifyAddressBoundPublicKey } from '../shared/address-bound-pubkey.ts';
-
-export function isValidAddress(addr: string): boolean {
-  return /^0x[0-9a-f]{40}$/.test(addr);
-}
 
 export function isValidSig(sig: string): boolean {
   return /^0x[0-9a-fA-F]{130}$/.test(sig);
 }
 
-export function normalizeAddressBoundPubkey(address: string, value: unknown): string | null {
+export function normalizeAddressBoundPubkey(address: Address, value: unknown): string | null {
   const result = verifyAddressBoundPublicKey(address, value);
   return result.ok ? result.publicKey : null;
 }

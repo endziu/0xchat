@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address.ts';
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
@@ -22,7 +23,7 @@ function identity(byte: string) {
   const privateKey = `0x${byte.repeat(32)}` as const;
   return {
     privateKey,
-    address: privateKeyToAccount(privateKey).address.toLowerCase(),
+    address: requireAddress(privateKeyToAccount(privateKey).address),
     publicKey: bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true)),
   };
 }
@@ -86,11 +87,11 @@ describe('message rate limiting', () => {
 
     for (let count = 0; count < 240; count++) {
       const token = `cycle-token-${count}`;
-      createSession(token, `0x${count.toString(16).padStart(40, '0')}`, Date.now() + 60_000);
+      createSession(token, requireAddress(`0x${count.toString(16).padStart(40, '0')}`), Date.now() + 60_000);
       expect((await handleSendMessage(messageContext(ip, token))).status).toBe(400);
     }
 
-    createSession('cycle-token-over-limit', `0x${'f'.repeat(40)}`, Date.now() + 60_000);
+    createSession('cycle-token-over-limit', requireAddress(`0x${'f'.repeat(40)}`), Date.now() + 60_000);
     expect((await handleSendMessage(messageContext(ip, 'cycle-token-over-limit'))).status).toBe(429);
   });
 });

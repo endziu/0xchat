@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { clearToken, clearTokenIfMatches, getToken, saveToken } from './session'
 
@@ -21,45 +22,45 @@ beforeEach(() => {
 
 describe('identity-bound session storage', () => {
   test('loads a token only for its stored identity', () => {
-    saveToken('0xAa', 'token-a')
+    saveToken(requireAddress('0xaa00000000000000000000000000000000000000'), 'token-a')
 
-    expect(getToken('0xAa')).toBe('token-a')
-    expect(getToken('0xBb')).toBeNull()
+    expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBe('token-a')
+    expect(getToken(requireAddress('0xbb00000000000000000000000000000000000000'))).toBeNull()
     expect(values.has(NEW_SESSION_KEY)).toBe(false)
   })
 
   test('discards legacy unbound tokens', () => {
     values.set('eth_chat_token', 'legacy-token')
 
-    expect(getToken('0xAa')).toBeNull()
+    expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBeNull()
     expect(values.has('eth_chat_token')).toBe(false)
     expect(values.has(NEW_SESSION_KEY)).toBe(false)
   })
 
   test('clears both current and legacy storage', () => {
-    saveToken('0xAa', 'token-a')
+    saveToken(requireAddress('0xaa00000000000000000000000000000000000000'), 'token-a')
     values.set('eth_chat_token', 'legacy-token')
-    values.set(OLD_SESSION_KEY, JSON.stringify({ address: '0xaa', token: 'old-token' }))
+    values.set(OLD_SESSION_KEY, JSON.stringify({ address: requireAddress('0xaa00000000000000000000000000000000000000'), token: 'old-token' }))
 
     clearToken()
 
     expect(values.has(NEW_SESSION_KEY)).toBe(false)
     expect(values.has(OLD_SESSION_KEY)).toBe(false)
-    expect(getToken('0xAa')).toBeNull()
+    expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBeNull()
   })
 })
 
 describe('clearTokenIfMatches', () => {
   test('clears and reports a match for the stored token', () => {
-    saveToken('0xAa', 'token-a')
+    saveToken(requireAddress('0xaa00000000000000000000000000000000000000'), 'token-a')
     expect(clearTokenIfMatches('token-a')).toBe(true)
     expect(values.has(NEW_SESSION_KEY)).toBe(false)
   })
 
   test('keeps a newer session when the token does not match', () => {
-    saveToken('0xAa', 'token-b')
+    saveToken(requireAddress('0xaa00000000000000000000000000000000000000'), 'token-b')
     expect(clearTokenIfMatches('token-a')).toBe(false)
-    expect(getToken('0xAa')).toBe('token-b')
+    expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBe('token-b')
   })
 
   test('a stale token against corrupt storage does not report a match', () => {

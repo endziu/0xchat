@@ -1,12 +1,10 @@
+import { shortAddress, type Address } from '../../shared/address'
 // How addresses, names and times are shown to a person.
 
-export const shortAddr = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`
-
 /** The conversation label, "You" for your own address, else the short address. */
-export function displayName(address: string, labels: Record<string, string>, self: string): string {
-  const key = address.toLowerCase()
-  if (key === self.toLowerCase()) return 'You'
-  return labels[key] || shortAddr(address)
+export function displayName(address: Address, labels: Record<Address, string>, self: Address): string {
+  if (address === self) return 'You'
+  return labels[address] || shortAddress(address)
 }
 
 export const fmtTime = (ts: number) =>

@@ -1,3 +1,4 @@
+import { isCanonicalAddress, requireAddress, type Address } from './address'
 import * as secp from '@noble/secp256k1'
 import { hexToBytes, recoverMessageAddress } from 'viem'
 
@@ -11,8 +12,8 @@ export const MAX_PLAINTEXT_BYTES = (MAX_CIPHERTEXT_HEX_LEN - 2) / 2 - GCM_TAG_BY
 export interface MessageMetadata {
   version: typeof MESSAGE_ENVELOPE_VERSION
   id: string
-  sender: string
-  recipient: string
+  sender: Address
+  recipient: Address
   ttl: number
 }
 
@@ -53,15 +54,14 @@ export type ConfirmationKind = 'opening' | 'availability'
 
 export interface ExpiryUpdate extends MessageLifecycle {
   id: string
-  sender: string
-  recipient: string
+  sender: Address
+  recipient: Address
 }
 
 export function advertisesDeliveryCapability(headers: Headers): boolean {
   return headers.get('X-0xChat-Delivery-Capability') === DELIVERY_CAPABILITY
 }
 
-export const ADDRESS = /^0x[0-9a-f]{40}$/
 const MESSAGE_ID = /^0x[0-9a-f]{32}$/
 const SIGNATURE = /^0x[0-9a-f]{130}$/
 const HEX = /^0x(?:[0-9a-f]{2})+$/
@@ -127,8 +127,8 @@ export function parseMessageEnvelope(input: unknown): MessageEnvelope | null {
   if (Object.keys(value).sort().join(',') !== ENVELOPE_KEYS.join(',')) return null
   if (value['version'] !== MESSAGE_ENVELOPE_VERSION) return null
   if (typeof value['id'] !== 'string' || !MESSAGE_ID.test(value['id'])) return null
-  if (typeof value['sender'] !== 'string' || !ADDRESS.test(value['sender'])) return null
-  if (typeof value['recipient'] !== 'string' || !ADDRESS.test(value['recipient'])) return null
+  if (!isCanonicalAddress(value['sender'])) return null
+  if (!isCanonicalAddress(value['recipient'])) return null
   if (!Number.isSafeInteger(value['ttl']) || (value['ttl'] as number) <= 0) return null
   if (!validCiphertext(value['ct_recipient']) || !validCiphertext(value['ct_sender'])) return null
   if (!validCompressedPoint(value['ephemeral_pub_recipient']) || !validCompressedPoint(value['ephemeral_pub_sender'])) return null
@@ -143,7 +143,7 @@ async function signedBySender(envelope: MessageEnvelope): Promise<boolean> {
       message: canonicalMessageEnvelope(envelope),
       signature: envelope.signature as `0x${string}`,
     })
-    return recovered.toLowerCase() === envelope.sender
+    return requireAddress(recovered) === envelope.sender
   } catch {
     return false
   }
@@ -200,8 +200,8 @@ export function parseExpiryUpdate(input: unknown): ExpiryUpdate | null {
   const value = input as Record<string, unknown>
   if (Object.keys(value).sort().join(',') !== EXPIRY_UPDATE_KEYS.join(',')) return null
   if (typeof value['id'] !== 'string' || !MESSAGE_ID.test(value['id'])) return null
-  if (typeof value['sender'] !== 'string' || !ADDRESS.test(value['sender'])) return null
-  if (typeof value['recipient'] !== 'string' || !ADDRESS.test(value['recipient'])) return null
+  if (!isCanonicalAddress(value['sender'])) return null
+  if (!isCanonicalAddress(value['recipient'])) return null
   if (value['delivery_policy'] !== 'recipient-opening') return null
   if (!Number.isSafeInteger(value['created_at']) || !Number.isSafeInteger(value['expires_at'])) return null
   if (value['opened_at'] !== null && !Number.isSafeInteger(value['opened_at'])) return null
@@ -240,13 +240,11 @@ export async function verifyMessageConfirmation(
 
 export function isEnvelopeParticipant(
   envelope: Pick<MessageEnvelope, 'sender' | 'recipient'>,
-  identityAddress: string,
-  counterpartyAddress?: string,
+  identity: Address,
+  counterparty?: Address,
 ): boolean {
-  const identity = identityAddress.toLowerCase()
   if (envelope.sender !== identity && envelope.recipient !== identity) return false
-  if (!counterpartyAddress) return true
-  const counterparty = counterpartyAddress.toLowerCase()
+  if (!counterparty) return true
   return (envelope.sender === identity && envelope.recipient === counterparty)
     || (envelope.sender === counterparty && envelope.recipient === identity)
 }

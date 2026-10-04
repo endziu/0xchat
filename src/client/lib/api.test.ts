@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
@@ -8,7 +9,7 @@ import { buildSessionChallenge } from '../../shared/session-challenge'
 const originalFetch = globalThis.fetch
 const originalStorage = globalThis.localStorage
 const privateKey = `0x${'33'.repeat(32)}` as const
-const address = privateKeyToAccount(privateKey).address.toLowerCase()
+const address = requireAddress(privateKeyToAccount(privateKey).address)
 const publicKey = bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true))
 
 // Bun has no `window`; challenge verification reads `window.location.origin`.
@@ -63,7 +64,7 @@ describe('api.getChallenge', () => {
 
   test('rejects a session challenge that names a different address', async () => {
     const nonce = 'a3'.repeat(16)
-    const challenge = buildSessionChallenge(TEST_ORIGIN, `0x${'44'.repeat(20)}`, nonce)
+    const challenge = buildSessionChallenge(TEST_ORIGIN, requireAddress(`0x${'44'.repeat(20)}`), nonce)
     mockChallengeResponse(challenge, nonce)
 
     await expect(api.getChallenge(address)).rejects.toThrow('Invalid session challenge')
@@ -100,7 +101,7 @@ describe('api.getPubkey', () => {
       async () => Response.json({ pubkey: publicKey }),
       { preconnect: originalFetch.preconnect },
     )
-    await expect(api.getPubkey(`0x${'44'.repeat(20)}`)).rejects.toThrow(
+    await expect(api.getPubkey(requireAddress(`0x${'44'.repeat(20)}`))).rejects.toThrow(
       'Encryption public key does not match address',
     )
   })
@@ -166,7 +167,7 @@ describe('api per-request auth', () => {
     globalThis.fetch = Object.assign(
       async (_url: unknown, init?: RequestInit) => {
         seen.push(new Headers(init?.headers).get('Authorization'))
-        return new Response(null, { status: 204 })
+        return Response.json({ conversations: [] })
       },
       { preconnect: originalFetch.preconnect },
     )
@@ -182,7 +183,7 @@ describe('api per-request auth', () => {
     // A newer identity (B) has committed its session.
     globalThis.localStorage.setItem(
       '0xchat_session_v1',
-      JSON.stringify({ address: '0xbb', token: 'token-b' }),
+      JSON.stringify({ address: requireAddress('0xbb00000000000000000000000000000000000000'), token: 'token-b' }),
     )
     let expired = 0
     const onExp = () => { expired++ }
@@ -194,7 +195,7 @@ describe('api per-request auth', () => {
     )
 
     // A delayed request still carrying the previous identity (A) token 401s.
-    await expect(api.getMessages('0xbb', 'token-a')).rejects.toThrow()
+    await expect(api.getMessages(requireAddress('0xbb00000000000000000000000000000000000000'), 'token-a')).rejects.toThrow()
 
     // B's session survives and B is not signed out.
     expect(JSON.parse(globalThis.localStorage.getItem('0xchat_session_v1')!).token).toBe('token-b')
@@ -205,7 +206,7 @@ describe('api per-request auth', () => {
   test('a current-token 401 clears the session and signs out', async () => {
     globalThis.localStorage.setItem(
       '0xchat_session_v1',
-      JSON.stringify({ address: '0xbb', token: 'token-b' }),
+      JSON.stringify({ address: requireAddress('0xbb00000000000000000000000000000000000000'), token: 'token-b' }),
     )
     let expired = 0
     const onExp = () => { expired++ }
@@ -217,10 +218,20 @@ describe('api per-request auth', () => {
     )
 
     // The active identity's own token is rejected.
-    await expect(api.getMessages('0xbb', 'token-b')).rejects.toThrow()
+    await expect(api.getMessages(requireAddress('0xbb00000000000000000000000000000000000000'), 'token-b')).rejects.toThrow()
 
     expect(globalThis.localStorage.getItem('0xchat_session_v1')).toBeNull()
     expect(expired).toBe(1)
     globalThis.removeEventListener('auth:expired', onExp)
   })
+})
+
+test('conversation responses parse legacy casing and reject invalid addresses', async () => {
+  globalThis.fetch = Object.assign(async () => Response.json({ conversations: [
+    { address: '0x52908400098527886E0F7030069857D2E4169EE7', last_message_at: 123 },
+  ] }), { preconnect: originalFetch.preconnect })
+  const result = await api.getConversations('token')
+  expect<string>(result.conversations[0]!.address).toBe(requireAddress('0x52908400098527886e0f7030069857d2e4169ee7'))
+  globalThis.fetch = Object.assign(async () => Response.json({ conversations: [{ address: 'bad', last_message_at: 123 }] }), { preconnect: originalFetch.preconnect })
+  await expect(api.getConversations('token')).rejects.toThrow('address')
 })

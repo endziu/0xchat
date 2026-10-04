@@ -1,7 +1,7 @@
+import { parseAddress } from '../../shared/address.ts';
 import { deleteRegistration, getConversationPartners } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
 import { publish } from '../sse.ts';
-import { isValidAddress } from '../validation.ts';
 import { log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
 
@@ -12,10 +12,9 @@ export async function handleDeleteAddress({ req, path, ip }: Context): Promise<R
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  const match = path.match(/^\/api\/addresses\/(.+)$/);
-  const targetAddr = match![1]!.toLowerCase();
+  const targetAddr = parseAddress(path.slice('/api/addresses/'.length));
+  if (!targetAddr) return json({ error: 'Invalid address format' }, 400);
 
-  if (!isValidAddress(targetAddr)) return json({ error: 'Invalid address format' }, 400);
   if (address !== targetAddr) {
     warn('[forbidden] delete address', address, 'tried to delete', targetAddr);
     return json({ error: 'Forbidden' }, 403);

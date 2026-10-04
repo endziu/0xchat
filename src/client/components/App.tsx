@@ -1,3 +1,4 @@
+import { parseConversationPath } from '../lib/address-links'
 import { useState, useEffect, useCallback } from 'preact/hooks'
 import { useIdentity } from '../hooks/useIdentity'
 import { useSession } from '../hooks/useSession'
@@ -95,7 +96,7 @@ function AppContent() {
       push={push}
     >
       <ChatView
-        recipientAddress={path.startsWith('/chat/') ? path.slice(6) : null}
+        recipientAddress={parseConversationPath(path)}
         identity={identity!}
         token={token}
         navigate={navigate}

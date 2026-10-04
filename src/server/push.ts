@@ -1,3 +1,4 @@
+import type { Address } from '../shared/address.ts';
 import webpush from 'web-push';
 import { deletePushSubscription, getPushSubscriptionsForAddress } from './db.ts';
 import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, log, warn, error } from './constants.ts';
@@ -36,7 +37,7 @@ const DEAD_STATUS = new Set([401, 403, 404, 410]);
  * limit. There is no retry; a failed wake-up is dropped and the next message
  * tries again.
  */
-export async function pushNotify(address: string, deadline: number): Promise<void> {
+export async function pushNotify(address: Address, deadline: number): Promise<void> {
   const ttl = Math.floor((deadline - Date.now()) / 1000);
   const transport = send;
   if (!transport || ttl < 1 || pushSuppressingConnectionCount(address) > 0) return;

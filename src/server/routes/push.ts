@@ -1,3 +1,4 @@
+import type { Address } from '../../shared/address.ts';
 import { deletePushSubscription, getPubkey, savePushSubscription } from '../db.ts';
 import { json, getSessionAddress, type Context } from '../http.ts';
 import { validatePushSubscription } from '../validation.ts';
@@ -10,10 +11,10 @@ export async function handleGetVapidPublicKey(_ctx: Context): Promise<Response> 
 }
 
 /** Authenticate, rate-limit and read a JSON object body of at most 8 KiB. */
-async function readMutation({ req, ip }: Context): Promise<{ address: string; body: Record<string, unknown> } | Response> {
+async function readMutation({ req, ip }: Context): Promise<{ address: Address; body: Record<string, unknown> } | Response> {
   const address = getSessionAddress(req);
   if (!address) return json({ error: 'Unauthorized', code: 'unauthorized' }, 401);
-  if (pushMutationLimiter.hit(`${ip}:${address.toLowerCase()}`)) {
+  if (pushMutationLimiter.hit(`${ip}:${address}`)) {
     return json({ error: 'Too many requests. Wait a minute before retrying.', code: 'rate_limited' }, 429);
   }
   const reader = req.body?.getReader();

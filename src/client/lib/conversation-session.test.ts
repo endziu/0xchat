@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address'
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { ConversationSession, type ConversationProtocol, type SessionClock } from './conversation-session'
 import type { DecryptedMessage } from './conversation-messages'
@@ -7,8 +8,8 @@ import { isEnvelopeParticipant, UNOPENED_RETENTION_MS, type DeliveredMessage } f
 // The session runs against an in-memory server and a manual clock: every
 // response resolves through promises alone, so `settle()` completes all
 // pending work deterministically.
-const SELF = 'bob'
-const PARTNER = 'alice'
+const SELF = requireAddress('0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2')
+const PARTNER = requireAddress('0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1')
 
 // Failed requests are logged as they would be in the browser.
 beforeEach(() => { spyOn(console, 'error').mockImplementation(() => {}) })
@@ -560,7 +561,7 @@ test('a conversation cleared while out of sync disappears at once; another conve
   session.attentionChanged(false)
   expect(shown(session)).toEqual(['opened by her'])
 
-  session.liveEvent(cleared(clock.now(), 'carol'))
+  session.liveEvent(cleared(clock.now(), requireAddress('0x' + 'd4'.repeat(20))))
   expect(shown(session)).toEqual(['opened by her'])
   session.liveEvent(cleared(clock.now()))
   expect(shown(session)).toEqual([])
@@ -664,7 +665,7 @@ test('forged or inconsistent expiry updates are ignored', async () => {
   await settle()
   // Each would expire the copy five seconds after sending if it applied.
   const opened = { ...copy, opened_at: copy.created_at, expires_at: copy.created_at + 5_000 }
-  session.liveEvent({ type: 'expiry-update', data: { ...opened, sender: 'mallory' } })
+  session.liveEvent({ type: 'expiry-update', data: { ...opened, sender: requireAddress('0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3') } })
   session.liveEvent({ type: 'expiry-update', data: { ...opened, expires_at: opened.expires_at - 1 } })
   clock.advance(6_000)
   expect(shown(session)).toEqual(['keeps its deadline'])

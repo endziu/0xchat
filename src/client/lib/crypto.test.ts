@@ -1,3 +1,4 @@
+import { requireAddress } from '../../shared/address'
 import { describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
@@ -18,8 +19,8 @@ const recipientPublicKey = bytesToHex(secp.getPublicKey(hexToBytes(recipientPriv
 const metadata = {
   version: MESSAGE_ENVELOPE_VERSION,
   id: `0x${'44'.repeat(16)}`,
-  sender: sender.address.toLowerCase(),
-  recipient: recipient.address.toLowerCase(),
+  sender: requireAddress(sender.address),
+  recipient: requireAddress(recipient.address),
   ttl: 300,
 }
 const aad = canonicalMessageAad(metadata)
@@ -33,7 +34,7 @@ function vectorRandom(length: number): Uint8Array<ArrayBuffer> {
 describe('authenticated message encryption vector', () => {
   test('encrypts, signs, verifies, and decrypts a stable canonical vector', async () => {
     expect(aad).toBe(
-      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${sender.address.toLowerCase()}\nRecipient: ${recipient.address.toLowerCase()}\nTTL: 300`,
+      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300`,
     )
     const encrypted = await encrypt('hello envelope', recipientPublicKey, aad, vectorRandom)
     expect(encrypted).toEqual({
@@ -71,8 +72,8 @@ describe('authenticated message encryption vector', () => {
     for (const mutation of [
       aad.replace('Version: 2', 'Version: 1'),
       aad.replace(`0x${'44'.repeat(16)}`, `0x${'45'.repeat(16)}`),
-      aad.replace(`Sender: ${sender.address.toLowerCase()}`, `Sender: 0x${'12'.repeat(20)}`),
-      aad.replace(`Recipient: ${recipient.address.toLowerCase()}`, `Recipient: 0x${'23'.repeat(20)}`),
+      aad.replace(`Sender: ${requireAddress(sender.address)}`, `Sender: 0x${'12'.repeat(20)}`),
+      aad.replace(`Recipient: ${requireAddress(recipient.address)}`, `Recipient: 0x${'23'.repeat(20)}`),
       aad.replace('TTL: 300', 'TTL: 60'),
     ]) {
       await expect(decrypt(

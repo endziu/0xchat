@@ -1,19 +1,20 @@
+import { shortAddress, type Address } from '../../shared/address'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { UserX } from 'lucide-preact'
 import { MergedConversation } from '../hooks/useConversations'
 import { getLastSeenKey, subscribeLastSeen } from '../lib/contacts'
-import { fmtDay, fmtTime, shortAddr } from '../lib/display'
+import { fmtDay, fmtTime } from '../lib/display'
 import { AddressAvatar } from './AddressAvatar'
 import { ErrorState } from './ErrorState'
 
 interface ConversationListProps {
   conversations: MergedConversation[]
-  activeAddress: string | null
-  onSelect: (address: string) => void
+  activeAddress: Address | null
+  onSelect: (address: Address) => void
   onNewConversation: () => void
   // Takes the conversation off the list and forgets its label, on this device.
-  onRemove: (address: string) => void
-  labels?: Record<string, string>
+  onRemove: (address: Address) => void
+  labels?: Record<Address, string>
   error: string | null
   onRetry: () => void
 }
@@ -26,16 +27,15 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
   const removeConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(removeConfirmTimeout.current), [])
 
-  const handleRemove = (e: Event, address: string) => {
+  const handleRemove = (e: Event, address: Address) => {
     e.stopPropagation()
     clearTimeout(removeConfirmTimeout.current)
-    const addr = address.toLowerCase()
-    if (removeConfirm === addr) {
+    if (removeConfirm === address) {
       setRemoveConfirm(null)
       onRemove(address)
       return
     }
-    setRemoveConfirm(addr)
+    setRemoveConfirm(address)
     removeConfirmTimeout.current = setTimeout(() => setRemoveConfirm(null), 3000)
   }
 
@@ -49,7 +49,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
     const map: Record<string, boolean> = {}
     for (const conv of conversations) {
       const lastSeen = localStorage.getItem(getLastSeenKey(conv.address))
-      map[conv.address.toLowerCase()] = !lastSeen || Number(lastSeen) < conv.last_message_at
+      map[conv.address] = !lastSeen || Number(lastSeen) < conv.last_message_at
     }
     setUnreadMap(map)
   }, [conversations, seenVersion])
@@ -74,8 +74,8 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
       {errorNotice}
       <ul className="list-none m-0 p-0">
         {conversations.map((conv) => {
-          const addr = conv.address.toLowerCase()
-          const isActive = activeAddress?.toLowerCase() === addr
+          const addr = conv.address
+          const isActive = activeAddress === addr
           const isUnread = unreadMap[addr]
           const label = labels[addr]
           const confirming = removeConfirm === addr
@@ -92,7 +92,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
               <AddressAvatar address={conv.address} />
               <span className="flex-1 min-w-0 flex flex-col">
                 <span className={`truncate ${isUnread ? 'font-bold text-white' : label ? 'text-neutral-300' : 'text-sm text-neutral-400'}`}>
-                  {label || shortAddr(conv.address)}
+                  {label || shortAddress(conv.address)}
                 </span>
                 {conv.stale && <span className="text-xs text-neutral-500">No messages</span>}
               </span>
