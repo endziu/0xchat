@@ -1,4 +1,4 @@
-import type { Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { recoveryMetadata } from './db.ts';
 

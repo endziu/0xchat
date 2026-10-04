@@ -1,4 +1,4 @@
-import { requireAddress } from '../../shared/address'
+import { requireAddress } from '../../shared/address.ts'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { createSession, initDb } from '../db.ts'
 import { createFetch } from '../router.ts'

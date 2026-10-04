@@ -1,4 +1,4 @@
-import { checksumAddress, type Address } from '../../shared/address'
+import { checksumAddress, shortAddress, type Address } from '../../shared/address'
 import { Fragment } from 'preact'
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
 import { ArrowLeft, Send, Copy, Check, ImagePlus, X, Trash2, Timer, LoaderCircle } from 'lucide-preact'
@@ -11,7 +11,7 @@ import { ErrorState } from './ErrorState'
 import { MessageText } from './MessageText'
 import { AddressAvatar } from './AddressAvatar'
 import { useCopied } from '../hooks/useCopied'
-import { displayName, fmtDay, fmtRemaining, fmtTime, shortAddr } from '../lib/display'
+import { displayName, fmtDay, fmtRemaining, fmtTime } from '../lib/display'
 
 interface MessagePaneProps {
   recipientAddress: Address
@@ -266,12 +266,12 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
               aria-label={label ? `Rename ${label}` : 'Add a name'}
               className="border-0 flex-1 min-w-0 flex-col items-start justify-center gap-0 px-0 py-0 leading-tight text-left hover:bg-transparent"
             >
-              <span className="max-w-full truncate">{label || shortAddr(recipientAddress)}</span>
+              <span className="max-w-full truncate">{label || shortAddress(recipientAddress)}</span>
               <span className="max-w-full truncate text-xs text-neutral-500">
                 {label ? (
                   <>
                     <span className="max-sm:hidden">{checksumAddress(recipientAddress)}</span>
-                    <span className="sm:hidden">{shortAddr(recipientAddress)}</span>
+                    <span className="sm:hidden">{shortAddress(recipientAddress)}</span>
                   </>
                 ) : 'Add a name'}
               </span>

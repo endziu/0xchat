@@ -1,7 +1,5 @@
-import { isCanonicalAddress, type Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import { verifyAddressBoundPublicKey } from '../shared/address-bound-pubkey.ts';
-
-export const isValidAddress = isCanonicalAddress;
 
 export function isValidSig(sig: string): boolean {
   return /^0x[0-9a-fA-F]{130}$/.test(sig);

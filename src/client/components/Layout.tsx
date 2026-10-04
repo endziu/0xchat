@@ -1,5 +1,5 @@
 import { conversationPath } from '../lib/address-links'
-import { checksumAddress } from '../../shared/address'
+import { checksumAddress, shortAddress } from '../../shared/address'
 import type { ComponentChildren } from 'preact'
 import { useState, useEffect } from 'preact/hooks'
 import type { Keypair } from '../lib/burner'
@@ -8,7 +8,6 @@ import { AddressAvatar } from './AddressAvatar'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
 import { SettingsModal } from './SettingsModal'
-import { shortAddr } from '../lib/display'
 import { useCopied } from '../hooks/useCopied'
 import type { PushSettings } from './SettingsModal'
 
@@ -68,7 +67,7 @@ export function Layout({
             {/* The glyph stays when the address text is hidden, so phones
                 still show which identity is active. */}
             <AddressAvatar address={identity.address} size={20} />
-            <span className="max-sm:hidden">{shortAddr(identity.address)}</span>
+            <span className="max-sm:hidden">{shortAddress(identity.address)}</span>
             <button onClick={() => copy(checksumAddress(identity.address))} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>

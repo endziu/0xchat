@@ -1,4 +1,4 @@
-import { parseAddress } from '../shared/address'
+import { parseAddress } from '../shared/address.ts';
 import { getClientIp } from './http.ts';
 import { SECURITY_HEADERS, log } from './constants.ts';
 import { TRUSTED_PROXY_IPS } from './trusted-proxy.ts';
@@ -47,6 +47,7 @@ const routes: Route[] = [
   { method: 'GET',    test: () => true,                                 handler: handleStatic },
 ];
 
+// Handlers may requireAddress the path segment: the route has already parsed it.
 function addressRoute(prefix: string, suffix = '') {
   return (path: string) => path.startsWith(prefix) && path.endsWith(suffix)
     && parseAddress(path.slice(prefix.length, suffix ? -suffix.length : undefined)) !== null;

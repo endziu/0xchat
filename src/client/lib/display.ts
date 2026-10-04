@@ -1,13 +1,10 @@
 import { shortAddress, type Address } from '../../shared/address'
 // How addresses, names and times are shown to a person.
 
-export const shortAddr = shortAddress
-
 /** The conversation label, "You" for your own address, else the short address. */
 export function displayName(address: Address, labels: Record<Address, string>, self: Address): string {
-  const key = address
-  if (key === self) return 'You'
-  return labels[key] || shortAddr(address)
+  if (address === self) return 'You'
+  return labels[address] || shortAddress(address)
 }
 
 export const fmtTime = (ts: number) =>

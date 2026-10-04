@@ -1,4 +1,4 @@
-import { parseAddress } from '../../shared/address'
+import { parseAddress } from '../../shared/address.ts';
 import { randomBytes } from 'node:crypto';
 import { ChallengeStore } from '../challenge.ts';
 import { createSession } from '../db.ts';
@@ -29,7 +29,7 @@ export async function handleAuthChallenge({ req, ip }: Context): Promise<Respons
 
   const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
   if (!address) {
-    warn('[invalid] auth-challenge bad address', address);
+    warn('[invalid] auth-challenge bad address', body.address);
     return json({ error: 'invalid address' }, 400);
   }
 
@@ -67,7 +67,7 @@ export async function handleAuthSession({ req, ip }: Context): Promise<Response>
   const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
 
   if (!address) {
-    warn('[invalid] auth-session bad address', address);
+    warn('[invalid] auth-session bad address', body.address);
     return json({ error: 'invalid address' }, 400);
   }
   if (!isValidSig(signature)) {

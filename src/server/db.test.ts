@@ -1,4 +1,4 @@
-import { requireAddress, type Address } from '../shared/address'
+import { requireAddress, type Address } from '../shared/address.ts';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { unlinkSync } from 'node:fs';

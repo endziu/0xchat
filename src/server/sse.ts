@@ -1,4 +1,4 @@
-import type { Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import type { LiveEvent } from '../shared/live-events.ts';
 
 const clients = new Map<

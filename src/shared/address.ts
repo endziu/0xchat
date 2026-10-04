@@ -11,9 +11,9 @@ export function isCanonicalAddress(value: unknown): value is Address {
 
 /**
  * External input is shape-validated, not checksum-validated. Accept all casing
- * for compatibility with existing links, identities and storage. Human input
- * adapters may trim whitespace before parsing; protocol parsers must use
- * isCanonicalAddress instead.
+ * for compatibility with existing links, identities and storage. Input
+ * adapters may trim whitespace before parsing. Signed envelopes and live events
+ * must use isCanonicalAddress instead.
  */
 export function parseAddress(value: unknown): Address | null {
   if (typeof value !== 'string') return null

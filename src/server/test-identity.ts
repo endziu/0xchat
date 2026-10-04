@@ -1,4 +1,4 @@
-import { requireAddress } from '../shared/address'
+import { requireAddress } from '../shared/address.ts';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';

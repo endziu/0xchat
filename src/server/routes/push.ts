@@ -1,4 +1,4 @@
-import type { Address } from '../../shared/address'
+import type { Address } from '../../shared/address.ts';
 import { deletePushSubscription, getPubkey, savePushSubscription } from '../db.ts';
 import { json, getSessionAddress, type Context } from '../http.ts';
 import { validatePushSubscription } from '../validation.ts';

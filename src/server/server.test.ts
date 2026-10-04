@@ -1,4 +1,4 @@
-import { requireAddress } from '../shared/address'
+import { requireAddress } from '../shared/address.ts';
 import {
   afterAll,
   beforeAll,

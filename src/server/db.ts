@@ -1,4 +1,4 @@
-import type { Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import { Database } from 'bun:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';

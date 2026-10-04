@@ -55,8 +55,6 @@ export function applyExpiryUpdate(message: PlainMessage, update: ExpiryUpdate): 
   return true
 }
 
-export const address = requireAddress
-
 export function serverOrigin(value: string): string {
   if (value === 'prod') value = 'https://chat.endziu.xyz'
   if (value === 'local') value = 'http://localhost:3000'
@@ -169,8 +167,7 @@ export class ChatClient {
     finally { this.token = null }
   }
 
-  async send(to: Address, plaintext: string, ttl = 300): Promise<PlainMessage> {
-    const recipient = to
+  async send(recipient: Address, plaintext: string, ttl = 300): Promise<PlainMessage> {
     if (recipient === this.identity.address) throw new Error('Cannot message yourself')
     if (!LIFETIMES.includes(ttl)) throw new Error(`Lifetime must be one of: ${LIFETIMES.join(', ')} seconds`)
     if (!plaintext.trim()) throw new Error('Message must not be empty')

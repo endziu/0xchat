@@ -1,4 +1,4 @@
-import { requireAddress, type Address } from '../shared/address'
+import { requireAddress, type Address } from '../shared/address.ts';
 import { recoverMessageAddress } from 'viem';
 
 export async function verifySig(

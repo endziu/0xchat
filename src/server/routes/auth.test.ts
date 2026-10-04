@@ -1,4 +1,4 @@
-import { requireAddress } from '../../shared/address'
+import { requireAddress } from '../../shared/address.ts';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { unlinkSync } from 'node:fs';
 import { privateKeyToAccount } from 'viem/accounts';

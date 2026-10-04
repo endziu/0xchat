@@ -240,13 +240,11 @@ export async function verifyMessageConfirmation(
 
 export function isEnvelopeParticipant(
   envelope: Pick<MessageEnvelope, 'sender' | 'recipient'>,
-  identityAddress: Address,
-  counterpartyAddress?: Address,
+  identity: Address,
+  counterparty?: Address,
 ): boolean {
-  const identity = identityAddress
   if (envelope.sender !== identity && envelope.recipient !== identity) return false
-  if (!counterpartyAddress) return true
-  const counterparty = counterpartyAddress
+  if (!counterparty) return true
   return (envelope.sender === identity && envelope.recipient === counterparty)
     || (envelope.sender === counterparty && envelope.recipient === identity)
 }

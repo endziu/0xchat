@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { checksumAddress, type Address } from '../shared/address'
+import { checksumAddress, requireAddress, type Address } from '../shared/address'
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, address, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 import { parseLiveEvent } from '../shared/live-events'
 import { isEnvelopeParticipant } from '../shared/message-envelope'
@@ -112,7 +112,7 @@ async function follow(
         if (!synced) {
           // Subscribe first; messages arriving during history fetch remain buffered.
           const history: PlainMessage[] = []
-          for await (const page of client.history(partner!)) history.unshift(...page)
+          for await (const page of client.history(partner)) history.unshift(...page)
           if (signal.aborted) return
           const availableIds = new Set(history.filter(isMessageAvailable).map(message => message.id))
           for (const id of seen.keys()) {
@@ -214,7 +214,7 @@ async function chat(client: ChatClient, partner: Address, ttl: number, controlle
     sending = true
     status = 'Sending…'
     render()
-    pendingSend = client.send(partner!, line, ttl).then(message => {
+    pendingSend = client.send(partner, line, ttl).then(message => {
       messages.set(message.id, message)
       status = 'Sent'
     }).catch(error => {
@@ -226,7 +226,7 @@ async function chat(client: ChatClient, partner: Address, ttl: number, controlle
   })
   render()
   try {
-    await follow(client, partner!, controller.signal,
+    await follow(client, partner, controller.signal,
       message => { messages.set(message.id, message); render() },
       message => { messages.set(message.id, message); render() },
       text => { status = text; render() },
@@ -253,7 +253,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     throw new Error(`Unknown command: ${command}. Use --help.`)
   }
   const needsPartner = ['send', 'read', 'watch', 'chat'].includes(command!)
-  const partner = needsPartner ? address(partnerArg ?? '') : null
+  const partner = needsPartner ? requireAddress(partnerArg ?? '') : null
   if (!needsPartner && partnerArg !== undefined || command !== 'send' && textArgs.length) throw new Error('Unexpected positional arguments')
   if (values['key-file'] !== undefined && command !== 'import') throw new Error('--key-file is only valid with import')
   if ((values.all || values.before || values['before-rowid']) && command !== 'read') throw new Error('Pagination options are only valid with read')

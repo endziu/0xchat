@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { chmod, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { ChatClient, address, serverOrigin } from './client'
+import { ChatClient, serverOrigin } from './client'
 import { createIdentity, loadIdentity, parsePrivateKey } from './identity'
 import { terminalText } from './main'
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
@@ -48,7 +48,7 @@ describe('local identity and input boundaries', () => {
     for (const url of ['http://example.com', 'https://u:p@example.com', 'https://example.com/api', 'https://example.com/?x=1', 'file:///tmp/a']) {
       expect(() => serverOrigin(url)).toThrow()
     }
-    expect(() => address('../conversations')).toThrow()
+    expect(() => requireAddress('../conversations')).toThrow()
   })
 
   test('failed init identifies the server and preserves the identity for register', async () => {

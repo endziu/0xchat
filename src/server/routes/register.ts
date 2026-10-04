@@ -1,4 +1,4 @@
-import { parseAddress, type Address } from '../../shared/address'
+import { parseAddress, type Address } from '../../shared/address.ts';
 import { ChallengeStore } from '../challenge.ts';
 import { registerPubkey } from '../db.ts';
 import { json } from '../http.ts';
@@ -31,7 +31,7 @@ export async function handleRegisterChallenge({ req, ip }: Context): Promise<Res
 
   const address = parseAddress(typeof body.address === 'string' ? body.address.trim() : body.address);
   if (!address) {
-    warn('[invalid]', '/api/register/challenge', 'bad address', address);
+    warn('[invalid]', '/api/register/challenge', 'bad address', body.address);
     return json({ error: 'Invalid address' }, 400);
   }
 
@@ -72,7 +72,7 @@ export async function handleRegister({ req, ip }: Context): Promise<Response> {
   const nonce = typeof body.nonce === 'string' ? body.nonce : '';
 
   if (!address) {
-    warn('[invalid] register bad address', address);
+    warn('[invalid] register bad address', body.address);
     return json({ error: 'invalid address' }, 400);
   }
   const pubkey = normalizeAddressBoundPubkey(address, body.pubkey);

@@ -87,7 +87,7 @@ export const api = {
     const normalizedPubkey = verifyEncryptionPublicKey(address, pubkey)
     const result = await request<{ challenge: string; nonce: string }>('/api/register/challenge', {
       method: 'POST',
-      body: JSON.stringify({ address: address, pubkey: normalizedPubkey }),
+      body: JSON.stringify({ address, pubkey: normalizedPubkey }),
       headers: { 'Content-Type': 'application/json' },
     }, null)
     const expected = buildRegistrationChallenge(
@@ -117,7 +117,7 @@ export const api = {
   getChallenge: async (address: Address): Promise<{ challenge: string; nonce: string }> => {
     const result = await request<{ challenge: string; nonce: string }>('/api/auth/challenge', {
       method: 'POST',
-      body: JSON.stringify({ address: address }),
+      body: JSON.stringify({ address }),
       headers: { 'Content-Type': 'application/json' },
     }, null)
     const expected = buildSessionChallenge(

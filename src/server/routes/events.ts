@@ -1,4 +1,4 @@
-import type { Address } from '../../shared/address'
+import type { Address } from '../../shared/address.ts';
 import { randomBytes } from 'node:crypto';
 import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';

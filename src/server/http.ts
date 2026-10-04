@@ -1,4 +1,4 @@
-import type { Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
 import { resolveClientIp } from './trusted-proxy.ts';

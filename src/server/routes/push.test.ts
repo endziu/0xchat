@@ -1,4 +1,4 @@
-import { requireAddress, type Address } from '../../shared/address'
+import { requireAddress, type Address } from '../../shared/address.ts'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { createSession, getPushSubscriptionsForAddress, initDb, registerPubkey } from '../db.ts'
 import { pushMutationLimiter } from '../rate-limiters.ts'

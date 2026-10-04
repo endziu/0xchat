@@ -1,4 +1,4 @@
-import type { Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import webpush from 'web-push';
 import { deletePushSubscription, getPushSubscriptionsForAddress } from './db.ts';
 import { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, log, warn, error } from './constants.ts';

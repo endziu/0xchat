@@ -1,9 +1,9 @@
-import type { Address } from '../../shared/address'
+import { shortAddress, type Address } from '../../shared/address'
 import { useState, useEffect, useRef } from 'preact/hooks'
 import { UserX } from 'lucide-preact'
 import { MergedConversation } from '../hooks/useConversations'
 import { getLastSeenKey, subscribeLastSeen } from '../lib/contacts'
-import { fmtDay, fmtTime, shortAddr } from '../lib/display'
+import { fmtDay, fmtTime } from '../lib/display'
 import { AddressAvatar } from './AddressAvatar'
 import { ErrorState } from './ErrorState'
 
@@ -30,13 +30,12 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
   const handleRemove = (e: Event, address: Address) => {
     e.stopPropagation()
     clearTimeout(removeConfirmTimeout.current)
-    const addr = address
-    if (removeConfirm === addr) {
+    if (removeConfirm === address) {
       setRemoveConfirm(null)
       onRemove(address)
       return
     }
-    setRemoveConfirm(addr)
+    setRemoveConfirm(address)
     removeConfirmTimeout.current = setTimeout(() => setRemoveConfirm(null), 3000)
   }
 
@@ -93,7 +92,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
               <AddressAvatar address={conv.address} />
               <span className="flex-1 min-w-0 flex flex-col">
                 <span className={`truncate ${isUnread ? 'font-bold text-white' : label ? 'text-neutral-300' : 'text-sm text-neutral-400'}`}>
-                  {label || shortAddr(conv.address)}
+                  {label || shortAddress(conv.address)}
                 </span>
                 {conv.stale && <span className="text-xs text-neutral-500">No messages</span>}
               </span>

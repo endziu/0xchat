@@ -1,6 +1,6 @@
-import { requireAddress } from '../../shared/address'
+import { requireAddress, shortAddress } from '../../shared/address'
 import { expect, test } from 'bun:test'
-import { displayName, fmtDay, fmtRemaining, shortAddr } from './display'
+import { displayName, fmtDay, fmtRemaining } from './display'
 
 const alice = requireAddress(`0xb9bb${'0'.repeat(32)}574b`)
 const me = requireAddress(`0x32bd${'0'.repeat(32)}8b54`)
@@ -8,8 +8,8 @@ const me = requireAddress(`0x32bd${'0'.repeat(32)}8b54`)
 test('displayName prefers You, then the label, then the short address', () => {
   expect(displayName(me, {}, me)).toBe('You')
   expect(displayName(alice, { [alice]: 'Alice' }, me)).toBe('Alice')
-  expect(displayName(alice, {}, me)).toBe(shortAddr(alice))
-  expect(shortAddr(alice)).toBe('0xb9bb…574B')
+  expect(displayName(alice, {}, me)).toBe(shortAddress(alice))
+  expect(shortAddress(alice)).toBe('0xb9bb…574B')
 })
 
 test('fmtRemaining uses the largest whole unit', () => {

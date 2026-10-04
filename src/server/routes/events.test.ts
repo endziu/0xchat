@@ -1,4 +1,4 @@
-import { requireAddress } from '../../shared/address'
+import { requireAddress } from '../../shared/address.ts'
 import { afterAll, beforeAll, describe, expect, jest, test } from 'bun:test'
 import { createSession, initDb } from '../db.ts'
 import { MAX_SSE_CONNECTIONS_PER_ADDRESS } from '../constants.ts'

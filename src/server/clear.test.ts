@@ -1,4 +1,4 @@
-import type { Address } from '../shared/address'
+import type { Address } from '../shared/address.ts';
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';

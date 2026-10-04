@@ -1,4 +1,4 @@
-import { requireAddress } from '../shared/address'
+import { requireAddress } from '../shared/address.ts'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync } from 'node:fs'
