@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair, deriveKeypair } from '../lib/burner'
 import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
+import { AddressAvatar } from './AddressAvatar'
 import { useToast } from './Toast'
 import { useCopied } from '../hooks/useCopied'
 
@@ -78,7 +79,10 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
               <span className="text-sm text-neutral-500">New address</span>
               <button onClick={handleCancelPreview} title="Cancel import" aria-label="Cancel import" className="border-0 p-0.5"><X size={14} /></button>
             </div>
-            <div className="mt-1 break-all text-sm text-neutral-400">{previewKeypair.address}</div>
+            <div className="mt-1 flex items-center gap-2 text-sm text-neutral-400">
+              <AddressAvatar address={previewKeypair.address} />
+              <span className="min-w-0 break-all">{previewKeypair.address}</span>
+            </div>
             <button className="mt-2" onClick={() => {
               if (confirmTimeout) { handleImportConfirm() } else {
                 setConfirmTimeout(true)
