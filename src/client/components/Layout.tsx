@@ -63,11 +63,14 @@ export function Layout({
           )}
         </div>
         {identity && (
-          <div className="flex items-center gap-2 max-sm:gap-0 text-sm text-neutral-500">
+          <div className="flex items-center gap-2 max-sm:gap-1 text-sm text-neutral-500">
             {/* The glyph stays when the address text is hidden, so phones
-                still show which identity is active. */}
-            <AddressAvatar address={identity.address} size={20} />
-            <span className="max-sm:hidden">{shortAddress(identity.address)}</span>
+                still show which identity is active. Text sits above its line
+                box's centre, so the pair moves down onto the buttons' centre. */}
+            <span className="flex items-center gap-2 translate-y-[0.05em]">
+              <AddressAvatar address={identity.address} size={20} />
+              <span className="max-sm:hidden">{shortAddress(identity.address)}</span>
+            </span>
             <button onClick={() => copy(checksumAddress(identity.address))} title="Copy Address" aria-label="Copy address" className="header-action">
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>

@@ -108,8 +108,13 @@
 
 @utility header-action {
   @media (width < 40rem) {
-    border-width: 0;
     min-width: 32px;
     padding-inline: 4px;
+    justify-content: center;
+    /* Touch targets fill the 44px bar, where a border would run into its
+       edges, so the icons stand alone there. */
+    @media (pointer: coarse) {
+      border-width: 0;
+    }
   }
 }
