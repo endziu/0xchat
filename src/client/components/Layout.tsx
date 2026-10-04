@@ -54,8 +54,10 @@ export function Layout({
         <div className="flex items-center gap-2">
           <a href="/chat" onClick={(e) => { e.preventDefault(); navigate?.('/chat') }} className="flex items-center gap-2 whitespace-nowrap">
             {/* Phones have no room for the identity beside the buttons, so its
-                glyph takes the hexagon's place by the title. */}
-            {identity && <span className="flex sm:hidden"><AddressAvatar address={identity.address} size={20} /></span>}
+                glyph takes the hexagon's place by the title. It matches the
+                conversation list's glyphs and sits in their column: a row's
+                pl-1, unread dot and gap-2 put them 10px right of our px-2. */}
+            {identity && <span className="flex sm:hidden ml-2.5"><AddressAvatar address={identity.address} /></span>}
             <span className={identity ? 'max-sm:hidden' : undefined}>⬡</span>
             0xChat
           </a>
