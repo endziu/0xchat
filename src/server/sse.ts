@@ -38,7 +38,7 @@ export function updateClientAttention(
 ): boolean {
   const client = clients.get(address)?.get(ctrl);
   if (!client) return false;
-  if (sequence <= client.sequence) return true;
+  if (sequence <= client.sequence) return false;
   client.sequence = sequence;
   client.suppressPush = attentive;
   client.attentionAt = Date.now();

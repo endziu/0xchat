@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "cli": "bun run src/cli/main.ts",
+    "stats:dau": "bun run src/server/dau-command.ts",
     "clear:db": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
     "clear:dist": "rm -rf dist && echo 'Dist cleared'",
     "clear:all": "bun clear:db; bun clear:dist",

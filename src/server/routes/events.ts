@@ -1,5 +1,6 @@
 import type { Address } from '../../shared/address.ts';
 import { randomBytes } from 'node:crypto';
+import { recordDailyActivity } from '../db.ts';
 import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
 import { sseTokenLimiter } from '../rate-limiters.ts';
@@ -109,6 +110,8 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
   sseTokenStore.consume(sseToken); // single-use
   // Older clients and the CLI keep the existing push-suppression behavior.
   const suppressPush = url.searchParams.get('attentive') !== 'false';
+  // Only explicit browser attention counts; a legacy/terminal connection alone does not.
+  if (url.searchParams.get('attentive') === 'true') recordDailyActivity(address);
 
   const ping = new TextEncoder().encode(`event: ping\ndata: {}\n\n`);
   let controller: ReadableStreamDefaultController;
@@ -169,6 +172,8 @@ export async function handleSSEAttention({ req }: Context): Promise<Response> {
   }
   const live = liveStreams.get(stream);
   if (!live || live.address !== address) return json({ error: 'Stream not found' }, 404);
-  updateClientAttention(address, live.controller, attentive, sequence as number);
+  if (updateClientAttention(address, live.controller, attentive, sequence as number) && attentive) {
+    recordDailyActivity(address);
+  }
   return new Response(null, { status: 204, headers: SECURITY_HEADERS });
 }

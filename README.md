@@ -140,6 +140,7 @@ bun install          # install dependencies
 bun run dev          # start Vite + backend with debug logs
 bun run build        # build frontend SPA into dist/
 bun run icons        # regenerate public icons and favicon
+bun run stats:dau    # read historical daily active identity totals from local chat.db (JSON)
 bun run start        # clear db, build, start server with debug logs
 bun run start:prod   # start server using an existing dist/
 bun run clear:db     # delete chat.db and WAL/SHM files only
@@ -182,6 +183,26 @@ lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
   the window. A pruned recipient cannot receive messages
   (`Recipient not registered`) until they register again.
 - Cleanup runs every 30 seconds.
+
+## Daily active identities
+
+`bun run stats:dau` reads local `chat.db` in read-only mode and prints UTC daily
+counts as JSON (`day`, `identities`). It requires filesystem access, not an HTTP
+admin endpoint. Tracking begins when this version is deployed; there is no
+backfill. Only days with activity appear, and today's count is provisional.
+
+An identity counts once per UTC day when a browser explicitly reports foreground
+attention (visible and focused), sends an accepted message, or opens an available
+message. Foreground attention is refreshed by the existing 20-second heartbeat,
+including across midnight. Authentication, passive delivery, background/terminal
+connections, message recovery, and lifecycle-state lookups alone do not count.
+These are distinct identities, not humans or IP addresses.
+
+SQLite deduplicates across tabs, devices, and restarts using HMAC identity hashes
+with an independently random key for each UTC day. Old hashes and keys are
+removed on the first activity of the next day, at startup, or by the 30-second
+cleanup sweep; only aggregate totals are retained indefinitely. No message
+contents, IPs, or third-party analytics are collected for this metric.
 
 ## Push notifications
 

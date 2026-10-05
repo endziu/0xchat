@@ -1,6 +1,6 @@
 import type { Address } from '../shared/address.ts';
 import { Database } from 'bun:sqlite';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { MESSAGE_ENVELOPE_VERSION, UNOPENED_RETENTION_MS, type MessageLifecycle, type OpeningResult, type ExpiryUpdate, type MessageEnvelope } from '../shared/message-envelope.ts';
 
 // Session tokens are stored as sha256 hex digests so a copy of the database
@@ -55,6 +55,20 @@ export function initDb(path = 'chat.db'): void {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_expires
       ON sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS daily_activity_totals (
+      day TEXT PRIMARY KEY,
+      identities INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS daily_activity_keys (
+      day TEXT PRIMARY KEY,
+      key TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS daily_activity_seen (
+      day TEXT NOT NULL REFERENCES daily_activity_keys(day) ON DELETE CASCADE,
+      identity_hash TEXT NOT NULL,
+      PRIMARY KEY (day, identity_hash)
+    );
 
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       endpoint   TEXT PRIMARY KEY,
@@ -152,6 +166,31 @@ export function initDb(path = 'chat.db'): void {
   }).immediate();
   // Cipher and canonicalization changes cannot be upgraded without plaintext.
   db.query('DELETE FROM messages WHERE version != ?').run(MESSAGE_ENVELOPE_VERSION);
+  pruneDailyActivity();
+}
+
+/** Keep only today's deduplication material; historical totals contain no identities. */
+export function pruneDailyActivity(day = new Date(Date.now()).toISOString().slice(0, 10)): void {
+  db.query('DELETE FROM daily_activity_keys WHERE day < ?').run(day);
+}
+
+/** One count per authenticated identity/UTC day, across sessions and server restarts. */
+export function recordDailyActivity(address: Address): void {
+  db.transaction(() => {
+    const day = new Date(Date.now()).toISOString().slice(0, 10);
+    pruneDailyActivity(day);
+    db.query('INSERT OR IGNORE INTO daily_activity_keys (day, key) VALUES (?, ?)')
+      .run(day, randomBytes(32).toString('hex'));
+    const { key } = db.query('SELECT key FROM daily_activity_keys WHERE day = ?')
+      .get(day) as { key: string };
+    const hash = createHmac('sha256', Buffer.from(key, 'hex')).update(address.toLowerCase()).digest('hex');
+    const inserted = db.query('INSERT OR IGNORE INTO daily_activity_seen (day, identity_hash) VALUES (?, ?)')
+      .run(day, hash);
+    if (inserted.changes > 0) {
+      db.query(`INSERT INTO daily_activity_totals (day, identities) VALUES (?, 1)
+        ON CONFLICT(day) DO UPDATE SET identities = identities + 1`).run(day);
+    }
+  }).immediate();
 }
 
 export function registerPubkey(address: Address, pubkey: string): void {
@@ -235,6 +274,7 @@ export function createMessage(envelope: MessageEnvelope): MessageLifecycle | nul
     // Bun includes the acceptance trigger's updates in changes; only zero means an ignored insert.
     if (result.changes === 0) return null;
     markAddressesActive([envelope.sender, envelope.recipient], createdAt);
+    recordDailyActivity(envelope.sender);
     return { delivery_policy: 'recipient-opening' as const, created_at: createdAt, opened_at: null, expires_at: expiresAt };
   }).immediate();
 }
@@ -473,6 +513,7 @@ export function openMessages(recipient: Address, sender: Address, ids: string[])
       return { id, status: 'available', delivery_policy: row.delivery_policy,
         created_at: row.created_at, opened_at: row.opened_at, expires_at: row.expires_at };
     });
+    if (results.some(result => result.status === 'available')) recordDailyActivity(recipient);
     return { server_time: now, results, updates };
   }).immediate();
 }
