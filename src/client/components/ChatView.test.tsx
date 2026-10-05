@@ -1,7 +1,7 @@
 import { requireAddress, type Address } from '../../shared/address'
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
-import { render } from 'preact'
+import { options, render } from 'preact'
 import { getDb, initDb } from '../../server/db'
 import { createFetch } from '../../server/router'
 import { clientUpdateRequired } from '../../server/http'
@@ -797,6 +797,27 @@ test('remaining lifetimes ignore a skewed device clock', async () => {
     await Bun.sleep(1_100)
     expect(['4m', '5m']).toContain(remaining() ?? '')
   } finally { clock.mockRestore() }
+})
+
+test('typing in the composer does not re-render message rows', async () => {
+  for (let index = 0; index < 3; index++) await alice.send(bobKey.address, `row [${index}]`, 300)
+  const view = mount()
+  await waitFor(() => view.text().includes('row [2]'))
+  const textarea = view.container.querySelector('textarea')!
+  let rowRenders = 0
+  const diffed = options.diffed
+  options.diffed = vnode => { if (vnode.type === 'article') rowRenders++; diffed?.(vnode) }
+  try {
+    // Renders are flushed on microtasks, so the once-a-second countdown,
+    // a timer, cannot land inside this window.
+    for (const text of ['h', 'he', 'hel']) {
+      textarea.value = text
+      textarea.dispatchEvent(new Event('input'))
+      for (let flush = 0; flush < 10; flush++) await Promise.resolve()
+    }
+    expect(button('Send').disabled).toBe(false)
+    expect(rowRenders).toBe(0)
+  } finally { options.diffed = diffed }
 })
 
 test('a departed partner who writes again can be messaged again', async () => {
