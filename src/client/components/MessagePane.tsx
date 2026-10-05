@@ -1,9 +1,8 @@
 import { checksumAddress, shortAddress, type Address } from '../../shared/address'
 import { Fragment } from 'preact'
 import { useState, useRef, useEffect, useLayoutEffect } from 'preact/hooks'
-import { ArrowLeft, Send, Copy, Check, ImagePlus, X, Trash2, Timer, LoaderCircle } from 'lucide-preact'
+import { ArrowLeft, Send, Copy, Check, X, Trash2, Timer, LoaderCircle } from 'lucide-preact'
 import { Message } from '../lib/api'
-import { compressImageFile, ImageTooLargeError } from '../lib/image'
 import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
 import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
@@ -44,15 +43,6 @@ interface MessagePaneProps {
 // Lifetimes this short are easy to pick by accident, so the chip says so loudly.
 const SHORT_LIFETIME_SECONDS = 60
 
-function ImageAttachment({ src }: { src: string }) {
-  const [expanded, setExpanded] = useState(false)
-  return (
-    <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} aria-label={expanded ? 'Shrink image' : 'Expand image'} className="mt-1 block border-0 p-0 max-w-full hover:bg-transparent">
-      <img src={src} alt="Attachment" className={`border-0 ${expanded ? 'max-w-full' : 'max-w-48 max-h-48 object-contain'}`} />
-    </button>
-  )
-}
-
 export function MessagePane({ recipientAddress, selfAddress, labels, onRename, departed, messages, now: serverNow, recovering = false, loading, error, onRetry, olderError, hasMore, loadingOlder, fetchOlder, openingFailed, onRetryOpening, onSendMessage, onClear, onBack }: MessagePaneProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
@@ -74,14 +64,9 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
   const [clearing, setClearing] = useState(false)
   const clearConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(clearConfirmTimeout.current), [])
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [compressingImage, setCompressingImage] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  // Generation counter for image picks; see handleImageFile.
-  const imagePickRef = useRef(0)
   const busyRef = useRef(false)
   const lastNewestIdRef = useRef<string | null>(null)
 
@@ -160,38 +145,13 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
     }
   }, [inputText])
 
-  const handleImageFile = async (file: File) => {
-    // Pasting can start several compressions at once (a multi-image paste, or
-    // a quick second paste), and they finish out of order. Only the newest
-    // pick may touch the preview; older ones land silently.
-    const pick = ++imagePickRef.current
-    setCompressingImage(true)
-    try {
-      const dataUrl = await compressImageFile(file)
-      if (imagePickRef.current === pick) setImagePreview(dataUrl)
-    } catch (err: any) {
-      if (imagePickRef.current === pick) {
-        toast(err instanceof ImageTooLargeError ? err.message : (err.message || 'Failed to read image'), 'error')
-      }
-    } finally {
-      if (imagePickRef.current === pick) setCompressingImage(false)
-    }
-  }
-
-  const handlePaste = (e: ClipboardEvent) => {
-    for (const item of e.clipboardData?.items ?? []) {
-      if (item.type.startsWith('image/')) { const f = item.getAsFile(); if (f) handleImageFile(f) }
-    }
-  }
-
-  const handleSend = async (content?: string) => {
-    const msg = content || imagePreview || inputText.trim()
+  const handleSend = async () => {
+    const msg = inputText.trim()
     if (!msg || sending) return
     setSending(true)
     try {
       await onSendMessage(msg, ttl)
       setInputText('')
-      setImagePreview(null)
       // A per-message override is spent once sent: a fixed default resumes,
       // while "Remember last selection" resolves back to the same pick.
       setTtl(resolveComposerLifetime())
@@ -233,7 +193,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
   const shortLifetime = ttl <= SHORT_LIFETIME_SECONDS
 
   return (
-    <div className="flex flex-col h-full" onPaste={handlePaste}>
+    <div className="flex flex-col h-full">
       {/* Same height and edges as the app bar above: on phones both are just
           their 44px targets, and the back arrow sits on the logo's left edge.
           On wider screens the list's header matches this height. */}
@@ -326,7 +286,6 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
         )}
         {messages.map((msg, i) => {
           const isMine = msg.sender !== recipientAddress
-          const isImage = msg.plaintext.startsWith('data:image/')
           const prev = messages[i - 1]
           // A conversation can span midnight: mark where each earlier day starts.
           const day = fmtDay(msg.created_at, now)
@@ -349,11 +308,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
                       {displayName(msg.sender, labels, selfAddress)}
                     </span>
                   )}
-                  {isImage ? (
-                    <ImageAttachment src={msg.plaintext} />
-                  ) : (
-                    <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
-                  )}
+                  <MessageText plaintext={msg.plaintext} className={isMine ? 'text-neutral-400' : 'text-neutral-200'} />
                 </div>
                 {/* Hidden from screen readers: inside the log, each tick would be announced. */}
                 <span className="shrink-0 text-xs text-neutral-500 pt-0.5" title={`Disappears in ${remaining}`} aria-hidden="true">
@@ -374,22 +329,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
         </p>
       ) : (
       <form className="p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0" onSubmit={(e) => { e.preventDefault(); handleSend() }}>
-        {compressingImage && (
-          <div className="mb-2 border border-neutral-800 p-2 text-xs text-neutral-500">Compressing image…</div>
-        )}
-        {imagePreview && (
-          <div className="mb-2 border border-neutral-800 p-2">
-            <figure className="inline-flex relative m-0">
-              <img src={imagePreview} alt="Preview" className="max-h-30 object-contain border-0" />
-              <button type="button" className="absolute top-0.5 right-0.5 border-0 bg-black/70 p-0.5" onClick={() => setImagePreview(null)} aria-label="Remove"><X size={14} /></button>
-            </figure>
-          </div>
-        )}
         <div className="flex items-center border border-neutral-800 rounded-lg bg-neutral-950">
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || compressingImage} aria-label="Attach image" title="Attach image" className="border-0 p-0 px-2 text-neutral-400 hover:text-neutral-200">
-            <ImagePlus size={18} />
-          </button>
-          <input ref={fileInputRef} type="file" accept="image/*" onChange={(e: any) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleImageFile(f) }} hidden />
           {/* The pill is what shows; the real select lies invisibly on top of
               it, so taps still open the native picker. */}
           <label className="relative flex items-center self-stretch shrink-0 px-1" title={`Messages you send disappear ${lifetimeLabel} after they are opened`}>
@@ -419,7 +359,7 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
             readOnly={sending}
             className={`flex-1 border-0 bg-transparent py-2.5 px-2 ${sending ? 'text-neutral-500' : ''}`}
           />
-          <button type="submit" disabled={sending || (!inputText.trim() && !imagePreview)} aria-label={sending ? 'Sending' : 'Send'} title={sending ? 'Sending…' : 'Send'} className={`border-0 p-0 px-2 text-neutral-200 hover:text-white ${sending ? 'disabled:opacity-100' : ''}`}>
+          <button type="submit" disabled={sending || !inputText.trim()} aria-label={sending ? 'Sending' : 'Send'} title={sending ? 'Sending…' : 'Send'} className={`border-0 p-0 px-2 text-neutral-200 hover:text-white ${sending ? 'disabled:opacity-100' : ''}`}>
             {sending ? <LoaderCircle size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </div>

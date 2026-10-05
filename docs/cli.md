@@ -138,10 +138,8 @@ conversation participants before decryption.
 ## Current scope
 
 Text messaging, identity import/export, conversation listing, history, and live
-chat are supported. Image messages from the browser appear as an attachment
-placeholder in human-readable output; JSON contains their decrypted data URL.
-Image upload, push notifications, local conversation labels, and identity deletion
-are not implemented in the CLI.
+chat are supported. Push notifications, local conversation labels, and identity
+deletion are not implemented in the CLI.
 
 The server starts the signed lifetime at the first authenticated opening; an
 unopened message expires 24 hours after acceptance. See

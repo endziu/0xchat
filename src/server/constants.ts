@@ -31,7 +31,7 @@ export const SECURITY_HEADERS = {
     "font-src 'self'",
     "form-action 'self'",
     "connect-src 'self'",
-    "img-src 'self' data: blob:",
+    "img-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "object-src 'none'",

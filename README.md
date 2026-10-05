@@ -13,7 +13,6 @@ Open the app and it creates a fresh **burner identity** in your browser. Share i
 - Encrypts and signs messages in the browser before sending them.
 - Delivers messages live and can send optional, content-free push alerts.
 - Deletes each message when its lifetime ends after the recipient opens it (or 24 hours after sending if it is never opened), or right away when either side clears the conversation.
-- Supports text and encrypted image attachments.
 - Works as an installable PWA on mobile and desktop.
 - Lets you export/import your identity and delete your account.
 
