@@ -55,8 +55,7 @@ export function terminalText(value: string): string {
 
 function displayMessage(message: PlainMessage, identity: Address): string {
   const who = message.sender === identity ? 'you' : 'peer'
-  const text = message.plaintext.startsWith('data:image/') ? '[image attachment — use the browser to view]' : message.plaintext
-  return `${new Date(message.created_at).toLocaleTimeString()} ${who}: ${terminalText(text)}`
+  return `${new Date(message.created_at).toLocaleTimeString()} ${who}: ${terminalText(message.plaintext)}`
 }
 
 function clipLine(value: string, width: number): string {

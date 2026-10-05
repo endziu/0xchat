@@ -70,7 +70,6 @@
   a { @apply text-inherit no-underline; }
   h2, h3 { @apply text-sm font-normal uppercase tracking-wider text-neutral-500 m-0; }
   p { @apply my-1 text-neutral-500 text-base; }
-  img { @apply max-w-full border border-neutral-800 cursor-pointer; }
 
   /* Touch devices: every control gets a real 44px target regardless of how
      small its icon is, and labels stop being selectable on long-press. */
