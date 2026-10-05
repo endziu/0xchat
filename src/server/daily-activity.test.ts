@@ -72,6 +72,14 @@ test('UTC rollover deletes old hashes and keys but retains historical totals', (
   expect(totals()).toHaveLength(2);
 });
 
+test('recording uses one captured UTC day even if the clock crosses midnight', () => {
+  recordDailyActivity(sender);
+  clock.mockReturnValueOnce(day).mockReturnValue(day + 1000);
+  recordDailyActivity(sender);
+  expect(totals()).toEqual([{ day: '2026-10-05', identities: 1 }]);
+  expect(getDb().query('SELECT day FROM daily_activity_keys').all()).toEqual([{ day: '2026-10-05' }]);
+});
+
 test('persistent deduplication survives restart and the command reads only aggregates', () => {
   const path = `/tmp/0xchat-dau-${crypto.randomUUID()}.db`;
   getDb().close();

@@ -170,16 +170,15 @@ export function initDb(path = 'chat.db'): void {
 }
 
 /** Keep only today's deduplication material; historical totals contain no identities. */
-export function pruneDailyActivity(): void {
-  db.query('DELETE FROM daily_activity_keys WHERE day < ?')
-    .run(new Date(Date.now()).toISOString().slice(0, 10));
+export function pruneDailyActivity(day = new Date(Date.now()).toISOString().slice(0, 10)): void {
+  db.query('DELETE FROM daily_activity_keys WHERE day < ?').run(day);
 }
 
 /** One count per authenticated identity/UTC day, across sessions and server restarts. */
 export function recordDailyActivity(address: Address): void {
   db.transaction(() => {
     const day = new Date(Date.now()).toISOString().slice(0, 10);
-    db.query('DELETE FROM daily_activity_keys WHERE day < ?').run(day);
+    pruneDailyActivity(day);
     db.query('INSERT OR IGNORE INTO daily_activity_keys (day, key) VALUES (?, ?)')
       .run(day, randomBytes(32).toString('hex'));
     const { key } = db.query('SELECT key FROM daily_activity_keys WHERE day = ?')
