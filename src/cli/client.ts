@@ -8,7 +8,6 @@ import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
 import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
-export const LIFETIMES = MESSAGE_TTLS
 const availabilityDeadline = Symbol('availabilityDeadline')
 export interface PlainMessage extends MessageLifecycle {
   id: string
@@ -185,7 +184,7 @@ export class ChatClient {
 
   async send(recipient: Address, plaintext: string, ttl = 300): Promise<PlainMessage> {
     if (recipient === this.identity.address) throw new Error('Cannot message yourself')
-    if (!LIFETIMES.includes(ttl)) throw new Error(`Lifetime must be one of: ${LIFETIMES.join(', ')} seconds`)
+    if (!MESSAGE_TTLS.includes(ttl)) throw new Error(`Lifetime must be one of: ${MESSAGE_TTLS.join(', ')} seconds`)
     if (!plaintext.trim()) throw new Error('Message must not be empty')
     if (new TextEncoder().encode(plaintext).length > MAX_PLAINTEXT_BYTES) throw new Error(`Message is too large (maximum ${MAX_PLAINTEXT_BYTES} UTF-8 bytes)`)
     const { pubkey } = await this.request<{ pubkey: string | null }>(`/api/pubkey/${recipient}`, 'GET', undefined, false)

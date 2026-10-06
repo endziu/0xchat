@@ -44,7 +44,7 @@ function apiProtocol(identity: Keypair, partner: Address, token: string, refresh
   }
 }
 
-function decryptFor(identity: Keypair, partner: Address) {
+export function decryptFor(identity: Keypair, partner: Address) {
   return async (input: unknown): Promise<DecryptedMessage | null> => {
     // Live events from other conversations share the stream. Skip them before
     // signature verification; matching raw participants does not establish trust.

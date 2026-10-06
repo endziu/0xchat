@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 import { checksumAddress, requireAddress, type Address } from '../shared/address'
+import { MESSAGE_TTLS } from '../shared/message-ttl'
 import { parseArgs } from 'node:util'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
-import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, isMessageAvailable, shouldRetainMessage, serverOrigin, LIFETIMES, type PlainMessage, type MessagePage } from './client'
+import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, isMessageAvailable, shouldRetainMessage, serverOrigin, type PlainMessage, type MessagePage } from './client'
 import { createIdentity, loadIdentity } from './identity'
 import { parseLiveEvent } from '../shared/live-events'
 import { isEnvelopeParticipant } from '../shared/message-envelope'
@@ -38,7 +39,7 @@ Options:
   --before-rowid ROWID     Tie-break cursor from read --json
   --help                   Show this help
 
-Lifetime choices: ${LIFETIMES.join(', ')} seconds.
+Lifetime choices: ${MESSAGE_TTLS.join(', ')} seconds.
 Identity files contain an unencrypted private key and are created with mode 600.
 Use a dedicated burner key. Output from read/watch can remain in terminal logs.
 `
@@ -202,8 +203,8 @@ async function chat(client: ChatClient, partner: Address, ttl: number): Promise<
     if (line === '/help') { status = 'Enter sends text. /ttl SECONDS changes lifetime. /quit exits.'; render(); return }
     if (line.startsWith('/ttl ')) {
       const value = Number(line.slice(5))
-      if (LIFETIMES.includes(value)) { ttl = value; status = 'Lifetime updated' }
-      else status = `Choose: ${LIFETIMES.join(', ')}`
+      if (MESSAGE_TTLS.includes(value)) { ttl = value; status = 'Lifetime updated' }
+      else status = `Choose: ${MESSAGE_TTLS.join(', ')}`
       render(); return
     }
     if (!line.trim()) { render(); return }
@@ -255,7 +256,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   if (values['before-rowid'] && !values.before) throw new Error('--before-rowid requires --before')
   if (command === 'chat' && (values.json || !process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('chat requires an interactive terminal; use send/read/watch for scripts')
   const ttl = positiveInteger(values.ttl, 'Lifetime') ?? 300
-  if (!LIFETIMES.includes(ttl)) throw new Error(`Lifetime must be one of: ${LIFETIMES.join(', ')}`)
+  if (!MESSAGE_TTLS.includes(ttl)) throw new Error(`Lifetime must be one of: ${MESSAGE_TTLS.join(', ')}`)
   const before = positiveInteger(values.before, 'before')
   const rowid = positiveInteger(values['before-rowid'], 'before-rowid')
   const identityPath = resolve(values.identity ?? process.env.OXCHAT_IDENTITY ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), '0xchat', 'identity.json'))

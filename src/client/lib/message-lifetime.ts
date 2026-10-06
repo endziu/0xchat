@@ -10,10 +10,16 @@ interface MessageLifetimeOption {
   label: string
 }
 
-export const MESSAGE_LIFETIMES: readonly MessageLifetimeOption[] = MESSAGE_TTLS.map(seconds => ({
-  seconds,
-  label: seconds >= 3600 ? `${seconds / 3600}h` : seconds >= 60 ? `${seconds / 60}m` : `${seconds}s`,
-}))
+const LIFETIME_LABELS: Record<number, string> = {
+  5: '5s', 10: '10s', 30: '30s', 60: '1m', 300: '5m',
+  1800: '30m', 3600: '1h', 21600: '6h', 86400: '24h',
+}
+
+export const MESSAGE_LIFETIMES: readonly MessageLifetimeOption[] = MESSAGE_TTLS.map(seconds => {
+  const label = LIFETIME_LABELS[seconds]
+  if (!label) throw new Error(`Missing label for message lifetime ${seconds}`)
+  return { seconds, label }
+})
 
 export const FALLBACK_MESSAGE_LIFETIME = 1800
 
