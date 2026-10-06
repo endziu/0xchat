@@ -799,6 +799,72 @@ test('remaining lifetimes ignore a skewed device clock', async () => {
   } finally { clock.mockRestore() }
 })
 
+test('the composer shows its UTF-8 byte count only in the last 10% of the limit', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet'))
+  const textarea = view.container.querySelector('textarea')!
+  for (const [length, visible] of [[3686, false], [3687, true], [10, false]] as const) {
+    textarea.value = 'a'.repeat(length)
+    textarea.dispatchEvent(new Event('input'))
+    for (let flush = 0; flush < 10; flush++) await Promise.resolve()
+    expect(view.text().includes(`${length} / 4096 bytes`)).toBe(visible)
+    expect(textarea.hasAttribute('aria-describedby')).toBe(visible)
+    expect(button('Send').disabled).toBe(false)
+  }
+})
+
+test.each([
+  ['ASCII', 'a'.repeat(4096)],
+  ['emoji', '😀'.repeat(1024)],
+  ['CJK', '界'.repeat(1365) + 'a'],
+])('the composer sends 4096 bytes of %s and blocks 4097 bytes', async (_label, plaintext) => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  const textarea = view.container.querySelector('textarea')!
+  let sends = 0
+  intercept = (request, next) => {
+    if (request.method === 'POST' && new URL(request.url).pathname === '/api/messages') sends++
+    return next()
+  }
+  textarea.value = plaintext + 'a'
+  textarea.dispatchEvent(new Event('input'))
+  await waitFor(() => view.text().includes('4097 / 4096 bytes'))
+  expect(button('Send').disabled).toBe(true)
+  expect(textarea.getAttribute('aria-invalid')).toBe('true')
+  // Keyboard and form submission must respect the cap as well as the button.
+  textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  view.container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await Bun.sleep(50)
+  expect(sends).toBe(0)
+  expect(textarea.value).toBe(plaintext + 'a')
+
+  textarea.value = plaintext
+  textarea.dispatchEvent(new Event('input'))
+  await waitFor(() => !button('Send').disabled)
+  expect(view.text()).toContain('4096 / 4096 bytes')
+  expect(textarea.hasAttribute('aria-invalid')).toBe(false)
+  button('Send').click()
+  await waitFor(() => textarea.value === '')
+  expect(sends).toBe(1)
+  expect((await alice.read(bobKey.address)).messages[0]?.plaintext).toBe(plaintext)
+  expect(view.text()).not.toContain('/ 4096 bytes')
+})
+
+test('the composer counts and sends trimmed plaintext at the byte limit', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  const textarea = view.container.querySelector('textarea')!
+  const plaintext = '😀'.repeat(1024)
+  textarea.value = ` \n${plaintext}\t\n `
+  textarea.dispatchEvent(new Event('input'))
+  await waitFor(() => view.text().includes('4096 / 4096 bytes'))
+  expect(button('Send').disabled).toBe(false)
+  expect(textarea.hasAttribute('aria-invalid')).toBe(false)
+  button('Send').click()
+  await waitFor(() => textarea.value === '')
+  expect((await alice.read(bobKey.address)).messages[0]?.plaintext).toBe(plaintext)
+})
+
 test('typing in the composer does not re-render message rows', async () => {
   for (let index = 0; index < 3; index++) await alice.send(bobKey.address, `row [${index}]`, 300)
   const view = mount()

@@ -47,6 +47,19 @@ function messageContext(ip: string, token: string, body: unknown = { version: 2 
   };
 }
 
+test('accepts 4096 plaintext bytes and rejects 4097 bytes without storing them', async () => {
+  const ip = `message-size-${Math.random()}`;
+  registerPubkey(recipient.address, recipient.publicKey);
+  createSession('size-token', alice.address, Date.now() + 60_000);
+  for (const plaintext of ['a'.repeat(4096), '😀'.repeat(1024), '界'.repeat(1365) + 'a']) {
+    const envelope = await createSignedMessageEnvelope(plaintext, 300, alice, recipient.address, recipient.publicKey);
+    expect((await handleSendMessage(messageContext(ip, 'size-token', envelope))).status).toBe(201);
+    const oversized = await createSignedMessageEnvelope(plaintext + 'a', 300, alice, recipient.address, recipient.publicKey);
+    expect((await handleSendMessage(messageContext(ip, 'size-token', oversized))).status).toBe(400);
+  }
+  expect(getDb().query('SELECT COUNT(*) AS count FROM messages').get()).toEqual({ count: 3 });
+});
+
 describe('message rate limiting', () => {
   test('one identity can send 120 messages and its 121st is rejected', async () => {
     const ip = `single-identity-${Math.random()}`;

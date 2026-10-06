@@ -171,7 +171,7 @@ export class ChatClient {
     if (recipient === this.identity.address) throw new Error('Cannot message yourself')
     if (!LIFETIMES.includes(ttl)) throw new Error(`Lifetime must be one of: ${LIFETIMES.join(', ')} seconds`)
     if (!plaintext.trim()) throw new Error('Message must not be empty')
-    if (new TextEncoder().encode(plaintext).length > MAX_PLAINTEXT_BYTES) throw new Error('Message is too large')
+    if (new TextEncoder().encode(plaintext).length > MAX_PLAINTEXT_BYTES) throw new Error(`Message is too large (maximum ${MAX_PLAINTEXT_BYTES} UTF-8 bytes)`)
     const { pubkey } = await this.request<{ pubkey: string | null }>(`/api/pubkey/${recipient}`, 'GET', undefined, false)
     if (!pubkey) throw new Error('Recipient not registered')
     const envelope = await createSignedMessageEnvelope(plaintext, ttl, this.identity, recipient, verifyEncryptionPublicKey(recipient, pubkey))

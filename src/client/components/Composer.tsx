@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'preact/hooks'
+import { useState, useRef, useEffect, useId } from 'preact/hooks'
 import { Send, Timer, LoaderCircle } from 'lucide-preact'
+import { MAX_PLAINTEXT_BYTES } from '../../shared/message-envelope'
 import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
 import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
@@ -18,6 +19,11 @@ const SHORT_LIFETIME_SECONDS = 60
 export function Composer({ departed, partnerName, onSendMessage }: ComposerProps) {
   const { toast } = useToast()
   const [inputText, setInputText] = useState('')
+  const plaintext = inputText.trim()
+  const byteCount = new TextEncoder().encode(plaintext).length
+  const overLimit = byteCount > MAX_PLAINTEXT_BYTES
+  const showByteCount = byteCount >= MAX_PLAINTEXT_BYTES * 0.9
+  const byteCountId = useId()
   // Resolved per conversation (the pane is keyed by recipient) and again
   // whenever the default setting changes: the configured default, else the
   // last selection, else 30 minutes.
@@ -38,11 +44,10 @@ export function Composer({ departed, partnerName, onSendMessage }: ComposerProps
   }, [inputText])
 
   const handleSend = async () => {
-    const msg = inputText.trim()
-    if (!msg || sending) return
+    if (!plaintext || sending || overLimit) return
     setSending(true)
     try {
-      await onSendMessage(msg, ttl)
+      await onSendMessage(plaintext, ttl)
       setInputText('')
       // A per-message override is spent once sent: a fixed default resumes,
       // while "Remember last selection" resolves back to the same pick.
@@ -95,12 +100,19 @@ export function Composer({ departed, partnerName, onSendMessage }: ComposerProps
           autoComplete="off"
           rows={1}
           readOnly={sending}
+          aria-invalid={overLimit || undefined}
+          aria-describedby={showByteCount ? byteCountId : undefined}
           className={`flex-1 border-0 bg-transparent py-2.5 px-2 ${sending ? 'text-neutral-500' : ''}`}
         />
-        <button type="submit" disabled={sending || !inputText.trim()} aria-label={sending ? 'Sending' : 'Send'} title={sending ? 'Sending…' : 'Send'} className={`border-0 p-0 px-2 text-neutral-200 hover:text-white ${sending ? 'disabled:opacity-100' : ''}`}>
+        <button type="submit" disabled={sending || !plaintext || overLimit} aria-label={sending ? 'Sending' : 'Send'} title={sending ? 'Sending…' : 'Send'} className={`border-0 p-0 px-2 text-neutral-200 hover:text-white ${sending ? 'disabled:opacity-100' : ''}`}>
           {sending ? <LoaderCircle size={18} className="animate-spin" /> : <Send size={18} />}
         </button>
       </div>
+      {showByteCount && (
+        <p id={byteCountId} className={`m-0 pt-1 px-2 text-right text-xs ${overLimit ? 'text-red-400' : 'text-neutral-400'}`}>
+          {byteCount} / {MAX_PLAINTEXT_BYTES} bytes
+        </p>
+      )}
       {/* Always present: a live region only announces changes to itself. */}
       <span role="status" className="sr-only">{sending ? 'Sending…' : ''}</span>
     </form>

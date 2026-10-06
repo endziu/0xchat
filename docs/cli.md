@@ -80,6 +80,10 @@ bun run cli read 0xPARTNER_ADDRESS --all --json
 bun run cli watch 0xPARTNER_ADDRESS --json
 ```
 
+Messages are limited to 4096 bytes of UTF-8 plaintext (4 KiB), not characters.
+This applies to interactive chat and `send`, including text read from stdin.
+The CLI rejects oversized messages before sending and reports the limit.
+
 `read` returns the latest 100 messages in chronological order. JSON output includes
 `messages`, `next_before`, and `next_before_rowid`. Pass both non-null cursors as
 `--before` and `--before-rowid` to retrieve the next older page. `--all` fetches

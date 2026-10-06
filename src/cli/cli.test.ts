@@ -170,6 +170,14 @@ describe('unchanged server interoperability', () => {
     expect((await bob.conversations()).conversations.some(conversation => conversation.address === requireAddress(alice.identity.address))).toBe(true)
   })
 
+  test('sends 4096 UTF-8 bytes and reports the limit for 4097 bytes', async () => {
+    for (const plaintext of ['a'.repeat(4096), '😀'.repeat(1024), '界'.repeat(1365) + 'a']) {
+      const sent = await alice.send(bob.identity.address, plaintext)
+      expect((await bob.read(alice.identity.address)).messages.find(message => message.id === sent.id)?.plaintext).toBe(plaintext)
+      await expect(alice.send(bob.identity.address, plaintext + 'a')).rejects.toThrow('Message is too large (maximum 4096 UTF-8 bytes)')
+    }
+  })
+
   async function browserSession(client: ChatClient): Promise<string> {
     const { signEIP191 } = await import('../client/lib/burner')
     const challenge = await fetch(origin + '/api/auth/challenge', { method: 'POST', body: JSON.stringify({ address: client.identity.address }) }).then(response => response.json()) as { challenge: string; nonce: string }
