@@ -85,13 +85,11 @@ export function publish(address: Address, event: LiveEvent): void {
   if (!set) return;
   const payload = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
   const encoded = new TextEncoder().encode(payload);
-  for (const [ctrl, client] of set) {
+  for (const ctrl of set.keys()) {
     try {
       ctrl.enqueue(encoded);
     } catch {
-      set.delete(ctrl);
-      releaseIp(client.ip);
+      removeClient(address, ctrl);
     }
   }
-  if (set.size === 0) clients.delete(address);
 }
