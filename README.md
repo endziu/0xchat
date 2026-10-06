@@ -164,6 +164,8 @@ consumes another's.
 | Recover messages (initial and continuation pages) | 120 | 240 |
 | Lifecycle state lookup | 120 | 240 |
 | Clear conversation | 10 | 20 |
+| Attention update | 60 (per IP + identity) | — |
+| Registration removal | — | 10 |
 | Push subscribe/unsubscribe | 10 (per IP + identity) | — |
 | Registration challenge, registration, auth challenge, auth session, SSE token | — | 10 each |
 

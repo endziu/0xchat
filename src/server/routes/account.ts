@@ -1,6 +1,7 @@
-import { parseAddress } from '../../shared/address.ts';
+import { requireAddress } from '../../shared/address.ts';
 import { deleteRegistration, getConversationPartners } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
+import { registrationRemovalLimiter } from '../rate-limiters.ts';
 import { publish } from '../sse.ts';
 import { log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
@@ -11,9 +12,12 @@ export async function handleDeleteAddress({ req, path, ip }: Context): Promise<R
     warn('[unauth] delete address no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
+  if (registrationRemovalLimiter.hit(ip)) {
+    warn('[rate-limit] delete address', ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
 
-  const targetAddr = parseAddress(path.slice('/api/addresses/'.length));
-  if (!targetAddr) return json({ error: 'Invalid address format' }, 400);
+  const targetAddr = requireAddress(path.split('/')[3]);
 
   if (address !== targetAddr) {
     warn('[forbidden] delete address', address, 'tried to delete', targetAddr);

@@ -2,7 +2,7 @@ import { requireAddress } from '../../shared/address.ts'
 import { afterAll, beforeAll, describe, expect, jest, test } from 'bun:test'
 import { createSession, initDb } from '../db.ts'
 import { MAX_SSE_CONNECTIONS_PER_ADDRESS } from '../constants.ts'
-import { sseTokenLimiter } from '../rate-limiters.ts'
+import { attentionLimiter, sseTokenLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { createFetch } from '../router.ts'
 import { connectionCount, publish, pushSuppressingConnectionCount } from '../sse.ts'
@@ -25,6 +25,7 @@ beforeAll(() => {
   createSession(sessionToken, address, Date.now() + 60_000)
   createSession(otherSessionToken, otherAddress, Date.now() + 60_000)
   sseTokenLimiter.setSchedule(noOpSchedule)
+  attentionLimiter.setSchedule(noOpSchedule)
 })
 
 function makeContext(
@@ -32,12 +33,14 @@ function makeContext(
   ip: string,
   init?: RequestInit,
   auth = sessionToken,
+  outdated = false,
 ): Context {
   const req = new Request(`https://chat.example${path}`, {
     ...init,
     headers: {
       ...init?.headers,
-      Authorization: `Bearer ${auth}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1',
+      Authorization: `Bearer ${auth}`,
+      ...(outdated ? {} : { 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }),
     },
   })
   return { req, url: new URL(req.url), path, method: req.method, ip }
@@ -88,6 +91,27 @@ describe('SSE route', () => {
 
     await reader.cancel()
     expect((await update(true, 3)).status).toBe(404)
+  })
+
+  test('attention updates from an outdated client are told to update', async () => {
+    const res = await handleSSEAttention(makeContext('/api/events/attention', 'attention-outdated', {
+      method: 'POST', body: JSON.stringify({ stream: 'any', attentive: true, sequence: 1 }),
+    }, sessionToken, true))
+    expect(res.status).toBe(426)
+    expect((await res.json()).code).toBe('client_update_required')
+  })
+
+  test('rate-limits attention updates per ip and identity', async () => {
+    const ip = `attention-limit-${Math.random()}`
+    const update = (auth = sessionToken) => handleSSEAttention(makeContext('/api/events/attention', ip, {
+      method: 'POST', body: JSON.stringify({ stream: 'gone', attentive: true, sequence: 1 }),
+    }, auth))
+    for (let i = 0; i < 60; i++) expect((await update()).status).toBe(404)
+    const limited = await update()
+    expect(limited.status).toBe(429)
+    expect(await limited.json()).toEqual({ error: 'Too many requests' })
+    // another identity behind the same ip keeps its own budget
+    expect((await update(otherSessionToken)).status).toBe(404)
   })
 
   test('client disconnect removes the client immediately', async () => {
@@ -204,6 +228,17 @@ describe('SSE route', () => {
     )
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ error: 'Too many requests' })
+  })
+
+  test('SSE token requests without a session get 401 without spending the ip budget', async () => {
+    const ip = `sse-test-${Math.random()}`
+    for (let i = 0; i < 11; i++) {
+      const res = await handleGetSSEToken(
+        makeContext('/api/events/token', ip, { method: 'POST' }, 'no-such-session'),
+      )
+      expect(res.status).toBe(401)
+    }
+    await mintSseToken(ip)
   })
 })
 

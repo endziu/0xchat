@@ -3,8 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { recordDailyActivity } from '../db.ts';
 import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
-import { sseTokenLimiter } from '../rate-limiters.ts';
+import { attentionLimiter, sseTokenLimiter } from '../rate-limiters.ts';
 import { MAX_SSE_CONNECTIONS_PER_ADDRESS, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
+import { ipAddressKey } from '../rate-limit.ts';
 import type { Context } from '../http.ts';
 
 /** Live long enough for the EventSource to dial in, short enough to bound reuse. */
@@ -73,17 +74,16 @@ export function cleanupSseTokens(): void {
 }
 
 export async function handleGetSSEToken({ req, ip }: Context): Promise<Response> {
-  if (sseTokenLimiter.hit(ip)) {
-    warn('[rate-limit] sse-token', ip);
-    return json({ error: 'Too many requests' }, 429);
-  }
-
   const address = getSessionAddress(req);
   if (!address) {
     warn('[unauth] sse token no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
   if (isOutdatedClient(req)) return clientUpdateRequired();
+  if (sseTokenLimiter.hit(ip)) {
+    warn('[rate-limit] sse-token', ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
 
   const sseToken = sseTokenStore.mint(address);
 
@@ -160,9 +160,14 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
   });
 }
 
-export async function handleSSEAttention({ req }: Context): Promise<Response> {
+export async function handleSSEAttention({ req, ip }: Context): Promise<Response> {
   const address = getSessionAddress(req);
   if (!address) return json({ error: 'Unauthorized' }, 401);
+  if (isOutdatedClient(req)) return clientUpdateRequired();
+  if (attentionLimiter.hit(ipAddressKey(ip, address))) {
+    warn('[rate-limit] attention', address, ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
   const body: unknown = await req.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Invalid attention update' }, 400);
   const { stream, attentive, sequence } = body as Record<string, unknown>;
