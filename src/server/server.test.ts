@@ -8,6 +8,7 @@ import {
 } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -71,6 +72,43 @@ async function authenticatedEnvelope(plaintext = 'authenticated hello', ttl = 30
 const PORT = 9876 + Math.floor(Math.random() * 100);
 let baseUrl: string;
 let proc: import('bun').Subprocess;
+
+describe('global request body limit', () => {
+  for (const path of ['/api/register/challenge', '/api/register', '/api/auth/challenge', '/api/auth/session', '/api/messages']) {
+    test(`${path} rejects bodies over 32 KiB with Content-Length`, async () => {
+      const response = await fetch(baseUrl + path, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${senderToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+        body: '{}' + ' '.repeat(32767),
+      });
+      expect(response.status).toBe(413);
+      await response.body?.cancel();
+    });
+
+    test(`${path} rejects chunked bodies over 32 KiB before the upload finishes`, async () => {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = httpRequest(baseUrl + path, {
+          method: 'POST',
+          headers: {
+            'Transfer-Encoding': 'chunked',
+            Authorization: `Bearer ${senderToken}`,
+            'X-0xChat-Delivery-Capability': 'recipient-opening-v1',
+          },
+        }, response => {
+          response.resume();
+          resolve(response.statusCode!);
+          req.destroy();
+        });
+        req.on('error', reject);
+        req.setTimeout(2000, () => req.destroy(new Error('Server waited for the rest of an oversized body')));
+        req.write('{}' + ' '.repeat(16382));
+        req.write(' '.repeat(16385));
+        // Deliberately do not end the chunked upload.
+      });
+      expect(status).toBe(413);
+    });
+  }
+});
 
 beforeAll(async () => {
   baseUrl = `http://localhost:${PORT}`;

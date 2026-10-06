@@ -135,6 +135,13 @@ AES-GCM tag, or 8226 characters as hex with the `0x` prefix. A message with
 either ciphertext above this limit is rejected with 400. The browser and CLI
 block oversized messages before sending them.
 
+The server sets a global request body cap of 32 KiB (32768 bytes). An oversized
+`Content-Length` is rejected with 413 before routing; bodies read from chunked
+uploads without `Content-Length` are rejected with 413 as soon as they exceed
+the cap. Routes that ignore a body or reject a request early may respond before
+a chunked upload reaches the cap. The send endpoint (`POST /api/messages`) also
+enforces this 32 KiB limit while reading the JSON envelope.
+
 Malformed requests return 400; missing or invalid sessions 401; outdated
 clients 426; rate-limited requests 429. Opening and state lookup bodies are
 limited to 8 KiB, including streamed bodies (413 beyond that). Opening, state

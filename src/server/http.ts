@@ -22,6 +22,33 @@ export function json(body: unknown, status = 200): Response {
   });
 }
 
+/** Count actual streamed bytes, never trusting Content-Length. */
+export async function readJson(req: Request, maxBytes: number): Promise<unknown> {
+  const reader = req.body?.getReader();
+  if (!reader) return json({ error: 'Invalid JSON' }, 400);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        // Cancellation must not delay rejection or turn it into a parse error.
+        void reader.cancel().catch(() => {});
+        return json({ error: 'Request body too large' }, 413);
+      }
+      chunks.push(value);
+    }
+    // TextDecoder strips a leading UTF-8 BOM, as Request.json() does.
+    return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+  } catch {
+    return json({ error: 'Invalid JSON' }, 400);
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 /** Clients that cannot interpret recipient opening must update before using messages. */
 export function isOutdatedClient(req: Request): boolean {
   return !advertisesDeliveryCapability(req.headers);

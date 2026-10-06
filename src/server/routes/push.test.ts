@@ -74,10 +74,11 @@ describe('push subscribe route', () => {
   })
 
   test('rejects a body that is not a JSON object', async () => {
-    const response = await subscribe(null)
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid JSON object', code: 'invalid_request' })
+    for (const body of [null, [], '{', '']) {
+      const response = await subscribe(body)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ error: 'Invalid JSON object', code: 'invalid_request' })
+    }
   })
 
   test('keeps the generic response for malformed subscriptions', async () => {
@@ -90,6 +91,7 @@ describe('push subscribe route', () => {
   test('rejects bodies over 8 KiB', async () => {
     const response = await subscribe(JSON.stringify({ ...subscription('big'), padding: 'x'.repeat(9000) }))
     expect(response.status).toBe(413)
+    expect(await response.json()).toEqual({ error: 'Push request exceeds 8 KiB.', code: 'payload_too_large' })
   })
 })
 
