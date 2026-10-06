@@ -249,9 +249,9 @@ export class ChatClient {
     return confirmed
   }
 
-  async read(partner: Address, before?: number, options: ReadOptions = {}): Promise<MessagePage> {
+  async read(partner: Address, beforeSeq?: number, options: ReadOptions = {}): Promise<MessagePage> {
     const query = new URLSearchParams({ limit: '100' })
-    if (before !== undefined) query.set('before_seq', String(before))
+    if (beforeSeq !== undefined) query.set('before_seq', String(beforeSeq))
     const page = await this.request<{ messages: unknown[]; next_before_seq: number | null }>(`/api/messages/${partner}?${query}`)
     const decoded = await Promise.all(page.messages.map(async raw => {
       try {

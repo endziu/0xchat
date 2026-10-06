@@ -97,9 +97,9 @@ Pass a non-null `next_before_seq` as `before_seq` for the next older page; it is
 messages accepted in the same millisecond. History and this checkpoint are
 captured in one SQLite snapshot. The checkpoint is the server's acceptance
 high-water mark at that snapshot, including when no messages remain — not the
-last message's ID, timestamp or sequence. Treat recovery cursors as opaque. For a new conversation view,
-establish SSE first and buffer events, then load the initial page and keep its
-checkpoint. Fetching older pages does not replace it; completed recovery does.
+last message's ID, timestamp or sequence. Treat recovery cursors as opaque. For
+a new conversation view, establish SSE first and buffer events, then load the
+initial page and keep its checkpoint. Fetching older pages does not replace it; completed recovery does.
 
 After a lost stream, call
 `GET /api/messages/:counterparty/recover?after=<recovery_cursor>`. The server
