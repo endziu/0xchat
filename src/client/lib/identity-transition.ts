@@ -1,4 +1,4 @@
-import type { Keypair } from './burner'
+import type { Keypair } from '../../shared/keypair'
 
 export interface IdentityTransitionDeps {
   setTransitioning: (value: boolean) => void

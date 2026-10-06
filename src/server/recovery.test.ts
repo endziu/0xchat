@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope.ts';
 import { verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, deleteExpiredMessages, getDb, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';

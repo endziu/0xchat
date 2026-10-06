@@ -10,9 +10,9 @@ import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
 import { clientUpdateRequired } from '../server/http'
 import * as limiters from '../server/rate-limiters'
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope'
 import { canonicalMessageEnvelope, type DeliveredMessage, type OpeningResponse } from '../shared/message-envelope'
-import { signEIP191 } from '../client/lib/burner'
-import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
+import { signEIP191 } from '../shared/keypair'
 import * as serverConstants from '../server/constants'
 
 let server: ReturnType<typeof Bun.serve>

@@ -1,9 +1,8 @@
-import { requireAddress, type Address } from '../../shared/address'
+import { requireAddress, type Address } from './address'
 import * as secp from '@noble/secp256k1'
 import { keccak256, hexToBytes, bytesToHex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { ensure0x } from './hex'
-import { migrateKey } from './storage-migration'
 
 export interface Keypair {
   privateKey: string
@@ -20,7 +19,7 @@ export function deriveKeypair(privKey: string): Keypair {
   const privBytes = hexToBytes(ensure0x(privKey))
   const pubBytes = secp.getPublicKey(privBytes, true) // compressed
   const publicKey = bytesToHex(pubBytes)
-  
+
   // Ethereum address from public key:
   // 1. Get uncompressed pubkey (65 bytes, starts with 0x04)
   // 2. Remove 0x04 prefix (64 bytes)
@@ -29,36 +28,11 @@ export function deriveKeypair(privKey: string): Keypair {
   const uncompressedPub = secp.getPublicKey(privBytes, false)
   const hash = keccak256(uncompressedPub.slice(1))
   const address = requireAddress(`0x${hash.slice(-40)}`)
-  
+
   return { privateKey: privKey, publicKey, address }
 }
 
 export async function signEIP191(message: string, privateKey: string): Promise<string> {
   const account = privateKeyToAccount(privateKey as `0x${string}`)
   return await account.signMessage({ message })
-}
-
-const STORAGE_KEY = '0xchat_burner_v1'
-const OLD_STORAGE_KEY = 'eth_chat_burner_v1'
-
-export function saveKeypair(keypair: Keypair) {
-  localStorage.removeItem(OLD_STORAGE_KEY)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(keypair))
-}
-
-export function loadKeypair(): Keypair | null {
-  migrateKey(OLD_STORAGE_KEY, STORAGE_KEY)
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (!stored) return null
-  try {
-    // Derived again rather than read: older identities stored a checksummed address.
-    return deriveKeypair(JSON.parse(stored).privateKey)
-  } catch {
-    return null
-  }
-}
-
-export function clearKeypair() {
-  localStorage.removeItem(STORAGE_KEY)
-  localStorage.removeItem(OLD_STORAGE_KEY)
 }

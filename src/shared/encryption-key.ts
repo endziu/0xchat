@@ -1,5 +1,5 @@
-import type { Address } from '../../shared/address'
-import { verifyAddressBoundPublicKey } from '../../shared/address-bound-pubkey'
+import type { Address } from './address'
+import { verifyAddressBoundPublicKey } from './address-bound-pubkey'
 
 export function verifyEncryptionPublicKey(address: Address, value: string): string {
   const result = verifyAddressBoundPublicKey(address, value)

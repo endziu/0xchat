@@ -10,7 +10,7 @@ import { addClient, removeClient } from './sse.ts'
 import { createFetch } from './router.ts'
 import * as limiters from './rate-limiters.ts'
 import { identity } from './test-identity.ts'
-import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts'
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope.ts'
 import { DELIVERY_CAPABILITY } from '../shared/message-envelope.ts'
 
 const alice = requireAddress(`0x${'a'.repeat(40)}`)

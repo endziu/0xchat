@@ -3,7 +3,7 @@ import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createSignedMessageEnvelope } from '../../client/lib/message-envelope.ts';
+import { createSignedMessageEnvelope } from '../../shared/signed-message-envelope.ts';
 import { createSession, deleteInactivePubkeys, getDb, initDb, registerPubkey } from '../db.ts';
 import { messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { noOpSchedule } from '../rate-limit.test-utils.ts';

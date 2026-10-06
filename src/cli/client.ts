@@ -1,11 +1,11 @@
 import { requireAddress, type Address } from '../shared/address'
 import { MESSAGE_TTLS } from '../shared/message-ttl'
-import { signEIP191, type Keypair } from '../client/lib/burner'
-import { decrypt } from '../client/lib/crypto'
-import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
-import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
+import { signEIP191, type Keypair } from '../shared/keypair'
+import { decrypt } from '../shared/crypto'
+import { verifyEncryptionPublicKey } from '../shared/encryption-key'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope'
 import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 const availabilityDeadline = Symbol('availabilityDeadline')

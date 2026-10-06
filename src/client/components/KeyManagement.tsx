@@ -1,6 +1,6 @@
 import { checksumAddress } from '../../shared/address'
 import { useState, useRef, useEffect } from 'preact/hooks'
-import { Keypair, deriveKeypair } from '../lib/burner'
+import { Keypair, deriveKeypair } from '../../shared/keypair'
 import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
 import { AddressAvatar } from './AddressAvatar'
 import { useToast } from './Toast'

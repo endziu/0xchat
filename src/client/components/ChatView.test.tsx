@@ -9,7 +9,7 @@ import * as limiters from '../../server/rate-limiters'
 import * as serverConstants from '../../server/constants'
 import { ChatClient } from '../../cli/client'
 import { parsePrivateKey } from '../../cli/identity'
-import { signEIP191, type Keypair } from '../lib/burner'
+import { signEIP191, type Keypair } from '../../shared/keypair'
 import { DELIVERY_CAPABILITY, type MessageLifecycle, type OpeningResponse } from '../../shared/message-envelope'
 
 // The mounted view talks to a real in-process server over HTTP and SSE. Only

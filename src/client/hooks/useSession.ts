@@ -1,7 +1,7 @@
 import type { Address } from '../../shared/address'
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
 import { getToken, saveToken, clearToken } from '../lib/session'
-import { Keypair, signEIP191 } from '../lib/burner'
+import { Keypair, signEIP191 } from '../../shared/keypair'
 import { api } from '../lib/api'
 
 export function useSession(identity: Keypair | null) {
