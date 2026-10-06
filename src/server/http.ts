@@ -40,7 +40,8 @@ export async function readJson(req: Request, maxBytes: number): Promise<unknown>
       }
       chunks.push(value);
     }
-    return JSON.parse(Buffer.concat(chunks).toString());
+    // TextDecoder strips a leading UTF-8 BOM, as Request.json() does.
+    return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
   } catch {
     return json({ error: 'Invalid JSON' }, 400);
   } finally {

@@ -20,6 +20,11 @@ describe('readJson', () => {
     expect(await readJson(new Request('https://chat.example', { method: 'POST', body }), 6)).toBe('😀');
   });
 
+  test('ignores a leading UTF-8 byte order mark', async () => {
+    const body = new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d]);
+    expect(await readJson(new Request('https://chat.example', { method: 'POST', body }), 8192)).toEqual({});
+  });
+
   test('returns 400 for missing, empty or malformed JSON', async () => {
     for (const body of [undefined, '', '{']) {
       const result = await readJson(new Request('https://chat.example', { method: 'POST', body }), 8192);

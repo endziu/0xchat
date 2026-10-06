@@ -57,7 +57,10 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
   }
 
   const body = await readJson(req, MAX_REQUEST_BODY_BYTES);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) {
+    warn(body.status === 413 ? '[invalid] message body too large' : '[invalid] message malformed JSON', sessionAddress);
+    return body;
+  }
 
   if (typeof body === 'object' && body !== null
     && (body as Record<string, unknown>)['version'] !== MESSAGE_ENVELOPE_VERSION) {

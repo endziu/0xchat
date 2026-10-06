@@ -169,7 +169,8 @@ consumes another's.
 
 The per-IP message cap gives two identities that share an IP their full individual
 allowance while still putting a ceiling on identity cycling. Opening and state
-lookup take 1–100 distinct IDs per request with an 8 KiB body limit. See
+lookup take 1–100 distinct IDs per request with an 8 KiB body limit. Every
+request body is capped at 32 KiB; larger bodies get `413`. See
 [the message lifecycle API](docs/message-lifecycle-api.md).
 
 ## Retention
