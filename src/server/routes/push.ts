@@ -1,6 +1,6 @@
 import type { Address } from '../../shared/address.ts';
 import { deletePushSubscription, getPubkey, savePushSubscription } from '../db.ts';
-import { json, getSessionAddress, type Context } from '../http.ts';
+import { json, readJson, getSessionAddress, type Context } from '../http.ts';
 import { validatePushSubscription } from '../validation.ts';
 import { pushMutationLimiter } from '../rate-limiters.ts';
 import { VAPID_PUBLIC_KEY } from '../constants.ts';
@@ -17,26 +17,14 @@ async function readMutation({ req, ip }: Context): Promise<{ address: Address; b
   if (pushMutationLimiter.hit(`${ip}:${address}`)) {
     return json({ error: 'Too many requests. Wait a minute before retrying.', code: 'rate_limited' }, 429);
   }
-  const reader = req.body?.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (reader) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > 8192) {
-        void reader.cancel();
-        return json({ error: 'Push request exceeds 8 KiB.', code: 'payload_too_large' }, 413);
-      }
-      chunks.push(value);
-    }
-    const body: unknown = JSON.parse(Buffer.concat(chunks).toString());
-    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
-    return { address, body: body as Record<string, unknown> };
-  } catch {
+  const body = await readJson(req, 8192);
+  if (body instanceof Response && body.status === 413) {
+    return json({ error: 'Push request exceeds 8 KiB.', code: 'payload_too_large' }, 413);
+  }
+  if (body instanceof Response || !body || typeof body !== 'object' || Array.isArray(body)) {
     return json({ error: 'Invalid JSON object', code: 'invalid_request' }, 400);
   }
+  return { address, body: body as Record<string, unknown> };
 }
 
 export async function handleSubscribePush(ctx: Context): Promise<Response> {

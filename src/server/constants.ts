@@ -5,6 +5,7 @@ if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
   throw new Error(`Invalid PORT: expected integer in [1, 65535], got ${process.env['PORT']}`);
 }
 export const PORT = rawPort;
+export const MAX_REQUEST_BODY_BYTES = 32 * 1024;
 
 export const DEBUG = process.env['DEBUG'] === '1' || process.env['DEBUG'] === 'true';
 

@@ -1,11 +1,11 @@
 import { requireAddress } from '../../shared/address.ts';
 import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
 import { clearConversation, createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
-import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
+import { clientUpdateRequired, isOutdatedClient, json, readJson, getSessionAddress } from '../http.ts';
 import { clearIpLimiter, clearLimiter, recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { publish } from '../sse.ts';
 import { pushNotify } from '../push.ts';
-import { log, warn, VALID_TTLS } from '../constants.ts';
+import { log, warn, VALID_TTLS, MAX_REQUEST_BODY_BYTES } from '../constants.ts';
 import {
   MESSAGE_ENVELOPE_VERSION,
   parseMessageEnvelope,
@@ -56,13 +56,8 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
     return json({ error: 'Too many requests' }, 429);
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    warn('[invalid] message malformed JSON');
-    return json({ error: 'Invalid JSON' }, 400);
-  }
+  const body = await readJson(req, MAX_REQUEST_BODY_BYTES);
+  if (body instanceof Response) return body;
 
   if (typeof body === 'object' && body !== null
     && (body as Record<string, unknown>)['version'] !== MESSAGE_ENVELOPE_VERSION) {
@@ -225,28 +220,10 @@ export async function handleRecoverMessages({ req, url, path, ip }: Context): Pr
 }
 
 async function readMessageIds(req: Request): Promise<string[] | Response> {
-  // Bound streaming bodies too; Content-Length is neither required nor trusted.
-  const reader = req.body?.getReader();
-  if (!reader) return json({ error: 'Invalid message ID request' }, 400);
-  let body: unknown;
-  try {
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    let size = 0;
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > 8192) {
-        await reader.cancel();
-        return json({ error: 'Message ID request too large' }, 413);
-      }
-      chunks.push(new Uint8Array(value));
-    }
-    body = JSON.parse(await new Blob(chunks).text());
-  } catch {
-    return json({ error: 'Invalid JSON' }, 400);
-  } finally {
-    reader.releaseLock();
+  if (!req.body) return json({ error: 'Invalid message ID request' }, 400);
+  const body = await readJson(req, 8192);
+  if (body instanceof Response) {
+    return body.status === 413 ? json({ error: 'Message ID request too large' }, 413) : body;
   }
   if (!body || typeof body !== 'object' || Array.isArray(body)
     || Object.keys(body).join(',') !== 'ids') return json({ error: 'Invalid message ID request' }, 400);

@@ -47,6 +47,37 @@ function messageContext(ip: string, token: string, body: unknown = { version: 2 
   };
 }
 
+test('rejects send bodies over 32 KiB with or without Content-Length', async () => {
+  createSession('body-size-token', alice.address, Date.now() + 60_000);
+  for (const contentLength of [undefined, '32769']) {
+    const ctx = messageContext(`body-size-${Math.random()}`, 'body-size-token');
+    const headers = new Headers(ctx.req.headers);
+    if (contentLength) headers.set('Content-Length', contentLength);
+    ctx.req = new Request(ctx.req.url, {
+      method: 'POST', headers,
+      body: new ReadableStream<Uint8Array>({ start(controller) {
+        controller.enqueue(new TextEncoder().encode('{}' + ' '.repeat(32767)));
+        controller.close();
+      } }),
+    });
+    const response = await handleSendMessage(ctx);
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: 'Request body too large' });
+  }
+});
+
+test('accepts a maximum-size message in a send body of exactly 32 KiB', async () => {
+  registerPubkey(recipient.address, recipient.publicKey);
+  createSession('exact-body-token', alice.address, Date.now() + 60_000);
+  const envelope = await createSignedMessageEnvelope('a'.repeat(4096), 300, alice, recipient.address, recipient.publicKey);
+  const ctx = messageContext(`exact-body-${Math.random()}`, 'exact-body-token');
+  ctx.req = new Request(ctx.req.url, {
+    method: 'POST', headers: ctx.req.headers,
+    body: JSON.stringify(envelope).padEnd(32768, ' '),
+  });
+  expect((await handleSendMessage(ctx)).status).toBe(201);
+});
+
 test('accepts 4096 plaintext bytes and rejects 4097 bytes without storing them', async () => {
   const ip = `message-size-${Math.random()}`;
   registerPubkey(recipient.address, recipient.publicKey);

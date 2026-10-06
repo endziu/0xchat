@@ -1,5 +1,5 @@
 import { initDb, deleteExpiredMessages, deleteExpiredSessions, deleteInactivePubkeys, pruneDailyActivity } from './src/server/db.ts';
-import { PORT, PUBKEY_RETENTION_MS, error } from './src/server/constants.ts';
+import { PORT, PUBKEY_RETENTION_MS, MAX_REQUEST_BODY_BYTES, error } from './src/server/constants.ts';
 import { json } from './src/server/http.ts';
 import { createFetch, regStore, authStore, cleanupSseTokens } from './src/server/router.ts';
 
@@ -21,6 +21,7 @@ setInterval(() => {
 Bun.serve({
   port: PORT,
   idleTimeout: 60,
+  maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
   fetch: createFetch(),
   error(err: Error) {
     error('[error]', err.message);
