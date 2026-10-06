@@ -331,6 +331,26 @@ test('watch stops with the update action when opening a live message requires a 
   expect(rejections).toBe(1)
 })
 
+for (const command of ['watch', 'chat'] as const) {
+  test(`${command} stops without retrying when its live stream reconnection requires a newer client`, async () => {
+    const cli = start(command)
+    const shown = command === 'chat' ? cli.output : cli.diagnostics
+    await until(() => shown().includes('Connected'), 'initial synchronization')
+    let rejections = 0
+    transform = async (request, response) => {
+      if (new URL(request.url).pathname !== '/api/events') return response
+      rejections++
+      return clientUpdateRequired()
+    }
+    disconnect()
+    await cli.proc.exited
+    expect(cli.proc.exitCode).toBe(1)
+    expect(shown()).toContain('This 0xChat CLI is out of date')
+    expect(shown()).toContain('git pull && bun install')
+    expect(rejections).toBe(1)
+  }, 10_000)
+}
+
 test('chat exits with the update action when sending requires a newer client', async () => {
   const cli = start('chat')
   await until(() => cli.screen().includes('Connected'), 'initial synchronization')

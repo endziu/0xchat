@@ -3,11 +3,12 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ChatClient, applyExpiryUpdate, isMessageAvailable } from './client'
+import { ChatClient, ClientUpdateRequiredError, applyExpiryUpdate, isMessageAvailable } from './client'
 import { createIdentity, parsePrivateKey } from './identity'
 import { main } from './main'
 import { initDb, getDb } from '../server/db'
 import { createFetch } from '../server/router'
+import { clientUpdateRequired } from '../server/http'
 import * as limiters from '../server/rate-limiters'
 import { canonicalMessageEnvelope, type DeliveredMessage, type OpeningResponse } from '../shared/message-envelope'
 import { signEIP191 } from '../client/lib/burner'
@@ -159,6 +160,19 @@ test('an opening failure exposes neither plaintext nor the server error body', a
       expect(output).not.toHaveBeenCalled()
     } finally { output.mockRestore() }
   }
+})
+
+test('a refused client version aborts the client and read reports the update action', async () => {
+  await alice.send(bob.identity.address, 'needs an update')
+  transform = async (request, response) => isMessageAction(request, 'open') ? clientUpdateRequired() : response
+  await expect(bob.read(alice.identity.address)).rejects.toThrow()
+  expect(bob.signal.reason).toBeInstanceOf(ClientUpdateRequiredError)
+  const output = spyOn(console, 'log').mockImplementation(() => {})
+  try {
+    await expect(main(['--identity', bobPath, '--server', server.url.origin, 'read', alice.identity.address]))
+      .rejects.toThrow('This 0xChat CLI is out of date')
+    expect(output).not.toHaveBeenCalled()
+  } finally { output.mockRestore() }
 })
 
 test('retry after a lost response preserves the committed deadline and cannot revive expiry', async () => {

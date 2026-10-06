@@ -132,8 +132,8 @@ async function follow(
             try {
               const message = await client.confirmLiveMessage(partner, event.data)
               if (message) deliver(message)
-            } catch (error) {
-              if (error instanceof ClientUpdateRequiredError) throw error
+            } catch {
+              if (signal.aborted) return
               status('Rejected an invalid message')
             }
             break
@@ -159,7 +159,6 @@ async function follow(
       if (!signal.aborted) throw new Error('Live connection closed')
     } catch (error) {
       if (signal.aborted) return
-      if (error instanceof ClientUpdateRequiredError) throw error
       status(`${error instanceof Error ? error.message : 'Connection failed'}; reconnecting in ${backoff / 1000}s`)
       await delay(backoff, undefined, { signal }).catch(() => {})
       backoff = Math.min(backoff * 2, 30_000)
@@ -167,7 +166,7 @@ async function follow(
   }
 }
 
-async function chat(client: ChatClient, partner: Address, ttl: number, controller: AbortController): Promise<void> {
+async function chat(client: ChatClient, partner: Address, ttl: number): Promise<void> {
   const messages = new Map<string, PlainMessage>()
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 0 })
   let status = 'Connecting…'
@@ -195,12 +194,11 @@ async function chat(client: ChatClient, partner: Address, ttl: number, controlle
   }, 250)
   const onResize = () => render()
   process.stdout.on('resize', onResize)
-  rl.on('SIGINT', () => controller.abort())
-  rl.on('close', () => controller.abort())
+  rl.on('SIGINT', () => client.abort())
+  rl.on('close', () => client.abort())
   let pendingSend = Promise.resolve()
-  let updateRequired: ClientUpdateRequiredError | undefined
   rl.on('line', line => {
-    if (line === '/quit') { controller.abort(); return }
+    if (line === '/quit') { client.abort(); return }
     if (line === '/help') { status = 'Enter sends text. /ttl SECONDS changes lifetime. /quit exits.'; render(); return }
     if (line.startsWith('/ttl ')) {
       const value = Number(line.slice(5))
@@ -217,15 +215,13 @@ async function chat(client: ChatClient, partner: Address, ttl: number, controlle
       messages.set(message.id, message)
       status = 'Sent'
     }).catch(error => {
-      // Every later request would be refused too; leave chat and report the update action.
-      if (error instanceof ClientUpdateRequiredError) { updateRequired = error; controller.abort(); return }
       status = `Send failed: ${error instanceof Error ? error.message : 'unknown error'}`
     })
-      .finally(() => { sending = false; if (!controller.signal.aborted) render() })
+      .finally(() => { sending = false; if (!client.signal.aborted) render() })
   })
   render()
   try {
-    await follow(client, partner, controller.signal,
+    await follow(client, partner, client.signal,
       message => { messages.set(message.id, message); render() },
       message => { messages.set(message.id, message); render() },
       text => { status = text; render() },
@@ -237,7 +233,6 @@ async function chat(client: ChatClient, partner: Address, ttl: number, controlle
     process.stdout.write('\x1b[?1049l')
     await pendingSend
   }
-  if (updateRequired) throw updateRequired
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
@@ -286,11 +281,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   }
   if (command === 'address') { output({ address: identity.address }, checksumAddress(identity.address)); return }
   if (command === 'export') { output({ privateKey: identity.privateKey }, identity.privateKey); return }
-  const controller = new AbortController()
-  const stop = () => controller.abort()
+  const client = new ChatClient(server, identity)
+  const stop = () => client.abort()
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
-  const client = new ChatClient(server, identity, controller.signal)
+  let failure: unknown = null
   try {
     if (['init', 'import', 'register'].includes(command!)) {
       await client.register()
@@ -326,7 +321,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         if (isMessageAvailable(message)) console.log(text)
       }
     } else if (command === 'watch') {
-      await follow(client, partner!, controller.signal,
+      await follow(client, partner!, client.signal,
         message => console.log(values.json ? JSON.stringify(message) : displayMessage(message, identity.address)),
         message => {
           if (values.json) console.log(JSON.stringify({
@@ -335,20 +330,22 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
           }))
         },
         text => console.error(terminalText(text)))
-    } else if (command === 'chat') await chat(client, partner!, ttl, controller)
+    } else if (command === 'chat') await chat(client, partner!, ttl)
   } catch (error) {
-    // Leaving chat aborts the controller, but an update requirement must still be reported.
-    if (!controller.signal.aborted || error instanceof ClientUpdateRequiredError) {
-      if (command === 'init' || command === 'import') {
-        console.error(`Identity remains saved at ${terminalText(identityPath)}. Run register with the same --identity and chosen --server options to retry; do not run init again.`)
-      }
-      throw error
-    }
+    // Ctrl-C and leaving chat abort the client and end quietly.
+    if (!client.signal.aborted) failure = error
   } finally {
     await client.close().catch(() => { console.error('Session cleanup failed; it will expire automatically.') })
     process.off('SIGINT', stop)
     process.off('SIGTERM', stop)
   }
+  // A refused client aborts itself; report the update action however the command ended.
+  if (client.signal.reason instanceof ClientUpdateRequiredError) failure = client.signal.reason
+  if (failure === null) return
+  if (command === 'init' || command === 'import') {
+    console.error(`Identity remains saved at ${terminalText(identityPath)}. Run register with the same --identity and chosen --server options to retry; do not run init again.`)
+  }
+  throw failure
 }
 
 if (import.meta.main) {

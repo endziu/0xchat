@@ -80,19 +80,33 @@ export class ClientUpdateRequiredError extends Error {
   }
 }
 
-async function responseError(response: Response, fallback: string): Promise<Error> {
-  const data = await response.json().catch(() => ({})) as { error?: unknown; code?: unknown }
-  if (data.code === 'client_update_required') return new ClientUpdateRequiredError()
-  return new HttpError(response.status, typeof data.error === 'string' ? data.error : fallback)
-}
-
 export class ChatClient {
   readonly origin: string
   private token: string | null = null
   private loginPending: Promise<void> | null = null
+  private readonly controller = new AbortController()
+  /** Aborted by abort(), or with a ClientUpdateRequiredError once the server refuses this client. */
+  readonly signal = this.controller.signal
+  private requestSignal: AbortSignal | undefined = this.signal
 
-  constructor(origin: string, readonly identity: Keypair, private signal?: AbortSignal) {
+  constructor(origin: string, readonly identity: Keypair) {
     this.origin = serverOrigin(origin)
+  }
+
+  /** Cancels every pending and later operation. */
+  abort(): void {
+    this.controller.abort()
+  }
+
+  private async responseError(response: Response, fallback: string): Promise<Error> {
+    const data = await response.json().catch(() => ({})) as { error?: unknown; code?: unknown }
+    if (data.code === 'client_update_required') {
+      // Every later request would be refused too, so stop everything at once.
+      const error = new ClientUpdateRequiredError()
+      this.controller.abort(error)
+      return error
+    }
+    return new HttpError(response.status, typeof data.error === 'string' ? data.error : fallback)
   }
 
   private async request<T>(path: string, method = 'GET', body?: unknown, authenticated = true, retry = true): Promise<T> {
@@ -107,14 +121,14 @@ export class ChatClient {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       redirect: 'error',
-      signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(this.signal ? [this.signal] : [])]),
+      signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(this.requestSignal ? [this.requestSignal] : [])]),
     })
     if (response.status === 401 && authenticated && retry) {
       this.token = null
       await this.login()
       return this.request(path, method, body, authenticated, false)
     }
-    if (!response.ok) throw await responseError(response, `HTTP ${response.status}`)
+    if (!response.ok) throw await this.responseError(response, `HTTP ${response.status}`)
     return response.status === 204 ? undefined as T : await response.json() as T
   }
 
@@ -162,7 +176,7 @@ export class ChatClient {
   async close(): Promise<void> {
     if (!this.token) return
     // Shutdown must work after the interactive operation was cancelled.
-    this.signal = undefined
+    this.requestSignal = undefined
     try { await this.request('/api/session', 'DELETE', undefined, true, false) }
     finally { this.token = null }
   }
@@ -214,8 +228,7 @@ export class ChatClient {
     try {
       response = await this.request<OpeningResponse>(`/api/messages/${partner}/${action}`, 'POST',
         { ids: messages.map(item => item.message.id) })
-    } catch (error) {
-      if (error instanceof ClientUpdateRequiredError) throw error
+    } catch {
       const operation = action === 'open' ? 'opening' : 'availability check'
       throw new Error(`Message ${operation} failed; retry read to confirm availability`)
     }
@@ -303,9 +316,9 @@ export class ChatClient {
       })
     } finally { clearTimeout(connectTimer) }
     if (!response.ok || !response.body) {
-      const failure = response.ok ? null : await responseError(response, '')
+      if (!response.ok) await this.responseError(response, '')
       controller.abort()
-      throw failure instanceof ClientUpdateRequiredError ? failure : new Error(`Live connection failed: HTTP ${response.status}`)
+      throw new Error(`Live connection failed: HTTP ${response.status}`)
     }
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
