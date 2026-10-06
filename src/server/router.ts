@@ -37,7 +37,7 @@ const routes: Route[] = [
   { method: 'GET',    test: addressRoute('/api/messages/'), handler: handleGetMessages },
   { method: 'DELETE', test: addressRoute('/api/messages/'), handler: handleClearConversation },
   { method: 'GET',    test: eq('/api/conversations'),                   handler: handleGetConversations },
-  { method: 'DELETE', test: re(/^\/api\/addresses\/.+$/),               handler: handleDeleteAddress },
+  { method: 'DELETE', test: addressRoute('/api/addresses/'), handler: handleDeleteAddress },
   { method: 'POST',   test: eq('/api/events/token'),                    handler: handleGetSSEToken },
   { method: 'GET',    test: eq('/api/events'),                          handler: handleSSE },
   { method: 'POST',   test: eq('/api/events/attention'),                handler: handleSSEAttention },
@@ -55,9 +55,6 @@ function addressRoute(prefix: string, suffix = '') {
 
 function eq(expected: string) {
   return (path: string) => path === expected;
-}
-function re(pattern: RegExp) {
-  return (path: string) => pattern.test(path);
 }
 
 export function createFetch(options: { trustedProxies?: ReadonlySet<string> } = {}) {

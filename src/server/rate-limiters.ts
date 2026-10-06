@@ -25,11 +25,18 @@ export const registerChallengeLimiter = new RateLimiter({ max: 10, windowMs: MIN
 /** Registration, per ip. */
 export const registerLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
+/** Account deletion, per ip; same budget as registration. */
+export const accountDeleteLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+
 /** All push mutations (including removal), per ip+address. */
 export const pushMutationLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
 /** SSE token, per ip. A live client re-mints only on reconnect. */
 export const sseTokenLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+
+/** Attention updates, per ip+address. A browser sends one per 20 s heartbeat
+ * plus focus changes, on up to 3 streams per identity. */
+export const attentionLimiter = new RateLimiter({ max: 60, windowMs: MINUTE });
 
 /** 120/min keyed by recipient address, shared across devices and networks.
  * Supports rapid history opening without multiplying an identity's allowance. */

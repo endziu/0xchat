@@ -89,6 +89,6 @@ test('notification cleanup, session removal and account deletion stay open to ol
   const removed = await request('/api/push/unsubscribe', 'old', bob.address, { endpoint: subscription.endpoint });
   expect(removed.status).toBe(200);
   expect((await request('/api/session', 'old', bob.address, undefined, 'DELETE')).status).toBe(204);
-  expect((await request(`/api/addresses/${alice.address}/extra`, 'old', alice.address, undefined, 'DELETE')).status).toBe(400);
+  expect((await request(`/api/addresses/${alice.address}/extra`, 'old', alice.address, undefined, 'DELETE')).status).toBe(404);
   expect((await request(`/api/addresses/${alice.address}`, 'old', alice.address, undefined, 'DELETE')).status).toBe(200);
 });
