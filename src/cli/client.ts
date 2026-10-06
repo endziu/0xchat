@@ -1,4 +1,5 @@
 import { requireAddress, type Address } from '../shared/address'
+import { MESSAGE_TTLS } from '../shared/message-ttl'
 import { signEIP191, type Keypair } from '../client/lib/burner'
 import { decrypt } from '../client/lib/crypto'
 import { verifyEncryptionPublicKey } from '../client/lib/encryption-key'
@@ -7,7 +8,7 @@ import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
 import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
-export const LIFETIMES = [5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]
+export const LIFETIMES = MESSAGE_TTLS
 const availabilityDeadline = Symbol('availabilityDeadline')
 export interface PlainMessage extends MessageLifecycle {
   id: string

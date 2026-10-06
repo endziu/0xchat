@@ -10,6 +10,7 @@ import { useLatest } from '../hooks/useLatest'
 import { reloadForUpdate, useClientUpdateRequired } from '../hooks/useClientUpdate'
 import { Keypair } from '../lib/burner'
 import { api } from '../lib/api'
+import { errorMessage } from '../lib/errors'
 import { markConversationSeen } from '../lib/contacts'
 import type { ConnectionEpoch } from '../lib/sse-connection'
 import type { LiveEvent } from '../../shared/live-events'
@@ -108,8 +109,8 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       if (newChatName.trim()) setLabel(addr, newChatName)
       navigate(conversationPath(addr))
       setNewChatAddr(null)
-    } catch (err: any) {
-      setNewChatError(err.message || 'Failed to check registration.')
+    } catch (err) {
+      setNewChatError(errorMessage(err, 'Failed to check registration.'))
     }
   }
 

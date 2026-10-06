@@ -46,12 +46,16 @@ function apiProtocol(identity: Keypair, partner: Address, token: string, refresh
 
 function decryptFor(identity: Keypair, partner: Address) {
   return async (input: unknown): Promise<DecryptedMessage | null> => {
+    // Live events from other conversations share the stream. Skip them before
+    // signature verification; matching raw participants does not establish trust.
+    if (typeof input !== 'object' || input === null) return null
+    const raw = input as { sender?: unknown; recipient?: unknown }
+    if (raw.sender !== partner && raw.recipient !== partner) return null
     const msg = await verifyDeliveredMessage(input)
     if (!msg || !isEnvelopeParticipant(msg, identity.address)) {
       console.error('Rejected unauthenticated or misaddressed message envelope')
       return null
     }
-    // Live events from other conversations share the stream.
     if (!isEnvelopeParticipant(msg, identity.address, partner)) return null
     const isMine = msg.sender === identity.address
     const ciphertext = isMine ? msg.ct_sender : msg.ct_recipient

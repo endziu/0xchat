@@ -492,7 +492,6 @@ export class ConversationSession {
       if (store.ids().some(id => !refreshed.has(id))) throw new Error('Messages changed during refresh; retry to synchronize')
       if (!await this.drainBuffered(current)) return
       this.recoveryCursor = completed
-      store.unstage()
       this.synchronizedWork = attempt
       store.sweep(store.now(), { synchronized: true })
       this.view.error = null

@@ -26,11 +26,9 @@ export function useConversations(token: string | null) {
       .map(c => ({ ...c, stale: true }))
       .sort((a, b) => b.last_message_at - a.last_message_at)
   )
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [labels, setLabels] = useState(loadLabels)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
-  const pendingRefreshRef = useRef(false)
   // Refreshes can overlap (token change, SSE, retry click). Only the newest one
   // is allowed to write state, so a slow failure can't clobber a newer success.
   const loadGenRef = useRef(0)
@@ -49,7 +47,6 @@ export function useConversations(token: string | null) {
       setError(null)
       return Promise.resolve('cancelled')
     }
-    setLoading(true)
     setError(null)
     // An awaited refresh follows its replacement, so an SSE refresh cannot
     // turn successful recovery into a failure just by finishing first.
@@ -66,8 +63,6 @@ export function useConversations(token: string | null) {
         console.error('Failed to load conversations:', err)
         setError(errorMessage(err, 'Failed to load conversations'))
         return 'failed'
-      } finally {
-        if (gen === loadGenRef.current) setLoading(false)
       }
     })()
     latestRefresh.current = request
@@ -99,18 +94,12 @@ export function useConversations(token: string | null) {
   // Debounced: SSE can fire a burst of these. A retry click wants `reload`
   // instead, so it isn't deferred behind the 300 ms timer.
   const refresh = useCallback(() => {
-    // Clear pending flag since we're scheduling a new one
-    pendingRefreshRef.current = true
-
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
     }
 
     debounceRef.current = setTimeout(() => {
-      if (pendingRefreshRef.current) {
-        doRefresh()
-        pendingRefreshRef.current = false
-      }
+      doRefresh()
     }, 300)
   }, [doRefresh])
 
@@ -128,5 +117,5 @@ export function useConversations(token: string | null) {
     }
   }, [])
 
-  return { conversations, loading, error, refresh, reload: doRefresh, labels, setLabel, removeConversation }
+  return { conversations, error, refresh, reload: doRefresh, labels, setLabel, removeConversation }
 }

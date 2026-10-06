@@ -909,7 +909,7 @@ test('identity presentation copies checksums and uses the same checksummed link 
   const container = document.createElement('div')
   document.body.append(container)
   try {
-    render(<Layout identity={{ ...bobKey, address }} onLogout={() => {}}>Chat</Layout>, container)
+    render(<Layout identity={{ ...bobKey, address }} onLogout={() => {}} sseConnected={false} push={{ supported: false }}>Chat</Layout>, container)
     expect(container.textContent).toContain('0x5290…9EE7')
     container.querySelector<HTMLButtonElement>('[aria-label="Copy address"]')!.click()
     container.querySelector<HTMLButtonElement>('[aria-label="Copy conversation link"]')!.click()
