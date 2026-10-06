@@ -162,11 +162,17 @@ test('an opening failure exposes neither plaintext nor the server error body', a
   }
 })
 
-test('a refused client version aborts the client and read reports the update action', async () => {
+test('a refused client version aborts the client with the update error', async () => {
   await alice.send(bob.identity.address, 'needs an update')
   transform = async (request, response) => isMessageAction(request, 'open') ? clientUpdateRequired() : response
-  await expect(bob.read(alice.identity.address)).rejects.toThrow()
-  expect(bob.signal.reason).toBeInstanceOf(ClientUpdateRequiredError)
+  const error = await bob.read(alice.identity.address).catch((error: unknown) => error)
+  expect(error).toBeInstanceOf(ClientUpdateRequiredError)
+  expect(bob.signal.reason).toBe(error)
+})
+
+test('read reports the update action when the server refuses this client', async () => {
+  await alice.send(bob.identity.address, 'needs an update')
+  transform = async (request, response) => isMessageAction(request, 'open') ? clientUpdateRequired() : response
   const output = spyOn(console, 'log').mockImplementation(() => {})
   try {
     await expect(main(['--identity', bobPath, '--server', server.url.origin, 'read', alice.identity.address]))

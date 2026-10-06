@@ -79,12 +79,12 @@ function positiveInteger(value: string | undefined, name: string): number | unde
 async function follow(
   client: ChatClient,
   partner: Address,
-  signal: AbortSignal,
   receive: (message: PlainMessage) => void,
   lifecycle: (message: PlainMessage) => void,
   status: (text: string) => void,
   unavailable: (id: string) => void = () => {},
 ): Promise<void> {
+  const { signal } = client
   const seen = new Map<string, PlainMessage>()
   const deliver = (message: PlainMessage) => {
     if (signal.aborted || !isMessageAvailable(message)) return
@@ -221,7 +221,7 @@ async function chat(client: ChatClient, partner: Address, ttl: number): Promise<
   })
   render()
   try {
-    await follow(client, partner, client.signal,
+    await follow(client, partner,
       message => { messages.set(message.id, message); render() },
       message => { messages.set(message.id, message); render() },
       text => { status = text; render() },
@@ -321,7 +321,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         if (isMessageAvailable(message)) console.log(text)
       }
     } else if (command === 'watch') {
-      await follow(client, partner!, client.signal,
+      await follow(client, partner!,
         message => console.log(values.json ? JSON.stringify(message) : displayMessage(message, identity.address)),
         message => {
           if (values.json) console.log(JSON.stringify({

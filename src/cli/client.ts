@@ -87,13 +87,14 @@ export class ChatClient {
   private readonly controller = new AbortController()
   /** Aborted by abort(), or with a ClientUpdateRequiredError once the server refuses this client. */
   readonly signal = this.controller.signal
+  /** Cancels requests along with `signal` until close() detaches it to send its logout. */
   private requestSignal: AbortSignal | undefined = this.signal
 
   constructor(origin: string, readonly identity: Keypair) {
     this.origin = serverOrigin(origin)
   }
 
-  /** Cancels every pending and later operation. */
+  /** Cancels pending and later requests; close() still sends its logout. */
   abort(): void {
     this.controller.abort()
   }
@@ -228,7 +229,9 @@ export class ChatClient {
     try {
       response = await this.request<OpeningResponse>(`/api/messages/${partner}/${action}`, 'POST',
         { ids: messages.map(item => item.message.id) })
-    } catch {
+    } catch (error) {
+      // A stopped client reports why it stopped, not a retry hint.
+      if (this.signal.aborted) throw error
       const operation = action === 'open' ? 'opening' : 'availability check'
       throw new Error(`Message ${operation} failed; retry read to confirm availability`)
     }
@@ -316,6 +319,7 @@ export class ChatClient {
       })
     } finally { clearTimeout(connectTimer) }
     if (!response.ok || !response.body) {
+      // Read only to abort this client if the server requires an update.
       if (!response.ok) await this.responseError(response, '')
       controller.abort()
       throw new Error(`Live connection failed: HTTP ${response.status}`)
