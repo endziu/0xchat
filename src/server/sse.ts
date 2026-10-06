@@ -3,16 +3,17 @@ import type { LiveEvent } from '../shared/live-events.ts';
 
 const clients = new Map<
   Address,
-  Map<ReadableStreamDefaultController, { suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
+  Map<ReadableStreamDefaultController, { ip: string; suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
 >();
 
-/** Open SSE streams per client IP, counted separately from the per-address map. */
-const streamsPerIp = new Map<string, number>();
+/** Live SSE connections per client IP, released whenever a client is removed. */
+const connectionsPerIp = new Map<string, number>();
 
 const ATTENTION_TTL_MS = 45_000;
 
 export function addClient(
   address: Address,
+  ip: string,
   ctrl: ReadableStreamDefaultController,
   suppressPush = true,
   tracksAttention = false,
@@ -22,7 +23,8 @@ export function addClient(
     set = new Map();
     clients.set(address, set);
   }
-  set.set(ctrl, { suppressPush, tracksAttention, attentionAt: Date.now(), sequence: 0 });
+  set.set(ctrl, { ip, suppressPush, tracksAttention, attentionAt: Date.now(), sequence: 0 });
+  connectionsPerIp.set(ip, ipConnectionCount(ip) + 1);
 }
 
 /** Only an attentive browser or a live terminal stream suppresses push. */
@@ -57,17 +59,13 @@ export function connectionCount(
 
 /** Number of live SSE streams currently open from a client IP. */
 export function ipConnectionCount(ip: string): number {
-  return streamsPerIp.get(ip) ?? 0;
+  return connectionsPerIp.get(ip) ?? 0;
 }
 
-export function addIpStream(ip: string): void {
-  streamsPerIp.set(ip, ipConnectionCount(ip) + 1);
-}
-
-export function removeIpStream(ip: string): void {
+function releaseIp(ip: string): void {
   const count = ipConnectionCount(ip) - 1;
-  if (count > 0) streamsPerIp.set(ip, count);
-  else streamsPerIp.delete(ip);
+  if (count > 0) connectionsPerIp.set(ip, count);
+  else connectionsPerIp.delete(ip);
 }
 
 export function removeClient(
@@ -75,8 +73,10 @@ export function removeClient(
   ctrl: ReadableStreamDefaultController,
 ): void {
   const set = clients.get(address);
-  if (!set) return;
+  const client = set?.get(ctrl);
+  if (!set || !client) return;
   set.delete(ctrl);
+  releaseIp(client.ip);
   if (set.size === 0) clients.delete(address);
 }
 
@@ -85,11 +85,12 @@ export function publish(address: Address, event: LiveEvent): void {
   if (!set) return;
   const payload = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
   const encoded = new TextEncoder().encode(payload);
-  for (const ctrl of set.keys()) {
+  for (const [ctrl, client] of set) {
     try {
       ctrl.enqueue(encoded);
     } catch {
       set.delete(ctrl);
+      releaseIp(client.ip);
     }
   }
   if (set.size === 0) clients.delete(address);

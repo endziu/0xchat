@@ -53,7 +53,7 @@ function listen(address: Address): { events: string[]; stop: () => void } {
   let ctrl!: ReadableStreamDefaultController;
   new ReadableStream({ start(c) { ctrl = c; } });
   ctrl.enqueue = (chunk: Uint8Array) => { events.push(new TextDecoder().decode(chunk)); };
-  addClient(address, ctrl);
+  addClient(address, '127.0.0.1', ctrl);
   return { events, stop: () => removeClient(address, ctrl) };
 }
 

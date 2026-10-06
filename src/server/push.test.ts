@@ -81,7 +81,7 @@ test('sends nothing with less than a second left', async () => {
 test('sends nothing while the recipient has an attentive connection', async () => {
   savePushSubscription(alice, { endpoint: endpoint('one'), ...keys })
   const ctrl = {} as ReadableStreamDefaultController
-  addClient(alice, ctrl)
+  addClient(alice, '127.0.0.1', ctrl)
   try {
     await pushNotify(alice, Date.now() + 60_000)
     expect(sent).toEqual([])

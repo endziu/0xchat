@@ -154,7 +154,7 @@ Runtime data is stored in `chat.db` beside the project. The database, build outp
 
 ## Rate limits
 
-All limits are per minute. Each operation has its own budget, so one never
+All limits below are per minute. Each operation has its own budget, so one never
 consumes another's.
 
 | Operation | Per identity | Per IP |
