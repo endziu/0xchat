@@ -13,7 +13,7 @@ import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { decrypt } from '../shared/crypto.ts';
-import { createSignedMessageEnvelope } from '../shared/seal-envelope.ts';
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope.ts';
 import {
   canonicalMessageAad,
   MESSAGE_ENVELOPE_VERSION,

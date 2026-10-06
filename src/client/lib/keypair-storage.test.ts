@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { checksumAddress } from '../../shared/address'
 import { deriveKeypair } from '../../shared/keypair'
-import { loadKeypair } from './burner'
+import { loadKeypair } from './keypair-storage'
 
 const values = new Map<string, string>()
 globalThis.localStorage = {

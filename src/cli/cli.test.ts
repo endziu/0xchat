@@ -7,7 +7,7 @@ import { ChatClient, serverOrigin } from './client'
 import { createIdentity, loadIdentity, parsePrivateKey } from './identity'
 import { terminalText } from './main'
 import { decrypt } from '../shared/crypto'
-import { createSignedMessageEnvelope } from '../shared/seal-envelope'
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope'
 import { canonicalMessageAad, verifyDeliveredMessage } from '../shared/message-envelope'
 import { Database } from 'bun:sqlite'
 

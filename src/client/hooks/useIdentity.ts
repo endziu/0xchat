@@ -1,7 +1,7 @@
 import type { Address } from '../../shared/address'
 import { useState, useEffect, useCallback } from 'preact/hooks'
 import { Keypair, generateKeypair, signEIP191 } from '../../shared/keypair'
-import { loadKeypair, saveKeypair, clearKeypair } from '../lib/burner'
+import { loadKeypair, saveKeypair, clearKeypair } from '../lib/keypair-storage'
 import { api } from '../lib/api'
 import { getToken, clearToken } from '../lib/session'
 

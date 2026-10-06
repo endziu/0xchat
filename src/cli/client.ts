@@ -5,7 +5,7 @@ import { decrypt } from '../shared/crypto'
 import { verifyEncryptionPublicKey } from '../shared/encryption-key'
 import { buildRegistrationChallenge } from '../shared/registration-challenge'
 import { buildSessionChallenge } from '../shared/session-challenge'
-import { createSignedMessageEnvelope } from '../shared/seal-envelope'
+import { createSignedMessageEnvelope } from '../shared/signed-message-envelope'
 import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
 
 const availabilityDeadline = Symbol('availabilityDeadline')
