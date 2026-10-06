@@ -3,6 +3,7 @@ import { issueRecoveryCursor, readRecoveryCursor } from '../recovery-cursor.ts';
 import { clearConversation, createMessage, getMessageStates, recoverMessages, openMessages, getConversationMessages, getConversations, getPubkey, type MessageRow } from '../db.ts';
 import { clientUpdateRequired, isOutdatedClient, json, readJson, getSessionAddress } from '../http.ts';
 import { clearIpLimiter, clearLimiter, recoveryIpLimiter, recoveryLimiter, stateIpLimiter, stateLimiter, openingIpLimiter, openingLimiter, messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
+import { ipAddressKey } from '../rate-limit.ts';
 import { publish } from '../sse.ts';
 import { pushNotify } from '../push.ts';
 import { log, warn, VALID_TTLS, MAX_REQUEST_BODY_BYTES } from '../constants.ts';
@@ -51,7 +52,7 @@ export async function handleSendMessage({ req, ip }: Context): Promise<Response>
   }
   if (isOutdatedClient(req)) return clientUpdateRequired();
 
-  if (messageIpLimiter.hit(ip) || messageLimiter.hit(`${ip}:${sessionAddress}`)) {
+  if (messageIpLimiter.hit(ip) || messageLimiter.hit(ipAddressKey(ip, sessionAddress))) {
     warn('[rate-limit] msg', sessionAddress, ip);
     return json({ error: 'Too many requests' }, 429);
   }

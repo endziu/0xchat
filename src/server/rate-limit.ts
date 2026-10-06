@@ -1,3 +1,5 @@
+import type { Address } from '../shared/address.ts';
+
 export interface RateLimiterOptions {
   /** Maximum requests allowed per key within the window. */
   max: number;
@@ -109,3 +111,7 @@ const defaultSchedule: NonNullable<RateLimiterOptions['schedule']> = (cleanup, m
   return () => clearInterval(timer);
 };
 
+/** Key for limits that bound one identity on one network. */
+export function ipAddressKey(ip: string, address: Address): string {
+  return `${ip}:${address}`;
+}

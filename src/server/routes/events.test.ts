@@ -33,12 +33,14 @@ function makeContext(
   ip: string,
   init?: RequestInit,
   auth = sessionToken,
+  outdated = false,
 ): Context {
   const req = new Request(`https://chat.example${path}`, {
     ...init,
     headers: {
       ...init?.headers,
-      Authorization: `Bearer ${auth}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1',
+      Authorization: `Bearer ${auth}`,
+      ...(outdated ? {} : { 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }),
     },
   })
   return { req, url: new URL(req.url), path, method: req.method, ip }
@@ -92,12 +94,9 @@ describe('SSE route', () => {
   })
 
   test('attention updates from an outdated client are told to update', async () => {
-    const req = new Request('https://chat.example/api/events/attention', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${sessionToken}` },
-      body: JSON.stringify({ stream: 'any', attentive: true, sequence: 1 }),
-    })
-    const res = await handleSSEAttention({ req, url: new URL(req.url), path: '/api/events/attention', method: 'POST', ip: 'attention-outdated' })
+    const res = await handleSSEAttention(makeContext('/api/events/attention', 'attention-outdated', {
+      method: 'POST', body: JSON.stringify({ stream: 'any', attentive: true, sequence: 1 }),
+    }, sessionToken, true))
     expect(res.status).toBe(426)
     expect((await res.json()).code).toBe('client_update_required')
   })

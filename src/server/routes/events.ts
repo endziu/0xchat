@@ -5,6 +5,7 @@ import { addClient, connectionCount, removeClient, updateClientAttention } from 
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
 import { attentionLimiter, sseTokenLimiter } from '../rate-limiters.ts';
 import { MAX_SSE_CONNECTIONS_PER_ADDRESS, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
+import { ipAddressKey } from '../rate-limit.ts';
 import type { Context } from '../http.ts';
 
 /** Live long enough for the EventSource to dial in, short enough to bound reuse. */
@@ -163,8 +164,8 @@ export async function handleSSEAttention({ req, ip }: Context): Promise<Response
   const address = getSessionAddress(req);
   if (!address) return json({ error: 'Unauthorized' }, 401);
   if (isOutdatedClient(req)) return clientUpdateRequired();
-  if (attentionLimiter.hit(`${ip}:${address}`)) {
-    warn('[rate-limit] attention', ip, address);
+  if (attentionLimiter.hit(ipAddressKey(ip, address))) {
+    warn('[rate-limit] attention', address, ip);
     return json({ error: 'Too many requests' }, 429);
   }
   const body: unknown = await req.json().catch(() => null);
