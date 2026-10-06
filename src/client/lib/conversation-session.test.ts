@@ -93,14 +93,13 @@ class FakeServer implements ConversationProtocol {
     return this.respond('pubkey', 'pubkey', () => '0xpubkey')
   }
 
-  history(limit: number, before?: { before: number; rowid: number | null }): Promise<MessagePage> {
-    return this.respond('history', before ? `history before=${before.rowid}` : 'history', () => {
-      const page = this.available().filter(({ seq }) => !before || seq < before.rowid!).reverse().slice(0, limit)
+  history(limit: number, before?: number): Promise<MessagePage> {
+    return this.respond('history', before ? `history before=${before}` : 'history', () => {
+      const page = this.available().filter(({ seq }) => !before || seq < before).reverse().slice(0, limit)
       return {
         recovery_cursor: String(this.stored.length),
         messages: page.map(({ message }) => ({ ...message })),
-        next_before: page.at(-1)?.message.created_at ?? null,
-        next_before_rowid: page.at(-1)?.seq ?? null,
+        next_before_seq: page.at(-1)?.seq ?? null,
       }
     })
   }

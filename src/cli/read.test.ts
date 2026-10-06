@@ -87,7 +87,7 @@ test('listing and sender reads leave messages unopened; pagination opens only re
   const latest = await bob.read(alice.identity.address)
   expect(latest.messages).toHaveLength(100)
   expect(openingBodies[0]).toHaveLength(100)
-  const older = await bob.read(alice.identity.address, latest.next_before!, latest.next_before_rowid!)
+  const older = await bob.read(alice.identity.address, latest.next_before_seq!)
   expect(older.messages.map(message => message.plaintext)).toEqual(['page 0'])
   expect(openingBodies[1]).toEqual([older.messages[0]!.id])
   openingBodies = []
@@ -127,10 +127,17 @@ test('CLI listing leaves messages unopened and cursor flags open only that page'
   expect(openingBodies[0]).toHaveLength(100)
   openingBodies = []
   const older = JSON.parse(await runCommand(['read', alice.identity.address, '--json',
-    '--before', String(latest.next_before), '--before-rowid', String(latest.next_before_rowid)]))
+    '--before', String(latest.next_before_seq)]))
   expect(older.messages.map((message: { plaintext: string }) => message.plaintext)).toEqual(['command page 0'])
   expect(openingBodies).toEqual([[older.messages[0].id]])
 }, 20_000)
+
+test('all-history reading stops when the server repeats a cursor', async () => {
+  await alice.send(bob.identity.address, 'looping')
+  transform = async (request, response) => isMessagePage(request)
+    ? Response.json({ ...await response.json(), next_before_seq: 1 }) : response
+  await expect(runRead(true, true)).rejects.toThrow('Server repeated a pagination cursor')
+})
 
 test('partial and unavailable confirmations never reach text or JSON output', async () => {
   const allowed = await alice.send(bob.identity.address, 'visible\x1b[31m\ntext')
@@ -199,13 +206,13 @@ test('all-history output excludes messages that expired while older pages were o
   let elapsed = 0
   const monotonicClock = spyOn(performance, 'now').mockImplementation(() => elapsed)
   transform = async (request, response) => {
-    if (new URL(request.url).searchParams.has('before')) elapsed = 5_000
+    if (new URL(request.url).searchParams.has('before_seq')) elapsed = 5_000
     return response
   }
   try {
     const result = JSON.parse(await runRead(true, true))
     expect(result.messages.map((message: { plaintext: string }) => message.plaintext)).toEqual(['secret 0'])
-    expect(result.next_before).toBeNull()
+    expect(result.next_before_seq).toBeNull()
     expect(openingBodies.map(ids => ids.length)).toEqual([100, 1])
   } finally { monotonicClock.mockRestore() }
 }, 20_000)

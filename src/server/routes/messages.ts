@@ -111,18 +111,11 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
 
   const counterparty = requireAddress(path.split('/')[3]);
 
-  const beforeParam = url.searchParams.get('before');
-  const beforeNum = beforeParam ? Number(beforeParam) : null;
-  if (beforeParam != null && (!Number.isSafeInteger(beforeNum) || (beforeNum ?? 0) <= 0)) {
-    return json({ error: 'Invalid before parameter: must be a positive integer' }, 400);
+  const beforeParam = url.searchParams.get('before_seq');
+  const before = beforeParam == null ? undefined : Number(beforeParam);
+  if (before !== undefined && (!Number.isSafeInteger(before) || before <= 0)) {
+    return json({ error: 'Invalid before_seq parameter: must be a positive integer' }, 400);
   }
-  const before = beforeNum && beforeNum > 0 ? beforeNum : undefined;
-  const beforeRowidParam = url.searchParams.get('before_rowid');
-  const beforeRowidNum = beforeRowidParam ? Number(beforeRowidParam) : null;
-  if (beforeRowidParam != null && (!Number.isSafeInteger(beforeRowidNum) || (beforeRowidNum ?? 0) <= 0)) {
-    return json({ error: 'Invalid before_rowid parameter: must be a positive integer' }, 400);
-  }
-  const beforeRowid = beforeRowidNum && beforeRowidNum > 0 ? beforeRowidNum : undefined;
   const limitParam = url.searchParams.get('limit');
   const limitNum = limitParam ? Number(limitParam) : null;
   if (limitParam != null && (!Number.isSafeInteger(limitNum) || (limitNum ?? 0) <= 0)) {
@@ -130,12 +123,11 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
   }
   const limit = limitNum && limitNum > 0 ? Math.min(limitNum, 100) : 50;
 
-  const page = getConversationMessages(address, counterparty, limit, before, beforeRowid);
+  const page = getConversationMessages(address, counterparty, limit, before);
   return json({
     messages: page.rows.map(deliveredRow),
     // Server-issued cursor for the next older page; null when exhausted.
-    next_before: page.next_before,
-    next_before_rowid: page.next_before_rowid,
+    next_before_seq: page.next_before_seq,
     recovery_cursor: issueRecoveryCursor(address, counterparty, page.recovery_sequence),
   });
 }

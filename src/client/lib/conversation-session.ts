@@ -16,14 +16,10 @@ const MAX_REFRESH_ROUNDS = 3
 const MAX_TIMER_MS = 2 ** 31 - 1
 
 /**
- * Server-issued cursor for the next older page. (created_at, rowid) is a
- * total order — timestamps alone are ambiguous (Date.now() millisecond
- * ties) — and it stays valid after the page's messages expire.
+ * Server-issued cursor for the next older page: the oldest returned message's
+ * acceptance sequence, which stays valid after that message expires.
  */
-export interface HistoryCursor {
-  before: number
-  rowid: number | null
-}
+export type HistoryCursor = number
 
 /** The server, as one identity's session sees one conversation. */
 export interface ConversationProtocol {
@@ -222,7 +218,7 @@ export class ConversationSession {
   async fetchOlder(): Promise<void> {
     if (!this.synchronized || this.view.loadingOlder || !this.view.hasMore) return
     const cursor = this.olderCursor
-    if (!cursor) return
+    if (cursor === null) return
 
     const work = this.work
     this.view.loadingOlder = true
@@ -233,7 +229,7 @@ export class ConversationSession {
       if (work !== this.work) return
       const decrypted = await this.decryptAll(page.messages)
       if (work !== this.work) return
-      this.olderCursor = page.next_before != null ? { before: page.next_before, rowid: page.next_before_rowid } : null
+      this.olderCursor = page.next_before_seq
       this.view.hasMore = page.messages.length === PAGE_SIZE
       this.store.add(decrypted.reverse())
       void this.openPending()
@@ -458,7 +454,7 @@ export class ConversationSession {
         if (!current()) return
         store.add(decrypted.reverse())
         if (!this.loaded) {
-          this.olderCursor = initial.next_before != null ? { before: initial.next_before, rowid: initial.next_before_rowid } : null
+          this.olderCursor = initial.next_before_seq
           this.view.hasMore = initial.messages.length === PAGE_SIZE
         }
         // This initial page defines the baseline, even if the subsequent

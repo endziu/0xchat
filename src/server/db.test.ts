@@ -292,19 +292,19 @@ describe('messages', () => {
     expect(msgs.length).toBeLessThanOrEqual(1);
   });
 
-  test('pagination with before', () => {
+  test('pagination with before_seq', () => {
     createMessage(
       'm4', alice, bob,
       'ct_r', 'eph_r', 'iv_r',
       'ct_s', 'eph_s', 'iv_s',
       3600,
     );
-    // All messages created_at > 0, so before=1 should return none
+    // Every message has acceptance_seq >= 1, so before_seq=1 returns none
     const { rows: msgs } = getConversationMessages(alice, bob, 50, 1);
     expect(msgs).toHaveLength(0);
   });
 
-  test('same-millisecond messages paginate via rowid tie-breaker', () => {
+  test('same-millisecond messages page exactly once by acceptance_seq', () => {
     const stamp = Date.now();
     const insert = (id: string) => getDb()
       .query(
@@ -312,24 +312,18 @@ describe('messages', () => {
          VALUES (?, ?, ?, ?, 'ct_r', 'eph_r', 'iv_r', 'ct_s', 'eph_s', 'iv_s', 3600, 'sig', ?, ?)`,
       )
       .run(MESSAGE_ENVELOPE_VERSION, id, alice, bob, stamp, stamp + 3600_000);
-    insert('t1');
-    insert('t2');
-    insert('t3');
+    for (const id of ['t1', 't2', 't3', 't4', 't5']) insert(id);
 
-    const page1 = getConversationMessages(alice, bob, 2);
-    expect(page1.rows).toHaveLength(2);
-    expect(page1.rows.map(r => r.id)).toEqual(['t3', 't2']); // rowid DESC within the tie
-    expect(page1.next_before).toBe(stamp);
-    expect(page1.next_before_rowid).toBe(page1.rows[1]!.seq);
-
-    const page2 = getConversationMessages(alice, bob, 2, page1.next_before!, page1.next_before_rowid!);
-    expect(page2.rows.map(r => r.id)).toEqual(['t1']);
-    expect(page2.next_before).toBe(stamp);
-
-    const page3 = getConversationMessages(alice, bob, 2, page2.next_before!, page2.next_before_rowid!);
-    expect(page3.rows).toHaveLength(0);
-    expect(page3.next_before).toBeNull();
-    expect(page3.next_before_rowid).toBeNull();
+    const ids: string[] = [];
+    let before: number | undefined;
+    for (let pages = 0; pages < 10; pages++) {
+      const page = getConversationMessages(alice, bob, 2, before);
+      ids.push(...page.rows.map(r => r.id));
+      expect(page.next_before_seq).toBe(page.rows.at(-1)?.acceptance_seq ?? null);
+      if (page.next_before_seq === null) break;
+      before = page.next_before_seq;
+    }
+    expect(ids).toEqual(['t5', 't4', 't3', 't2', 't1']);
   });
 
   test('limit works', () => {

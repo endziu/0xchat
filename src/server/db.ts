@@ -148,7 +148,6 @@ export function initDb(path = 'chat.db'): void {
       .run(randomBytes(32).toString('hex'));
     if (!tableColumns('messages').has('acceptance_seq')) {
       db.run('ALTER TABLE messages ADD COLUMN acceptance_seq INTEGER');
-      // Leave rowids untouched: deployed clients may still hold older-page cursors.
       db.run(`WITH ordered AS (
         SELECT id, ROW_NUMBER() OVER (ORDER BY created_at, rowid) AS seq FROM messages
       ) UPDATE messages SET acceptance_seq =
@@ -295,62 +294,41 @@ export interface MessageRow extends MessageLifecycle {
 }
 
 export interface ConversationPage {
-  rows: Array<MessageRow & { seq: number }>;
-  next_before: number | null;
-  next_before_rowid: number | null;
+  rows: Array<MessageRow & { acceptance_seq: number }>;
+  next_before_seq: number | null;
 }
 
-// Cursor is (created_at, rowid). created_at alone is ambiguous: the server
-// stamps Date.now() per message, so a strict created_at cutoff would skip
-// (or endlessly re-return) messages sharing a millisecond. rowid makes the
-// cursor total and strictly advancing.
+// acceptance_seq is unique and only increases, so it is a total order that
+// pages without skipping or repeating messages that share a created_at.
 function readConversationMessages(
   addr1: Address,
   addr2: Address,
   limit = 50,
-  before?: number,
-  beforeRowid?: number,
+  beforeSeq?: number,
 ): ConversationPage {
-  const now = Date.now();
-  let cutoffSql = '1=1';
-  const cutoffParams: number[] = [];
-  if (before != null) {
-    if (beforeRowid != null) {
-      cutoffSql = '(created_at < ? OR (created_at = ? AND rowid < ?))';
-      cutoffParams.push(before, before, beforeRowid);
-    } else {
-      cutoffSql = 'created_at < ?';
-      cutoffParams.push(before);
-    }
-  }
   const rows = db
     .query(
-      `SELECT *, rowid AS seq FROM messages
+      `SELECT * FROM messages
        WHERE expires_at > ?
-         AND ${cutoffSql}
+         AND acceptance_seq < ?
          AND (
            (sender = ? AND recipient = ?)
            OR (sender = ? AND recipient = ?)
          )
-       ORDER BY created_at DESC, rowid DESC
+       ORDER BY acceptance_seq DESC
        LIMIT ?`,
     )
-    .all(now, ...cutoffParams, addr1, addr2, addr2, addr1, limit) as Array<MessageRow & { seq: number }>;
-  const oldest = rows[rows.length - 1];
-  return {
-    rows,
-    next_before: oldest ? oldest.created_at : null,
-    next_before_rowid: oldest ? oldest.seq : null,
-  };
+    .all(Date.now(), beforeSeq ?? Number.MAX_SAFE_INTEGER, addr1, addr2, addr2, addr1, limit) as Array<MessageRow & { acceptance_seq: number }>;
+  return { rows, next_before_seq: rows.at(-1)?.acceptance_seq ?? null };
 }
 
 // Capture the initial recovery checkpoint in the same SQLite snapshot as history.
 export function getConversationMessages(
-  addr1: Address, addr2: Address, limit = 50, before?: number, beforeRowid?: number,
+  addr1: Address, addr2: Address, limit = 50, beforeSeq?: number,
 ): ConversationPage & { recovery_sequence: number } {
   return db.transaction(() => ({
     recovery_sequence: recoveryMetadata().high_water,
-    ...readConversationMessages(addr1, addr2, limit, before, beforeRowid),
+    ...readConversationMessages(addr1, addr2, limit, beforeSeq),
   }))();
 }
 
