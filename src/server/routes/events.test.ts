@@ -1,11 +1,11 @@
 import { requireAddress } from '../../shared/address.ts'
 import { afterAll, beforeAll, describe, expect, jest, test } from 'bun:test'
 import { createSession, initDb } from '../db.ts'
-import { MAX_SSE_CONNECTIONS_PER_ADDRESS } from '../constants.ts'
+import { MAX_SSE_CONNECTIONS_PER_ADDRESS, MAX_SSE_CONNECTIONS_PER_IP } from '../constants.ts'
 import { attentionLimiter, sseTokenLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { createFetch } from '../router.ts'
-import { connectionCount, publish, pushSuppressingConnectionCount } from '../sse.ts'
+import { connectionCount, ipConnectionCount, publish, pushSuppressingConnectionCount } from '../sse.ts'
 import { handleGetSSEToken, handleSSE, handleSSEAttention, SseTokenStore } from './events.ts'
 import type { Context } from '../http.ts'
 const address = requireAddress(`0x${'b'.repeat(40)}`)
@@ -166,6 +166,48 @@ describe('SSE route', () => {
     for (const c of connections.slice(1)) await c.reader.cancel()
     expect(connectionCount(address)).toBe(0)
     expect(connectionCount(otherAddress)).toBe(0)
+  })
+
+  test('bounds concurrent SSE connections per ip', async () => {
+    const ip = `sse-ip-cap-${Math.random()}`
+    // the per-address cap is lower, so spread the streams over enough identities
+    const auths = Array.from(
+      { length: Math.ceil((MAX_SSE_CONNECTIONS_PER_IP + 1) / MAX_SSE_CONNECTIONS_PER_ADDRESS) },
+      (_, i) => {
+        const auth = `sse-ip-cap-session-${i}`
+        createSession(auth, requireAddress(`0x${'7'.repeat(38)}${String(i).padStart(2, '0')}`), Date.now() + 60_000)
+        return auth
+      },
+    )
+    // tokens are minted from separate ips so the token rate limit stays out of the way
+    const mint = (i: number) =>
+      mintSseToken(`${ip}-mint-${i}`, auths[Math.floor(i / MAX_SSE_CONNECTIONS_PER_ADDRESS)])
+    const connections: Array<Awaited<ReturnType<typeof openSse>>> = []
+    for (let i = 0; i < MAX_SSE_CONNECTIONS_PER_IP; i++) {
+      connections.push(await openSse(ip, await mint(i)))
+    }
+    expect(ipConnectionCount(ip)).toBe(MAX_SSE_CONNECTIONS_PER_IP)
+
+    const rejectedToken = await mint(MAX_SSE_CONNECTIONS_PER_IP)
+    const rejected = await handleSSE(makeContext(`/api/events?token=${rejectedToken}`, ip))
+    expect(rejected.status).toBe(429)
+    expect(await rejected.json()).toEqual({ error: 'Too many requests' })
+    expect(ipConnectionCount(ip)).toBe(MAX_SSE_CONNECTIONS_PER_IP)
+
+    // cap is per ip: another ip still connects
+    const otherIp = `${ip}-other`
+    const elsewhere = await openSse(otherIp, await mintSseToken(otherIp))
+
+    // closing a stream frees its slot, and the rejected client kept its token
+    await connections[0]!.reader.cancel()
+    expect(ipConnectionCount(ip)).toBe(MAX_SSE_CONNECTIONS_PER_IP - 1)
+    const retried = await openSse(ip, rejectedToken)
+
+    await elsewhere.reader.cancel()
+    await retried.reader.cancel()
+    for (const c of connections.slice(1)) await c.reader.cancel()
+    expect(ipConnectionCount(ip)).toBe(0)
+    expect(ipConnectionCount(otherIp)).toBe(0)
   })
 
   test('concurrent admissions honor the cap synchronously', async () => {

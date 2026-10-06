@@ -175,6 +175,9 @@ lookup take 1–100 distinct IDs per request with an 8 KiB body limit. Every
 request body is capped at 32 KiB; larger bodies get `413`. See
 [the message lifecycle API](docs/message-lifecycle-api.md).
 
+Live event streams are capped by count rather than per minute: at most 3 open
+at once per identity and 20 per IP. A stream past either cap gets `429`.
+
 ## Retention
 
 - Messages are deleted when they expire (see

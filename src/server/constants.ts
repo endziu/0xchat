@@ -47,6 +47,8 @@ export const PUBKEY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Max concurrent SSE streams per address — covers multi-tab plus a reconnect overlap. */
 export const MAX_SSE_CONNECTIONS_PER_ADDRESS = 3;
+/** Max concurrent SSE streams per client IP — room for several people behind one router. */
+export const MAX_SSE_CONNECTIONS_PER_IP = 20;
 
 export const VAPID_PUBLIC_KEY = process.env['VAPID_PUBLIC_KEY'] ?? '';
 export const VAPID_PRIVATE_KEY = process.env['VAPID_PRIVATE_KEY'] ?? '';

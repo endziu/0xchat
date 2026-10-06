@@ -1,10 +1,10 @@
 import type { Address } from '../../shared/address.ts';
 import { randomBytes } from 'node:crypto';
 import { recordDailyActivity } from '../db.ts';
-import { addClient, connectionCount, removeClient, updateClientAttention } from '../sse.ts';
+import { addClient, addIpStream, connectionCount, ipConnectionCount, removeClient, removeIpStream, updateClientAttention } from '../sse.ts';
 import { clientUpdateRequired, isOutdatedClient, json, getSessionAddress } from '../http.ts';
 import { attentionLimiter, sseTokenLimiter } from '../rate-limiters.ts';
-import { MAX_SSE_CONNECTIONS_PER_ADDRESS, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
+import { MAX_SSE_CONNECTIONS_PER_ADDRESS, MAX_SSE_CONNECTIONS_PER_IP, SECURITY_HEADERS, log, warn, error } from '../constants.ts';
 import { ipAddressKey } from '../rate-limit.ts';
 import type { Context } from '../http.ts';
 
@@ -21,9 +21,9 @@ interface SseTokenEntry {
  *
  * A token binds one authenticated address and expires after the TTL. It is
  * consumed only when a stream is actually admitted: a request rejected by
- * the per-address cap keeps its token, so the client's reconnect loop can
- * retry it once a slot frees. The clock is injectable so expiry is testable
- * without waiting out the TTL.
+ * the per-address or per-IP cap keeps its token, so the client's reconnect
+ * loop can retry it once a slot frees. The clock is injectable so expiry is
+ * testable without waiting out the TTL.
  */
 export class SseTokenStore {
   private readonly tokens = new Map<string, SseTokenEntry>();
@@ -100,10 +100,15 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
     return json({ error: 'Invalid or expired token' }, 401);
   }
 
-  // Checked before the token is consumed: a rejected client keeps its token
-  // and can retry it once a slot frees (the client's reconnect loop re-dials).
+  // Both caps are checked before the token is consumed: a rejected client
+  // keeps its token and can retry it once a slot frees (the client's
+  // reconnect loop re-dials).
   if (connectionCount(address) >= MAX_SSE_CONNECTIONS_PER_ADDRESS) {
     warn('[sse]', address, 'connection cap reached', ip);
+    return json({ error: 'Too many requests' }, 429);
+  }
+  if (ipConnectionCount(ip) >= MAX_SSE_CONNECTIONS_PER_IP) {
+    warn('[sse] ip connection cap reached', ip);
     return json({ error: 'Too many requests' }, 429);
   }
 
@@ -123,6 +128,7 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
     cleanedUp = true;
     if (interval !== undefined) clearInterval(interval);
     removeClient(address, controller);
+    removeIpStream(ip);
     liveStreams.delete(sseToken);
     log('[sse]', address, 'disconnected');
   };
@@ -131,6 +137,7 @@ export async function handleSSE({ url, ip }: Context): Promise<Response> {
     start(streamController) {
       controller = streamController;
       addClient(address, controller, suppressPush, url.searchParams.has('attentive'));
+      addIpStream(ip);
       liveStreams.set(sseToken, { address, controller });
       log('[sse]', address, 'connected');
 

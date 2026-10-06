@@ -6,6 +6,9 @@ const clients = new Map<
   Map<ReadableStreamDefaultController, { suppressPush: boolean; tracksAttention: boolean; attentionAt: number; sequence: number }>
 >();
 
+/** Open SSE streams per client IP, counted separately from the per-address map. */
+const streamsPerIp = new Map<string, number>();
+
 const ATTENTION_TTL_MS = 45_000;
 
 export function addClient(
@@ -50,6 +53,21 @@ export function connectionCount(
   address: Address,
 ): number {
   return clients.get(address)?.size ?? 0;
+}
+
+/** Number of live SSE streams currently open from a client IP. */
+export function ipConnectionCount(ip: string): number {
+  return streamsPerIp.get(ip) ?? 0;
+}
+
+export function addIpStream(ip: string): void {
+  streamsPerIp.set(ip, ipConnectionCount(ip) + 1);
+}
+
+export function removeIpStream(ip: string): void {
+  const count = ipConnectionCount(ip) - 1;
+  if (count > 0) streamsPerIp.set(ip, count);
+  else streamsPerIp.delete(ip);
 }
 
 export function removeClient(
