@@ -103,7 +103,28 @@ function start(command: 'watch' | 'chat', json = false) {
   if (proc.stdout instanceof ReadableStream) void consume(proc.stdout, text => { output += text })
   if (proc.stderr instanceof ReadableStream) void consume(proc.stderr, text => { diagnostics += text })
   return { proc, output: () => output, diagnostics: () => diagnostics,
-    screen: () => output.split('\x1b[2J\x1b[H').at(-1)! }
+    screen: () => output.split('\x1b[2J\x1b[H').at(-1)!,
+    // Chat shows status and errors on its terminal; watch writes them to stderr.
+    notices: () => command === 'chat' ? output : diagnostics }
+}
+
+/** Refuses matching requests as coming from an outdated client; returns the refusal count. */
+function refuseOutdated(matches: (path: string) => boolean): () => number {
+  let rejections = 0
+  transform = async (request, response) => {
+    if (!matches(new URL(request.url).pathname)) return response
+    rejections++
+    return clientUpdateRequired()
+  }
+  return () => rejections
+}
+
+async function expectUpdateAction(cli: ReturnType<typeof start>, rejections: () => number) {
+  await cli.proc.exited
+  expect(cli.proc.exitCode).toBe(1)
+  expect(cli.notices()).toContain('This 0xChat CLI is out of date')
+  expect(cli.notices()).toContain('git pull && bun install')
+  expect(rejections()).toBe(1)
 }
 
 for (const json of [false, true]) {
@@ -295,58 +316,42 @@ const updateRequiredCases = [
 for (const { command, rejected, matches } of updateRequiredCases) {
   test(`${command} stops reconnecting and names the update action when ${rejected} requires a newer client`, async () => {
     if (rejected === 'opening') await alice.send(bob.identity.address, 'needs opening', 300)
-    let rejections = 0
-    transform = async (request, response) => {
-      if (!matches(new URL(request.url).pathname)) return response
-      rejections++
-      return clientUpdateRequired()
-    }
+    const rejections = refuseOutdated(matches)
     const cli = start(command)
-    await cli.proc.exited
-    expect(cli.proc.exitCode).toBe(1)
-    const shown = command === 'chat' ? cli.output() : cli.diagnostics()
-    expect(shown).toContain('This 0xChat CLI is out of date')
-    expect(shown).toContain('git pull && bun install')
-    expect(shown).not.toContain('reconnecting')
-    expect(shown).not.toContain('needs opening')
-    expect(rejections).toBe(1)
+    await expectUpdateAction(cli, rejections)
+    expect(cli.notices()).not.toContain('reconnecting')
+    expect(cli.notices()).not.toContain('needs opening')
   })
 }
 
 test('watch stops with the update action when opening a live message requires a newer client', async () => {
   const cli = start('watch')
-  await until(() => cli.diagnostics().includes('Connected'), 'initial synchronization')
-  let rejections = 0
-  transform = async (request, response) => {
-    if (!new URL(request.url).pathname.endsWith('/open')) return response
-    rejections++
-    return clientUpdateRequired()
-  }
+  await until(() => cli.notices().includes('Connected'), 'initial synchronization')
+  const rejections = refuseOutdated(path => path.endsWith('/open'))
   await alice.send(bob.identity.address, 'live message needing an update', 300)
-  await cli.proc.exited
-  expect(cli.proc.exitCode).toBe(1)
-  expect(cli.diagnostics()).toContain('This 0xChat CLI is out of date')
-  expect(cli.diagnostics()).not.toContain('Rejected an invalid message')
+  await expectUpdateAction(cli, rejections)
+  expect(cli.notices()).not.toContain('Rejected an invalid message')
   expect(cli.output()).not.toContain('live message needing an update')
-  expect(rejections).toBe(1)
 })
+
+for (const command of ['watch', 'chat'] as const) {
+  test(`${command} stops without retrying when its live stream reconnection requires a newer client`, async () => {
+    const cli = start(command)
+    await until(() => cli.notices().includes('Connected'), 'initial synchronization')
+    const rejections = refuseOutdated(path => path === '/api/events')
+    disconnect()
+    await expectUpdateAction(cli, rejections)
+  }, 10_000)
+}
 
 test('chat exits with the update action when sending requires a newer client', async () => {
   const cli = start('chat')
   await until(() => cli.screen().includes('Connected'), 'initial synchronization')
-  let rejections = 0
-  transform = async (request, response) => {
-    if (request.method !== 'POST' || new URL(request.url).pathname !== '/api/messages') return response
-    rejections++
-    return clientUpdateRequired()
-  }
+  // Only sending is a POST to exactly /api/messages.
+  const rejections = refuseOutdated(path => path === '/api/messages')
   cli.proc.terminal!.write('needs an update\r')
-  await cli.proc.exited
-  expect(cli.proc.exitCode).toBe(1)
-  expect(cli.output()).toContain('This 0xChat CLI is out of date')
-  expect(cli.output()).toContain('git pull && bun install')
+  await expectUpdateAction(cli, rejections)
   expect(cli.output()).not.toContain('Send failed')
-  expect(rejections).toBe(1)
 })
 
 test('chat drops messages when the partner clears the conversation', async () => {
