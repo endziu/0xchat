@@ -850,6 +850,21 @@ test.each([
   expect(view.text()).not.toContain('/ 4096 bytes')
 })
 
+test('the composer counts and sends trimmed plaintext at the byte limit', async () => {
+  const view = mount()
+  await waitFor(() => view.text().includes('No messages yet') && streamReady())
+  const textarea = view.container.querySelector('textarea')!
+  const plaintext = '😀'.repeat(1024)
+  textarea.value = ` \n${plaintext}\t\n `
+  textarea.dispatchEvent(new Event('input'))
+  await waitFor(() => view.text().includes('4096 / 4096 bytes'))
+  expect(button('Send').disabled).toBe(false)
+  expect(textarea.hasAttribute('aria-invalid')).toBe(false)
+  button('Send').click()
+  await waitFor(() => textarea.value === '')
+  expect((await alice.read(bobKey.address)).messages[0]?.plaintext).toBe(plaintext)
+})
+
 test('typing in the composer does not re-render message rows', async () => {
   for (let index = 0; index < 3; index++) await alice.send(bobKey.address, `row [${index}]`, 300)
   const view = mount()
