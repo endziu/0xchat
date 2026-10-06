@@ -13,8 +13,6 @@ interface Entry {
   // Shown at least once. A confirmation that lands while the window is not
   // eligible is kept back until it is.
   revealed: boolean
-  // Older page held back until the pane anchors its scroll position.
-  staged: boolean
 }
 
 export interface DisplayConditions {
@@ -94,8 +92,8 @@ export class ConversationMessages {
   }
 
   /** Server time plus elapsed monotonic time; request latency shortens availability conservatively. */
-  now(fallback = Date.now()): number {
-    return this.serverOffset === null ? fallback : this.monotonic() + this.serverOffset
+  now(): number {
+    return this.serverOffset === null ? Date.now() : this.monotonic() + this.serverOffset
   }
 
   hasServerTime(): boolean {
@@ -107,7 +105,7 @@ export class ConversationMessages {
     this.serverOffset = this.serverOffset === null ? offset : Math.max(this.serverOffset, offset)
   }
 
-  add(messages: DecryptedMessage[], options: { staged?: boolean } = {}): void {
+  add(messages: DecryptedMessage[]): void {
     for (const message of messages) {
       if (this.removed.has(message.id)) continue
       if (message.created_at <= this.clearedThrough) {
@@ -123,7 +121,6 @@ export class ConversationMessages {
         message,
         opening: message.recipient === this.self ? 'pending' : null,
         revealed: false,
-        staged: options.staged ?? false,
       }
       this.entries.set(message.id, entry)
       const update = this.updatesBeforeLoad.get(message.id)
@@ -252,13 +249,12 @@ export class ConversationMessages {
    * Messages to show now, oldest first. Incoming messages need a confirmed
    * opening and an unexpired deadline; displaying them records the reveal.
    * While out of sync, only deadlines that can no longer change are shown.
-   * `staged` selects the older page held back for the pane instead.
    */
-  display(now: number, conditions: DisplayConditions, { staged = false } = {}): DecryptedMessage[] {
+  display(now: number, conditions: DisplayConditions): DecryptedMessage[] {
     const shown: DecryptedMessage[] = []
     if (!this.hasServerTime()) return shown
     for (const entry of this.entries.values()) {
-      if (entry.staged !== staged || now >= entry.message.expires_at) continue
+      if (now >= entry.message.expires_at) continue
       if (!conditions.synchronized && !isFinalDeadline(entry.message)) continue
       if (entry.opening !== null) {
         if (entry.opening !== 'confirmed' || !(entry.revealed || conditions.eligible)) continue
@@ -285,10 +281,6 @@ export class ConversationMessages {
       if (!awaitsOpening(entry) && created_at < unconfirmed && (seen === null || created_at > seen)) seen = created_at
     }
     return seen
-  }
-
-  unstage(): void {
-    for (const entry of this.entries.values()) entry.staged = false
   }
 
   /**

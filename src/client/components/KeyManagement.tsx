@@ -5,6 +5,7 @@ import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
 import { AddressAvatar } from './AddressAvatar'
 import { useToast } from './Toast'
 import { useCopied } from '../hooks/useCopied'
+import { errorMessage } from '../lib/errors'
 
 interface KeyManagementProps {
   identity: Keypair
@@ -30,7 +31,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
       const hex = importHex.trim().startsWith('0x') ? importHex.trim() : `0x${importHex.trim()}`
       if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error('Invalid private key format')
       setPreviewKeypair(deriveKeypair(hex))
-    } catch (err: any) { toast(err.message, 'error') }
+    } catch (err) { toast(errorMessage(err, 'Failed to preview private key'), 'error') }
   }
 
   const handleImportConfirm = async () => {
@@ -40,7 +41,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
       setImportHex('')
       setPreviewKeypair(null)
       toast('Key imported', 'success')
-    } catch (err: any) { toast(err.message, 'error') }
+    } catch (err) { toast(errorMessage(err, 'Failed to import private key'), 'error') }
   }
 
   const handleCancelPreview = () => {

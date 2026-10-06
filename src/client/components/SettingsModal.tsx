@@ -22,7 +22,7 @@ interface SettingsModalProps {
   identity: Keypair
   onClose: () => void
   onImport: (keypair: Keypair) => Promise<void>
-  push?: PushSettings
+  push: PushSettings
   // Permanently deletes the identity, its account and its messages.
   onBurn?: () => void
 }
@@ -41,7 +41,7 @@ export function SettingsModal({
     error: pushError,
     subscribe: onPushSubscribe,
     unsubscribe: onPushUnsubscribe,
-  } = push ?? {}
+  } = push
   const [copied, copy] = useCopied()
   const [burnConfirm, setBurnConfirm] = useState(false)
   const burnTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)

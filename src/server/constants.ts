@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { MESSAGE_TTLS } from '../shared/message-ttl';
 
 const rawPort = Number(process.env['PORT'] ?? 3000);
 if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
@@ -41,7 +42,7 @@ export const SECURITY_HEADERS = {
   'Permissions-Policy': 'camera=(self), geolocation=(), microphone=(), payment=()',
 } as const;
 
-export const VALID_TTLS = new Set([5, 10, 30, 60, 300, 1800, 3600, 21600, 86400]);
+export const VALID_TTLS = new Set(MESSAGE_TTLS);
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 export const PUBKEY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 

@@ -1,5 +1,6 @@
 // Composer message lifetime preferences: a configured default, or the
 // most recently selected lifetime when no default is configured.
+import { MESSAGE_TTLS } from '../../shared/message-ttl'
 
 const DEFAULT_SETTING_KEY = '0xchat_default_message_lifetime_v1'
 const LAST_SELECTION_KEY = '0xchat_last_message_lifetime_v1'
@@ -9,17 +10,16 @@ interface MessageLifetimeOption {
   label: string
 }
 
-export const MESSAGE_LIFETIMES: readonly MessageLifetimeOption[] = [
-  { seconds: 5, label: '5s' },
-  { seconds: 10, label: '10s' },
-  { seconds: 30, label: '30s' },
-  { seconds: 60, label: '1m' },
-  { seconds: 300, label: '5m' },
-  { seconds: 1800, label: '30m' },
-  { seconds: 3600, label: '1h' },
-  { seconds: 21600, label: '6h' },
-  { seconds: 86400, label: '24h' },
-]
+const LIFETIME_LABELS: Record<number, string> = {
+  5: '5s', 10: '10s', 30: '30s', 60: '1m', 300: '5m',
+  1800: '30m', 3600: '1h', 21600: '6h', 86400: '24h',
+}
+
+export const MESSAGE_LIFETIMES: readonly MessageLifetimeOption[] = MESSAGE_TTLS.map(seconds => {
+  const label = LIFETIME_LABELS[seconds]
+  if (!label) throw new Error(`Missing label for message lifetime ${seconds}`)
+  return { seconds, label }
+})
 
 export const FALLBACK_MESSAGE_LIFETIME = 1800
 

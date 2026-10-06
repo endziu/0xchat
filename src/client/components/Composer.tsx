@@ -4,6 +4,7 @@ import { MAX_PLAINTEXT_BYTES } from '../../shared/message-envelope'
 import { MESSAGE_LIFETIMES, rememberLifetimeSelection, resolveComposerLifetime, subscribeDefaultLifetimeSetting } from '../lib/message-lifetime'
 import { LifetimeOptions } from './LifetimeOptions'
 import { useToast } from './Toast'
+import { errorMessage } from '../lib/errors'
 
 interface ComposerProps {
   // The partner burned their identity, so nothing more can be delivered.
@@ -52,8 +53,8 @@ export function Composer({ departed, partnerName, onSendMessage }: ComposerProps
       // A per-message override is spent once sent: a fixed default resumes,
       // while "Remember last selection" resolves back to the same pick.
       setTtl(resolveComposerLifetime())
-    } catch (err: any) {
-      toast(err.message || 'Failed to send', 'error')
+    } catch (err) {
+      toast(errorMessage(err, 'Failed to send'), 'error')
     } finally { setSending(false) }
   }
 

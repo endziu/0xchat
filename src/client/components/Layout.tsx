@@ -18,8 +18,8 @@ interface LayoutProps {
   onImport?: (keypair: Keypair) => Promise<void>
   navigate?: (to: string) => void
   error?: string | null
-  sseConnected?: boolean
-  push?: PushSettings
+  sseConnected: boolean
+  push: PushSettings
 }
 
 export function Layout({
@@ -61,14 +61,12 @@ export function Layout({
             <span className={identity ? 'max-sm:hidden' : undefined}>⬡</span>
             0xChat
           </a>
-          {sseConnected !== undefined && (
-            <span className="flex items-center gap-1 text-neutral-500 text-sm" title={sseConnected ? 'Live' : 'Connecting'}>
-              <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-neutral-700'}`} />
-              {/* The dot alone carries the state; the word is header width we
-                  can't spare next to 44px touch targets. */}
-              <span className="max-sm:hidden">{sseConnected ? 'Live' : '...'}</span>
-            </span>
-          )}
+          <span className="flex items-center gap-1 text-neutral-500 text-sm" title={sseConnected ? 'Live' : 'Connecting'}>
+            <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-neutral-700'}`} />
+            {/* The dot alone carries the state; the word is header width we
+                can't spare next to 44px touch targets. */}
+            <span className="max-sm:hidden">{sseConnected ? 'Live' : '...'}</span>
+          </span>
         </div>
         {identity && (
           <div className="flex items-center gap-2 max-sm:gap-1 text-sm text-neutral-500">

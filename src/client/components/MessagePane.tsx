@@ -9,6 +9,7 @@ import { MessageText } from './MessageText'
 import { AddressAvatar } from './AddressAvatar'
 import { Composer } from './Composer'
 import { useCopied } from '../hooks/useCopied'
+import { errorMessage } from '../lib/errors'
 import { displayName, fmtDay, fmtRemaining, fmtTime } from '../lib/display'
 
 interface MessagePaneProps {
@@ -54,7 +55,6 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
   const clearConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(clearConfirmTimeout.current), [])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const busyRef = useRef(false)
   const lastNewestIdRef = useRef<string | null>(null)
 
@@ -134,8 +134,8 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
     try {
       await onClear()
       toast('Conversation cleared', 'success')
-    } catch (err: any) {
-      toast(err.message || 'Failed to clear conversation', 'error')
+    } catch (err) {
+      toast(errorMessage(err, 'Failed to clear conversation'), 'error')
     } finally { setClearing(false) }
   }
 
@@ -278,7 +278,6 @@ export function MessagePane({ recipientAddress, selfAddress, labels, onRename, d
             </Fragment>
           )
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       <Composer departed={departed} partnerName={displayName(recipientAddress, labels, selfAddress)} onSendMessage={onSendMessage} />
