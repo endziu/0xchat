@@ -5,6 +5,8 @@ import { bytesToHex, hexToBytes } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import {
   MAX_CIPHERTEXT_HEX_LEN,
+  MAX_PLAINTEXT_BYTES,
+  GCM_TAG_BYTES,
   MESSAGE_ENVELOPE_VERSION,
   canonicalMessageAad,
   canonicalMessageEnvelope,
@@ -92,12 +94,15 @@ describe('message envelope protocol', () => {
 
   test('accepts ciphertext exactly at the size cap and rejects one byte over', async () => {
     const envelope = await signedEnvelope()
-    const maxCiphertext = `0x${'ab'.repeat((MAX_CIPHERTEXT_HEX_LEN - 2) / 2)}`
+    expect(MAX_PLAINTEXT_BYTES).toBe(4096)
+    expect(MAX_CIPHERTEXT_HEX_LEN).toBe(8226)
+    const maxCiphertext = `0x${'ab'.repeat(MAX_PLAINTEXT_BYTES + GCM_TAG_BYTES)}`
     expect(maxCiphertext.length).toBe(MAX_CIPHERTEXT_HEX_LEN)
-    expect(parseMessageEnvelope({ ...envelope, ct_recipient: maxCiphertext })).not.toBeNull()
+    expect(parseMessageEnvelope({ ...envelope, ct_recipient: maxCiphertext, ct_sender: maxCiphertext })).not.toBeNull()
 
     const oversizedCiphertext = `${maxCiphertext}ab`
     expect(parseMessageEnvelope({ ...envelope, ct_recipient: oversizedCiphertext })).toBeNull()
+    expect(parseMessageEnvelope({ ...envelope, ct_sender: oversizedCiphertext })).toBeNull()
   })
 })
 

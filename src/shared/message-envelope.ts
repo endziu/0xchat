@@ -4,10 +4,10 @@ import { hexToBytes, recoverMessageAddress } from 'viem'
 
 export const MESSAGE_ENVELOPE_VERSION = 2 as const
 export const MESSAGE_ID_BYTES = 16
-// "0x" prefix + hex digits, 2 hex digits per ciphertext byte
-export const MAX_CIPHERTEXT_HEX_LEN = 2_000_002
+export const MAX_PLAINTEXT_BYTES = 4096
 export const GCM_TAG_BYTES = 16
-export const MAX_PLAINTEXT_BYTES = (MAX_CIPHERTEXT_HEX_LEN - 2) / 2 - GCM_TAG_BYTES
+// "0x" prefix + hex digits, 2 hex digits per ciphertext byte
+export const MAX_CIPHERTEXT_HEX_LEN = 2 + 2 * (MAX_PLAINTEXT_BYTES + GCM_TAG_BYTES)
 
 export interface MessageMetadata {
   version: typeof MESSAGE_ENVELOPE_VERSION
