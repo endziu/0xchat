@@ -1,6 +1,6 @@
 import { checksumAddress } from '../../shared/address'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import type { Keypair } from '../lib/burner'
+import type { Keypair } from '../../shared/keypair'
 import { Check, Copy, Flame, X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'

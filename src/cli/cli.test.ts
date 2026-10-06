@@ -6,8 +6,8 @@ import { join, resolve } from 'node:path'
 import { ChatClient, serverOrigin } from './client'
 import { createIdentity, loadIdentity, parsePrivateKey } from './identity'
 import { terminalText } from './main'
-import { createSignedMessageEnvelope } from '../client/lib/message-envelope'
-import { decrypt } from '../client/lib/crypto'
+import { decrypt } from '../shared/crypto'
+import { createSignedMessageEnvelope } from '../shared/seal-envelope'
 import { canonicalMessageAad, verifyDeliveredMessage } from '../shared/message-envelope'
 import { Database } from 'bun:sqlite'
 
@@ -179,7 +179,7 @@ describe('unchanged server interoperability', () => {
   })
 
   async function browserSession(client: ChatClient): Promise<string> {
-    const { signEIP191 } = await import('../client/lib/burner')
+    const { signEIP191 } = await import('../shared/keypair')
     const challenge = await fetch(origin + '/api/auth/challenge', { method: 'POST', body: JSON.stringify({ address: client.identity.address }) }).then(response => response.json()) as { challenge: string; nonce: string }
     const response = await fetch(origin + '/api/auth/session', { method: 'POST', body: JSON.stringify({ address: client.identity.address, nonce: challenge.nonce, signature: await signEIP191(challenge.challenge, client.identity.privateKey) }) })
     return ((await response.json()) as { token: string }).token

@@ -1,6 +1,6 @@
 import { requireAddress, type Address } from '../../shared/address'
 import { clearTokenIfMatches } from './session'
-import { verifyEncryptionPublicKey } from './encryption-key'
+import { verifyEncryptionPublicKey } from '../../shared/encryption-key'
 import { isApiErrorCode, type ApiErrorCode } from '../../shared/api-error'
 import { buildRegistrationChallenge } from '../../shared/registration-challenge'
 import { buildSessionChallenge } from '../../shared/session-challenge'

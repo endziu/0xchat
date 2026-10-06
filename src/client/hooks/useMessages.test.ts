@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { requireAddress } from '../../shared/address'
 import * as envelopes from '../../shared/message-envelope'
-import type { Keypair } from '../lib/burner'
+import type { Keypair } from '../../shared/keypair'
 import { decryptFor } from './useMessages'
 
 const self = requireAddress('0x' + '11'.repeat(20))

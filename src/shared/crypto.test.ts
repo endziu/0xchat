@@ -1,4 +1,4 @@
-import { requireAddress } from '../../shared/address'
+import { requireAddress } from './address'
 import { describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
@@ -9,7 +9,7 @@ import {
   canonicalMessageAad,
   canonicalMessageEnvelope,
   verifyMessageEnvelope,
-} from '../../shared/message-envelope'
+} from './message-envelope'
 
 const senderPrivateKey = `0x${'11'.repeat(32)}` as const
 const recipientPrivateKey = `0x${'22'.repeat(32)}` as const

@@ -1,7 +1,7 @@
 import { constants } from 'node:fs'
 import { mkdir, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { deriveKeypair, generateKeypair, type Keypair } from '../client/lib/burner'
+import { deriveKeypair, generateKeypair, type Keypair } from '../shared/keypair'
 
 export function parsePrivateKey(value: string): Keypair {
   const privateKey = value.trim().replace(/^0x/i, '')

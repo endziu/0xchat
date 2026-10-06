@@ -1,7 +1,7 @@
 import { requireAddress } from '../../shared/address'
 import { describe, expect, test } from 'bun:test'
 import { createIdentityTransition, type IdentityTransitionDeps } from './identity-transition'
-import type { Keypair } from './burner'
+import type { Keypair } from '../../shared/keypair'
 
 const oldIdentity = { address: requireAddress('0xcba06b5736faf67e54b07b561eae94395e774c51'), privateKey: 'old-private', publicKey: 'old-public' }
 const identityB = { address: requireAddress('0xb000000000000000000000000000000000000000'), privateKey: 'b-private', publicKey: 'b-public' }

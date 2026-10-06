@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'preact/hooks'
 import { useLatest } from './useLatest'
 import { createIdentityTransition, type IdentityTransitionDeps } from '../lib/identity-transition'
-import type { Keypair } from '../lib/burner'
+import type { Keypair } from '../../shared/keypair'
 
 /**
  * Wraps createIdentityTransition so the caller only supplies fresh deps and

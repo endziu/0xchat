@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
-import { createSignedMessageEnvelope } from '../client/lib/message-envelope.ts';
+import { createSignedMessageEnvelope } from '../shared/seal-envelope.ts';
 import { DELIVERY_CAPABILITY, verifyDeliveredMessage } from '../shared/message-envelope.ts';
 import { createSession, getDb, getSession, initDb, registerPubkey } from './db.ts';
 import { createFetch } from './router.ts';

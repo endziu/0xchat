@@ -3,15 +3,15 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'preac
 import { api } from '../lib/api'
 import type { ConversationRefreshResult } from './useConversations'
 import type { LiveConnection } from './useSSE'
-import { decrypt } from '../lib/crypto'
-import { createSignedMessageEnvelope } from '../lib/message-envelope'
-import { Keypair } from '../lib/burner'
+import { decrypt } from '../../shared/crypto'
+import { Keypair } from '../../shared/keypair'
 import { errorMessage } from '../lib/errors'
 import { markConversationSeen } from '../lib/contacts'
 import type { DecryptedMessage } from '../lib/conversation-messages'
 import { ConversationSession, type ConversationProtocol, type SessionSnapshot } from '../lib/conversation-session'
 import type { ConnectionEpoch } from '../lib/sse-connection'
 import { isWindowAttentive, watchWindowAttention } from '../lib/window-attention'
+import { createSignedMessageEnvelope } from '../../shared/seal-envelope'
 import {
   canonicalMessageAad,
   isEnvelopeParticipant,

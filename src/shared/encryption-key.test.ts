@@ -1,9 +1,9 @@
-import { requireAddress } from '../../shared/address'
+import { requireAddress } from './address'
 import { describe, expect, test } from 'bun:test'
 import * as secp from '@noble/secp256k1'
 import { bytesToHex, hexToBytes } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { buildRegistrationChallenge } from '../../shared/registration-challenge'
+import { buildRegistrationChallenge } from './registration-challenge'
 import { verifyEncryptionPublicKey } from './encryption-key'
 
 const privateKey = `0x${'11'.repeat(32)}` as const
