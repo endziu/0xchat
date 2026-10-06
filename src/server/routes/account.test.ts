@@ -1,7 +1,7 @@
 import { requireAddress } from '../../shared/address.ts'
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createSession, initDb } from '../db.ts'
-import { accountDeleteLimiter } from '../rate-limiters.ts'
+import { registrationRemovalLimiter } from '../rate-limiters.ts'
 import { noOpSchedule } from '../rate-limit.test-utils.ts'
 import { createFetch } from '../router.ts'
 
@@ -15,8 +15,8 @@ function deleteAddress(path: string, ip = '127.0.0.1') {
   }), { requestIP: () => ({ address: ip }) })
 }
 
-describe('account deletion route', () => {
-  beforeAll(() => accountDeleteLimiter.setSchedule(noOpSchedule))
+describe('registration removal route', () => {
+  beforeAll(() => registrationRemovalLimiter.setSchedule(noOpSchedule))
   beforeEach(() => {
     initDb(':memory:')
     createSession(token, address, Date.now() + 60_000)
@@ -29,8 +29,8 @@ describe('account deletion route', () => {
     }
   })
 
-  test('rate-limits account deletion per ip', async () => {
-    const ip = `account-delete-${Math.random()}`
+  test('rate-limits registration removal per ip', async () => {
+    const ip = `registration-removal-${Math.random()}`
     const other = `/api/addresses/0x${'b'.repeat(40)}`
     for (let i = 0; i < 10; i++) expect((await deleteAddress(other, ip)).status).toBe(403)
     const limited = await deleteAddress(other, ip)

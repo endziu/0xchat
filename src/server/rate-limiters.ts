@@ -25,8 +25,8 @@ export const registerChallengeLimiter = new RateLimiter({ max: 10, windowMs: MIN
 /** Registration, per ip. */
 export const registerLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
-/** Account deletion, per ip; same budget as registration. */
-export const accountDeleteLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
+/** Registration removal, per ip; same budget as registration. */
+export const registrationRemovalLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });
 
 /** All push mutations (including removal), per ip+address. */
 export const pushMutationLimiter = new RateLimiter({ max: 10, windowMs: MINUTE });

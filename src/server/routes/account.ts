@@ -1,7 +1,7 @@
 import { requireAddress } from '../../shared/address.ts';
 import { deleteRegistration, getConversationPartners } from '../db.ts';
 import { json, getSessionAddress } from '../http.ts';
-import { accountDeleteLimiter } from '../rate-limiters.ts';
+import { registrationRemovalLimiter } from '../rate-limiters.ts';
 import { publish } from '../sse.ts';
 import { log, warn } from '../constants.ts';
 import type { Context } from '../http.ts';
@@ -12,7 +12,7 @@ export async function handleDeleteAddress({ req, path, ip }: Context): Promise<R
     warn('[unauth] delete address no session', ip);
     return json({ error: 'Unauthorized' }, 401);
   }
-  if (accountDeleteLimiter.hit(ip)) {
+  if (registrationRemovalLimiter.hit(ip)) {
     warn('[rate-limit] delete address', ip);
     return json({ error: 'Too many requests' }, 429);
   }
