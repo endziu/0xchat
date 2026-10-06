@@ -2,6 +2,7 @@ import { requireAddress, type Address } from '../shared/address.ts';
 import { describe, expect, spyOn, test } from 'bun:test';
 import {
   addClient,
+  ipConnectionCount,
   publish,
   pushSuppressingConnectionCount,
   removeClient,
@@ -34,7 +35,7 @@ describe('SSE', () => {
   test('addClient and removeClient', () => {
     const { ctrl, chunks } = makeCtrl();
     const addr = requireAddress('0x0000000000000000000000000000000000000001');
-    addClient(addr, ctrl);
+    addClient(addr, '127.0.0.1', ctrl);
     publish(addr, partnerLeft(requireAddress('0x7f3fa48ca885678134842fa7456f3ece53a97f84')));
     expect(chunks).toHaveLength(1);
     removeClient(addr, ctrl);
@@ -45,7 +46,7 @@ describe('SSE', () => {
   test('publish sends the event to clients', () => {
     const { ctrl, chunks } = makeCtrl();
     const addr = requireAddress('0x0000000000000000000000000000000000000002');
-    addClient(addr, ctrl);
+    addClient(addr, '127.0.0.1', ctrl);
     publish(addr, partnerLeft(requireAddress('0x7f3fa48ca885678134842fa7456f3ece53a97f84')));
     expect(chunks).toHaveLength(1);
     const text = new TextDecoder().decode(chunks[0]!);
@@ -63,13 +64,13 @@ describe('SSE', () => {
     const browser = makeCtrl().ctrl;
     const terminal = makeCtrl().ctrl;
     try {
-      addClient(address, browser, true, true);
+      addClient(address, '127.0.0.1', browser, true, true);
       expect(pushSuppressingConnectionCount(address)).toBe(1);
       clock.mockReturnValue(47_000);
       expect(pushSuppressingConnectionCount(address)).toBe(0);
       expect(updateClientAttention(address, browser, true, 1)).toBe(true);
       expect(pushSuppressingConnectionCount(address)).toBe(1);
-      addClient(address, terminal);
+      addClient(address, '127.0.0.1', terminal);
       clock.mockReturnValue(93_000);
       expect(pushSuppressingConnectionCount(address)).toBe(1);
     } finally {
@@ -77,6 +78,28 @@ describe('SSE', () => {
       removeClient(address, terminal);
       clock.mockRestore();
     }
+  });
+
+  test('a client dropped by publish frees its ip slot', () => {
+    const ip = 'sse-dropped-client';
+    const deadAddress = requireAddress('0x' + '9'.repeat(40));
+    const liveAddress = requireAddress('0x' + '8'.repeat(40));
+    const dead = makeCtrl().ctrl;
+    const live = makeCtrl().ctrl;
+    addClient(deadAddress, ip, dead);
+    addClient(liveAddress, ip, live);
+    dead.enqueue = () => {
+      throw new TypeError('stream closed');
+    };
+
+    publish(deadAddress, partnerLeft(liveAddress));
+    expect(ipConnectionCount(ip)).toBe(1);
+
+    // the stream's own cleanup later does not release the slot twice
+    removeClient(deadAddress, dead);
+    expect(ipConnectionCount(ip)).toBe(1);
+    removeClient(liveAddress, live);
+    expect(ipConnectionCount(ip)).toBe(0);
   });
 
 });

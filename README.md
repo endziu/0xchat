@@ -154,7 +154,7 @@ Runtime data is stored in `chat.db` beside the project. The database, build outp
 
 ## Rate limits
 
-All limits are per minute. Each operation has its own budget, so one never
+All limits below are per minute. Each operation has its own budget, so one never
 consumes another's.
 
 | Operation | Per identity | Per IP |
@@ -174,6 +174,9 @@ allowance while still putting a ceiling on identity cycling. Opening and state
 lookup take 1–100 distinct IDs per request with an 8 KiB body limit. Every
 request body is capped at 32 KiB; larger bodies get `413`. See
 [the message lifecycle API](docs/message-lifecycle-api.md).
+
+Live event streams are capped by count rather than per minute: at most 3 open
+at once per identity and 20 per IP. A stream past either cap gets `429`.
 
 ## Retention
 
