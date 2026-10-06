@@ -111,31 +111,16 @@ export async function handleGetMessages({ req, url, path, ip }: Context): Promis
 
   const counterparty = requireAddress(path.split('/')[3]);
 
-  const beforeParam = url.searchParams.get('before');
-  const beforeNum = beforeParam ? Number(beforeParam) : null;
-  if (beforeParam != null && (!Number.isSafeInteger(beforeNum) || (beforeNum ?? 0) <= 0)) {
-    return json({ error: 'Invalid before parameter: must be a positive integer' }, 400);
-  }
-  const before = beforeNum && beforeNum > 0 ? beforeNum : undefined;
-  const beforeRowidParam = url.searchParams.get('before_rowid');
-  const beforeRowidNum = beforeRowidParam ? Number(beforeRowidParam) : null;
-  if (beforeRowidParam != null && (!Number.isSafeInteger(beforeRowidNum) || (beforeRowidNum ?? 0) <= 0)) {
-    return json({ error: 'Invalid before_rowid parameter: must be a positive integer' }, 400);
-  }
-  const beforeRowid = beforeRowidNum && beforeRowidNum > 0 ? beforeRowidNum : undefined;
-  const limitParam = url.searchParams.get('limit');
-  const limitNum = limitParam ? Number(limitParam) : null;
-  if (limitParam != null && (!Number.isSafeInteger(limitNum) || (limitNum ?? 0) <= 0)) {
-    return json({ error: 'Invalid limit parameter: must be a positive integer' }, 400);
-  }
-  const limit = limitNum && limitNum > 0 ? Math.min(limitNum, 100) : 50;
+  const before = positiveIntegerParam(url, 'before_seq');
+  if (before instanceof Response) return before;
+  const limit = positiveIntegerParam(url, 'limit');
+  if (limit instanceof Response) return limit;
 
-  const page = getConversationMessages(address, counterparty, limit, before, beforeRowid);
+  const page = getConversationMessages(address, counterparty, Math.min(limit ?? 50, 100), before);
   return json({
     messages: page.rows.map(deliveredRow),
-    // Server-issued cursor for the next older page; null when exhausted.
-    next_before: page.next_before,
-    next_before_rowid: page.next_before_rowid,
+    // Server-issued cursor for the next older page; null when the page is empty.
+    next_before_seq: page.next_before_seq,
     recovery_cursor: issueRecoveryCursor(address, counterparty, page.recovery_sequence),
   });
 }
@@ -221,6 +206,14 @@ export async function handleRecoverMessages({ req, url, path, ip }: Context): Pr
     next_cursor: page.exhausted ? null : issueRecoveryCursor(address, counterparty, page.rows.at(-1)!.acceptance_seq, page.upper),
     recovery_cursor: page.exhausted ? issueRecoveryCursor(address, counterparty, page.upper) : null,
   });
+}
+
+function positiveIntegerParam(url: URL, name: string): number | undefined | Response {
+  const raw = url.searchParams.get(name);
+  if (raw == null) return undefined;
+  const value = Number(raw);
+  if (Number.isSafeInteger(value) && value > 0) return value;
+  return json({ error: `Invalid ${name} parameter: must be a positive integer` }, 400);
 }
 
 async function readMessageIds(req: Request): Promise<string[] | Response> {

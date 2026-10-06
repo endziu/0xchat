@@ -89,14 +89,17 @@ updates.
 
 ## Recovery
 
-`GET /api/messages/:counterparty` supports `limit`, `before`, and `before_rowid`
-and returns `messages`, `next_before`, `next_before_rowid`, and an opaque
-`recovery_cursor`. History and this checkpoint are captured in one SQLite
-snapshot. The checkpoint is the server's acceptance high-water mark at that
-snapshot, including when no messages remain — not the last message's ID,
-timestamp or rowid. Treat cursors as opaque. For a new conversation view,
-establish SSE first and buffer events, then load the initial page and keep its
-checkpoint. Fetching older pages does not replace it; completed recovery does.
+`GET /api/messages/:counterparty` returns `messages` newest first by acceptance
+sequence, `next_before_seq`, and an opaque `recovery_cursor`. It takes an optional
+`limit` and an optional `before_seq` (a positive integer; anything else is `400`).
+Pass a non-null `next_before_seq` as `before_seq` for the next older page; it is
+`null` when the page is empty. Paging never skips or repeats a message, including
+messages accepted in the same millisecond. History and this checkpoint are
+captured in one SQLite snapshot. The checkpoint is the server's acceptance
+high-water mark at that snapshot, including when no messages remain — not the
+last message's ID, timestamp or sequence. Treat recovery cursors as opaque. For
+a new conversation view, establish SSE first and buffer events, then load the
+initial page and keep its checkpoint. Fetching older pages does not replace it; completed recovery does.
 
 After a lost stream, call
 `GET /api/messages/:counterparty/recover?after=<recovery_cursor>`. The server

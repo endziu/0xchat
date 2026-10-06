@@ -27,7 +27,7 @@ const NO_CONVERSATION: SessionSnapshot = {
 function apiProtocol(identity: Keypair, partner: Address, token: string, refreshConversations: () => Promise<ConversationRefreshResult>): ConversationProtocol {
   return {
     partnerPubkey: async () => (await api.getPubkey(partner)).pubkey,
-    history: (limit, before) => api.getMessages(partner, token, before?.before, before?.rowid ?? undefined, limit),
+    history: (limit, before) => api.getMessages(partner, token, before, limit),
     recover: cursor => api.recoverMessages(partner, token, cursor),
     states: ids => api.getMessageStates(partner, ids, token),
     open: ids => api.openMessages(partner, ids, token),

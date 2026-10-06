@@ -35,8 +35,7 @@ Options:
   --ttl SECONDS            Message lifetime (default: 300)
   --json                   Machine-readable JSON (watch emits JSON lines)
   --all                    Read all available history
-  --before TIMESTAMP       Older-page cursor from read --json
-  --before-rowid ROWID     Tie-break cursor from read --json
+  --before SEQ             Older-page cursor (next_before_seq from read --json)
   --help                   Show this help
 
 Lifetime choices: ${MESSAGE_TTLS.join(', ')} seconds.
@@ -240,7 +239,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
     server: { type: 'string' }, identity: { type: 'string' }, ttl: { type: 'string' },
     json: { type: 'boolean' }, all: { type: 'boolean' }, help: { type: 'boolean' },
-    'key-file': { type: 'string' }, before: { type: 'string' }, 'before-rowid': { type: 'string' },
+    'key-file': { type: 'string' }, before: { type: 'string' },
   } })
   if (values.help || positionals.length === 0) { console.log(HELP); return }
   const [command, partnerArg, ...textArgs] = positionals
@@ -251,14 +250,12 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const partner = needsPartner ? requireAddress(partnerArg ?? '') : null
   if (!needsPartner && partnerArg !== undefined || command !== 'send' && textArgs.length) throw new Error('Unexpected positional arguments')
   if (values['key-file'] !== undefined && command !== 'import') throw new Error('--key-file is only valid with import')
-  if ((values.all || values.before || values['before-rowid']) && command !== 'read') throw new Error('Pagination options are only valid with read')
-  if (values.all && (values.before || values['before-rowid'])) throw new Error('--all cannot be combined with page cursors')
-  if (values['before-rowid'] && !values.before) throw new Error('--before-rowid requires --before')
+  if ((values.all || values.before) && command !== 'read') throw new Error('Pagination options are only valid with read')
+  if (values.all && values.before) throw new Error('--all cannot be combined with --before')
   if (command === 'chat' && (values.json || !process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('chat requires an interactive terminal; use send/read/watch for scripts')
   const ttl = positiveInteger(values.ttl, 'Lifetime') ?? 300
   if (!MESSAGE_TTLS.includes(ttl)) throw new Error(`Lifetime must be one of: ${MESSAGE_TTLS.join(', ')}`)
   const before = positiveInteger(values.before, 'before')
-  const rowid = positiveInteger(values['before-rowid'], 'before-rowid')
   const identityPath = resolve(values.identity ?? process.env.OXCHAT_IDENTITY ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), '0xchat', 'identity.json'))
   const server = serverOrigin(values.server ?? process.env.OXCHAT_SERVER ?? 'local')
   const output = (value: unknown, text: string) => console.log(values.json ? JSON.stringify(value) : terminalText(text))
@@ -306,9 +303,9 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     } else if (command === 'read') {
       let result: MessagePage
       if (values.all) {
-        result = { messages: [], next_before: null, next_before_rowid: null }
+        result = { messages: [], next_before_seq: null }
         for await (const page of client.history(partner!)) result.messages.unshift(...page)
-      } else result = await client.read(partner!, before, rowid)
+      } else result = await client.read(partner!, before)
       if (values.json) {
         let serialized: string
         do {

@@ -200,11 +200,11 @@ describe('unchanged server interoperability', () => {
     }
   })
 
-  test('uses both pagination cursors without dropping messages', async () => {
+  test('pages by sequence cursor without dropping messages', async () => {
     for (let i = 0; i < 101; i++) await alice.send(bob.identity.address, `page ${i}`)
     const latest = await bob.read(alice.identity.address)
     expect(latest.messages).toHaveLength(100)
-    const older = await bob.read(alice.identity.address, latest.next_before!, latest.next_before_rowid!)
+    const older = await bob.read(alice.identity.address, latest.next_before_seq!)
     expect(older.messages.length).toBeGreaterThan(0)
     const ids: string[] = []
     for await (const page of bob.history(alice.identity.address)) ids.push(...page.map(message => message.id))

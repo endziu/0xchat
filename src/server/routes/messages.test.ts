@@ -7,7 +7,7 @@ import { createSignedMessageEnvelope } from '../../client/lib/message-envelope.t
 import { createSession, deleteInactivePubkeys, getDb, initDb, registerPubkey } from '../db.ts';
 import { messageIpLimiter, messageLimiter } from '../rate-limiters.ts';
 import { noOpSchedule } from '../rate-limit.test-utils.ts';
-import { handleSendMessage } from './messages.ts';
+import { handleGetMessages, handleSendMessage } from './messages.ts';
 import type { Context } from '../http.ts';
 
 beforeAll(() => {
@@ -155,4 +155,23 @@ test('a pruned recipient cannot receive messages until it re-registers', async (
 
   registerPubkey(recipient.address, recipient.publicKey);
   expect((await handleSendMessage(messageContext(ip, 'sender-token', envelope))).status).toBe(201);
+});
+
+test('history rejects a non-positive or non-integer before_seq', async () => {
+  createSession('history-token', alice.address, Date.now() + 60_000);
+  const get = (query: string) => {
+    const req = new Request(`https://chat.example/api/messages/${bob.address}?${query}`, {
+      headers: { Authorization: 'Bearer history-token', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    });
+    const url = new URL(req.url);
+    return handleGetMessages({ req, url, path: url.pathname, method: 'GET', ip: 'history-ip' });
+  };
+  for (const value of ['0', '-1', '1.5', 'abc', '', '9007199254740992']) {
+    const response = await get(`before_seq=${value}`);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid before_seq parameter: must be a positive integer' });
+  }
+  const response = await get('before_seq=1');
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ messages: [], next_before_seq: null });
 });

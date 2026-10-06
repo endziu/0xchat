@@ -30,8 +30,7 @@ export interface MessagePage {
   recovery_cursor: string
   messages: unknown[]
   // Server-issued cursor at the oldest returned message; null for an empty page.
-  next_before: number | null
-  next_before_rowid: number | null
+  next_before_seq: number | null
 }
 
 export interface Conversation {
@@ -148,10 +147,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }, token),
 
-  getMessages: (address: Address, token: string, before?: number, beforeRowid?: number, limit?: number): Promise<MessagePage> => {
+  getMessages: (address: Address, token: string, beforeSeq?: number, limit?: number): Promise<MessagePage> => {
     const params = new URLSearchParams()
-    if (before != null) params.set('before', String(before))
-    if (beforeRowid != null) params.set('before_rowid', String(beforeRowid))
+    if (beforeSeq != null) params.set('before_seq', String(beforeSeq))
     if (limit != null) params.set('limit', String(limit))
     const query = params.toString()
     return request(`/api/messages/${address}${query ? `?${query}` : ''}`, {}, token)

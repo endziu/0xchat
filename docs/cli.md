@@ -85,8 +85,8 @@ This applies to interactive chat and `send`, including text read from stdin.
 The CLI rejects oversized messages before sending and reports the limit.
 
 `read` returns the latest 100 messages in chronological order. JSON output includes
-`messages`, `next_before`, and `next_before_rowid`. Pass both non-null cursors as
-`--before` and `--before-rowid` to retrieve the next older page. `--all` fetches
+`messages` and `next_before_seq`. Pass a non-null `next_before_seq` as
+`--before SEQ` to retrieve the next older page. `--all` fetches
 all available pages in chronological order. `watch` first outputs available
 history, then emits one JSON object per new message. With `--json`, lifecycle
 changes also emit metadata-only objects marked `event: "expiry-update"`; they

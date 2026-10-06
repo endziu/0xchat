@@ -19,8 +19,7 @@ export interface PlainMessage extends MessageLifecycle {
 }
 export interface MessagePage {
   messages: PlainMessage[]
-  next_before: number | null
-  next_before_rowid: number | null
+  next_before_seq: number | null
 }
 interface ReadOptions {
   confirmAvailability?: boolean
@@ -250,11 +249,10 @@ export class ChatClient {
     return confirmed
   }
 
-  async read(partner: Address, before?: number, rowid?: number, options: ReadOptions = {}): Promise<MessagePage> {
+  async read(partner: Address, beforeSeq?: number, options: ReadOptions = {}): Promise<MessagePage> {
     const query = new URLSearchParams({ limit: '100' })
-    if (before !== undefined) query.set('before', String(before))
-    if (rowid !== undefined) query.set('before_rowid', String(rowid))
-    const page = await this.request<{ messages: unknown[]; next_before: number | null; next_before_rowid: number | null }>(`/api/messages/${partner}?${query}`)
+    if (beforeSeq !== undefined) query.set('before_seq', String(beforeSeq))
+    const page = await this.request<{ messages: unknown[]; next_before_seq: number | null }>(`/api/messages/${partner}?${query}`)
     const decoded = await Promise.all(page.messages.map(async raw => {
       try {
         const message = await this.decode(raw, partner)
@@ -272,7 +270,7 @@ export class ChatClient {
       for (const [id, lifecycle] of await this.confirmMessages(partner, senderCopies, 'state')) confirmed.set(id, lifecycle)
       for (const [id, lifecycle] of await this.confirmMessages(partner, incoming, 'open')) confirmed.set(id, lifecycle)
     }
-    return { next_before: page.next_before, next_before_rowid: page.next_before_rowid, messages: messages.flatMap(({ message: msg }) => {
+    return { next_before_seq: page.next_before_seq, messages: messages.flatMap(({ message: msg }) => {
       if (confirmAvailability) {
         const lifecycle = confirmed.get(msg.id)
         if (!lifecycle) return []
@@ -293,17 +291,14 @@ export class ChatClient {
 
   async *history(partner: Address, options: ReadOptions = {}): AsyncGenerator<PlainMessage[]> {
     let before: number | undefined
-    let rowid: number | undefined
-    const cursors = new Set<string>()
+    const cursors = new Set<number>()
     do {
-      const page = await this.read(partner, before, rowid, options)
+      const page = await this.read(partner, before, options)
       yield page.messages
-      if (page.next_before === null) return
-      const cursor = `${page.next_before}:${page.next_before_rowid}`
-      if (cursors.has(cursor)) throw new Error('Server repeated a pagination cursor')
-      cursors.add(cursor)
-      before = page.next_before
-      rowid = page.next_before_rowid ?? undefined
+      if (page.next_before_seq === null) return
+      if (cursors.has(page.next_before_seq)) throw new Error('Server repeated a pagination cursor')
+      cursors.add(page.next_before_seq)
+      before = page.next_before_seq
     } while (true)
   }
 
