@@ -3,6 +3,7 @@ import { SECURITY_HEADERS } from './constants.ts';
 import { getSession } from './db.ts';
 import { resolveClientIp } from './trusted-proxy.ts';
 import { advertisesDeliveryCapability } from '../shared/message-envelope.ts';
+import { CLIENT_UPDATE_REQUIRED_CODE } from '../shared/api-error.ts';
 
 export interface Context {
   req: Request;
@@ -55,7 +56,7 @@ export function isOutdatedClient(req: Request): boolean {
 }
 
 export function clientUpdateRequired(): Response {
-  return json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.', code: 'client_update_required' }, 426);
+  return json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.', code: CLIENT_UPDATE_REQUIRED_CODE }, 426);
 }
 
 export function getClientIp(

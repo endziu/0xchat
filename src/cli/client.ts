@@ -1,12 +1,19 @@
-import { requireAddress, type Address } from '../shared/address'
-import { MESSAGE_TTLS } from '../shared/message-ttl'
-import { signEIP191, type Keypair } from '../shared/keypair'
-import { decrypt } from '../shared/crypto'
-import { verifyEncryptionPublicKey } from '../shared/encryption-key'
-import { buildRegistrationChallenge } from '../shared/registration-challenge'
-import { buildSessionChallenge } from '../shared/session-challenge'
-import { createSignedMessageEnvelope } from '../shared/signed-message-envelope'
-import { canonicalMessageAad, DELIVERY_CAPABILITY, isEnvelopeParticipant, MAX_PLAINTEXT_BYTES, parseDeliveryLifecycle, verifyDeliveredMessage, verifyMessageConfirmation, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle, type OpeningResponse } from '../shared/message-envelope'
+import type { Address } from '../shared/address'
+import type { Keypair } from '../shared/keypair'
+import { CLIENT_UPDATE_REQUIRED_CODE } from '../shared/api-error'
+import { parseDeliveryLifecycle, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle } from '../shared/message-envelope'
+import { ApiError, confirmMessage, ProtocolClient, readApiError, sealMessage, unsealMessage, type ConfirmationResponse, type Conversation, type DecryptedMessage } from '../shared/protocol-client'
+
+interface Confirmation {
+  kind: ConfirmationKind
+  operation: string
+  request(api: ProtocolClient, partner: Address, ids: string[], token: string): Promise<ConfirmationResponse | null>
+}
+
+const CONFIRMATIONS: Record<'open' | 'state', Confirmation> = {
+  open: { kind: 'opening', operation: 'opening', request: (api, partner, ids, token) => api.open(partner, ids, token) },
+  state: { kind: 'availability', operation: 'availability check', request: (api, partner, ids, token) => api.states(partner, ids, token) },
+}
 
 const availabilityDeadline = Symbol('availabilityDeadline')
 export interface PlainMessage extends MessageLifecycle {
@@ -68,10 +75,6 @@ export function serverOrigin(value: string): string {
   return url.origin
 }
 
-class HttpError extends Error {
-  constructor(readonly status: number, message: string) { super(message) }
-}
-
 /** The server no longer accepts this client's delivery protocol; retrying cannot help. */
 export class ClientUpdateRequiredError extends Error {
   constructor() {
@@ -81,6 +84,7 @@ export class ClientUpdateRequiredError extends Error {
 
 export class ChatClient {
   readonly origin: string
+  private readonly api: ProtocolClient
   private token: string | null = null
   private loginPending: Promise<void> | null = null
   private readonly controller = new AbortController()
@@ -91,6 +95,16 @@ export class ChatClient {
 
   constructor(origin: string, readonly identity: Keypair) {
     this.origin = serverOrigin(origin)
+    this.api = new ProtocolClient(this.origin, (path, init) => {
+      const headers = new Headers(init.headers)
+      headers.set('Origin', this.origin)
+      return this.fetch(path, {
+        ...init,
+        headers,
+        redirect: 'error',
+        signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(this.requestSignal ? [this.requestSignal] : [])]),
+      })
+    }, error => this.stopIfOutdated(error))
   }
 
   /** Cancels pending and later requests; close() still sends its logout. */
@@ -98,38 +112,25 @@ export class ChatClient {
     this.controller.abort()
   }
 
-  private async responseError(response: Response, fallback: string): Promise<Error> {
-    const data = await response.json().catch(() => ({})) as { error?: unknown; code?: unknown }
-    if (data.code === 'client_update_required') {
-      // Every later request would be refused too, so stop everything at once.
-      const error = new ClientUpdateRequiredError()
-      this.controller.abort(error)
-      return error
-    }
-    return new HttpError(response.status, typeof data.error === 'string' ? data.error : fallback)
+  private stopIfOutdated(error: ApiError): Error | void {
+    if (error.code !== CLIENT_UPDATE_REQUIRED_CODE) return
+    // Every later request would be refused too, so stop everything at once.
+    const stopped = new ClientUpdateRequiredError()
+    this.controller.abort(stopped)
+    return stopped
   }
 
-  private async request<T>(path: string, method = 'GET', body?: unknown, authenticated = true, retry = true): Promise<T> {
-    if (authenticated && !this.token) await this.login()
-    const response = await this.fetch(path, {
-      method,
-      headers: {
-        Origin: this.origin,
-        'Content-Type': 'application/json',
-        'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY,
-        ...(authenticated ? { Authorization: `Bearer ${this.token}` } : {}),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      redirect: 'error',
-      signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(this.requestSignal ? [this.requestSignal] : [])]),
-    })
-    if (response.status === 401 && authenticated && retry) {
+  /** Runs an authenticated request, signing in first and once more if the session has expired. */
+  private async authenticated<T>(request: (token: string) => Promise<T>): Promise<T> {
+    if (!this.token) await this.login()
+    try {
+      return await request(this.token!)
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 401) throw error
       this.token = null
       await this.login()
-      return this.request(path, method, body, authenticated, false)
+      return request(this.token!)
     }
-    if (!response.ok) throw await this.responseError(response, `HTTP ${response.status}`)
-    return response.status === 204 ? undefined as T : await response.json() as T
   }
 
   private async fetch(path: string, options: RequestInit): Promise<Response> {
@@ -144,14 +145,8 @@ export class ChatClient {
     }
   }
 
-  async register(): Promise<void> {
-    const { address, publicKey: pubkey } = this.identity
-    const result = await this.request<{ challenge: string; nonce: string }>('/api/register/challenge', 'POST', { address, pubkey }, false)
-    if (result.challenge !== buildRegistrationChallenge(this.origin, address, pubkey, result.nonce)) {
-      throw new Error('Invalid registration challenge')
-    }
-    const signature = await signEIP191(result.challenge, this.identity.privateKey)
-    await this.request('/api/register', 'POST', { address, pubkey, nonce: result.nonce, signature }, false)
+  register(): Promise<void> {
+    return this.api.register(this.identity)
   }
 
   async login(): Promise<void> {
@@ -161,88 +156,62 @@ export class ChatClient {
   }
 
   private async openSession(): Promise<void> {
-    const address = this.identity.address
-    const { pubkey } = await this.request<{ pubkey: string | null }>(`/api/pubkey/${address}`, 'GET', undefined, false)
-    if (pubkey === null) await this.register()
-    else verifyEncryptionPublicKey(address, pubkey)
-    const result = await this.request<{ challenge: string; nonce: string }>('/api/auth/challenge', 'POST', { address }, false)
-    if (result.challenge !== buildSessionChallenge(this.origin, address, result.nonce)) throw new Error('Invalid session challenge')
-    const signature = await signEIP191(result.challenge, this.identity.privateKey)
-    const session = await this.request<{ token: string }>('/api/auth/session', 'POST', { address, nonce: result.nonce, signature }, false)
-    if (typeof session.token !== 'string' || !/^[0-9a-f]{64}$/.test(session.token)) throw new Error('Invalid session token')
-    this.token = session.token
+    if (await this.api.pubkey(this.identity.address) === null) await this.register()
+    this.token = await this.api.login(this.identity)
   }
 
   async close(): Promise<void> {
     if (!this.token) return
     // Shutdown must work after the interactive operation was cancelled.
     this.requestSignal = undefined
-    try { await this.request('/api/session', 'DELETE', undefined, true, false) }
+    try { await this.api.deleteSession(this.token) }
     finally { this.token = null }
   }
 
   async send(recipient: Address, plaintext: string, ttl = 300): Promise<PlainMessage> {
-    if (recipient === this.identity.address) throw new Error('Cannot message yourself')
-    if (!MESSAGE_TTLS.includes(ttl)) throw new Error(`Lifetime must be one of: ${MESSAGE_TTLS.join(', ')} seconds`)
-    if (!plaintext.trim()) throw new Error('Message must not be empty')
-    if (new TextEncoder().encode(plaintext).length > MAX_PLAINTEXT_BYTES) throw new Error(`Message is too large (maximum ${MAX_PLAINTEXT_BYTES} UTF-8 bytes)`)
-    const { pubkey } = await this.request<{ pubkey: string | null }>(`/api/pubkey/${recipient}`, 'GET', undefined, false)
+    const pubkey = await this.api.pubkey(recipient)
     if (!pubkey) throw new Error('Recipient not registered')
-    const envelope = await createSignedMessageEnvelope(plaintext, ttl, this.identity, recipient, verifyEncryptionPublicKey(recipient, pubkey))
-    const result = await this.request<unknown>('/api/messages', 'POST', envelope)
-    const message = await this.decode(result, recipient)
-    if (!message || message.id !== envelope.id) throw new Error('Invalid message acknowledgement')
-    return message
+    const envelope = await sealMessage(this.identity, recipient, pubkey, plaintext, ttl)
+    return this.plain(await this.authenticated(token => this.api.send(this.identity, envelope, token)))
   }
 
-  async decode(input: unknown, partner: Address): Promise<PlainMessage | null> {
-    const msg = await verifyDeliveredMessage(input)
-    if (!msg || !isEnvelopeParticipant(msg, this.identity.address, partner)) throw new Error('Rejected unauthenticated or misaddressed message')
-    const mine = msg.sender === this.identity.address
-    const plaintext = await decrypt(
-      mine ? msg.ct_sender : msg.ct_recipient,
-      mine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient,
-      mine ? msg.iv_sender : msg.iv_recipient,
-      this.identity.privateKey, canonicalMessageAad(msg),
-    )
-    return { id: msg.id, sender: msg.sender, recipient: msg.recipient, ttl: msg.ttl,
-      delivery_policy: msg.delivery_policy, created_at: msg.created_at, opened_at: msg.opened_at,
-      expires_at: msg.expires_at, plaintext,
-      [availabilityDeadline]: performance.now() + Math.max(0, msg.expires_at - Date.now()) }
+  async decode(input: unknown, partner: Address): Promise<PlainMessage> {
+    return this.plain(await unsealMessage(this.identity, input, partner))
   }
 
-  async conversations(): Promise<{ conversations: { address: Address; last_message_at: number }[] }> {
-    const result = await this.request<{ conversations: { address: unknown; last_message_at: number }[] }>('/api/conversations')
-    return { conversations: result.conversations.map(item => ({ ...item, address: requireAddress(item.address) })) }
+  private plain(message: DecryptedMessage): PlainMessage {
+    return { id: message.id, sender: message.sender, recipient: message.recipient, ttl: message.ttl,
+      delivery_policy: message.delivery_policy, created_at: message.created_at, opened_at: message.opened_at,
+      expires_at: message.expires_at, plaintext: message.plaintext,
+      [availabilityDeadline]: performance.now() + Math.max(0, message.expires_at - Date.now()) }
+  }
+
+  async conversations(): Promise<{ conversations: Conversation[] }> {
+    return { conversations: await this.authenticated(token => this.api.conversations(token)) }
   }
 
   private async confirmMessages(
     partner: Address,
-    messages: Array<{ raw: unknown; message: PlainMessage }>,
+    messages: PlainMessage[],
     action: 'open' | 'state',
   ): Promise<Map<string, MessageLifecycle>> {
     const confirmed = new Map<string, MessageLifecycle>()
     if (!messages.length) return confirmed
-    let response: OpeningResponse
+    const { kind, operation, request } = CONFIRMATIONS[action]
+    let response: ConfirmationResponse | null
     const requestStarted = performance.now()
+    const ids = messages.map(message => message.id)
     try {
-      response = await this.request<OpeningResponse>(`/api/messages/${partner}/${action}`, 'POST',
-        { ids: messages.map(item => item.message.id) })
+      response = await this.authenticated(token => request(this.api, partner, ids, token))
     } catch (error) {
       // A stopped client reports why it stopped, not a retry hint.
       if (this.signal.aborted) throw error
-      const operation = action === 'open' ? 'opening' : 'availability check'
       throw new Error(`Message ${operation} failed; retry read to confirm availability`)
     }
-    if (!response || !Number.isSafeInteger(response.server_time) || response.server_time < 0
-      || !Array.isArray(response.results)) throw new Error('Invalid message confirmation response')
-    for (const { raw, message } of messages) {
-      const results = response.results.filter(result => result && result.id === message.id)
-      if (results.length !== 1 || results[0]!.status !== 'available') continue
-      const result = results[0]!
-      const kind: ConfirmationKind = action === 'open' ? 'opening' : 'availability'
-      const lifecycle = await verifyMessageConfirmation(raw, result, response.server_time, kind)
-      if (!lifecycle) continue
+    if (!response) throw new Error('Invalid message confirmation response')
+    for (const message of messages) {
+      const lifecycle = confirmMessage(message, response, kind)
+      if (!lifecycle || lifecycle === 'unavailable') continue
       confirmed.set(message.id, lifecycle)
       message[availabilityDeadline] = requestStarted + lifecycle.expires_at - response.server_time
     }
@@ -250,27 +219,20 @@ export class ChatClient {
   }
 
   async read(partner: Address, beforeSeq?: number, options: ReadOptions = {}): Promise<MessagePage> {
-    const query = new URLSearchParams({ limit: '100' })
-    if (beforeSeq !== undefined) query.set('before_seq', String(beforeSeq))
-    const page = await this.request<{ messages: unknown[]; next_before_seq: number | null }>(`/api/messages/${partner}?${query}`)
-    const decoded = await Promise.all(page.messages.map(async raw => {
-      try {
-        const message = await this.decode(raw, partner)
-        return message ? { raw, message } : null
-      } catch { return null }
-    }))
-    const messages = decoded.filter((item): item is { raw: unknown; message: PlainMessage } => item !== null)
+    const page = await this.authenticated(token => this.api.history(partner, token, { before: beforeSeq, limit: 100 }))
+    const decoded = await Promise.all(page.messages.map(raw => this.decode(raw, partner).catch(() => null)))
+    const messages = decoded.filter(message => message !== null)
     const identity = this.identity.address
     const isIncoming = (message: PlainMessage) => message.recipient === identity
-    const incoming = messages.filter(item => isIncoming(item.message))
+    const incoming = messages.filter(isIncoming)
     const confirmAvailability = options.confirmAvailability ?? true
     const confirmed = new Map<string, MessageLifecycle>()
     if (confirmAvailability) {
-      const senderCopies = messages.filter(item => !isIncoming(item.message))
+      const senderCopies = messages.filter(message => !isIncoming(message))
       for (const [id, lifecycle] of await this.confirmMessages(partner, senderCopies, 'state')) confirmed.set(id, lifecycle)
       for (const [id, lifecycle] of await this.confirmMessages(partner, incoming, 'open')) confirmed.set(id, lifecycle)
     }
-    return { next_before_seq: page.next_before_seq, messages: messages.flatMap(({ message: msg }) => {
+    return { next_before_seq: page.next_before_seq, messages: messages.flatMap(msg => {
       if (confirmAvailability) {
         const lifecycle = confirmed.get(msg.id)
         if (!lifecycle) return []
@@ -283,9 +245,8 @@ export class ChatClient {
   /** Decrypts a live delivery, then confirms its current availability before exposing it. */
   async confirmLiveMessage(partner: Address, raw: unknown): Promise<PlainMessage | null> {
     const message = await this.decode(raw, partner)
-    if (!message) return null
     const incoming = message.recipient === this.identity.address
-    const lifecycle = (await this.confirmMessages(partner, [{ raw, message }], incoming ? 'open' : 'state')).get(message.id)
+    const lifecycle = (await this.confirmMessages(partner, [message], incoming ? 'open' : 'state')).get(message.id)
     return lifecycle ? { ...message, ...lifecycle } : null
   }
 
@@ -303,19 +264,19 @@ export class ChatClient {
   }
 
   async *events(signal: AbortSignal): AsyncGenerator<{ event: string; data: string }> {
-    const { sse_token } = await this.request<{ sse_token: string }>('/api/events/token', 'POST')
+    const sseToken = await this.authenticated(token => this.api.sseToken(token))
     const controller = new AbortController()
     const connectTimer = setTimeout(() => controller.abort(), 15_000)
     let response: Response
     try {
-      response = await this.fetch(`/api/events?token=${encodeURIComponent(sse_token)}`, {
+      response = await this.fetch(`/api/events?token=${encodeURIComponent(sseToken)}`, {
         redirect: 'error',
         signal: AbortSignal.any([signal, controller.signal]),
       })
     } finally { clearTimeout(connectTimer) }
     if (!response.ok || !response.body) {
       // Read only to abort this client if the server requires an update.
-      if (!response.ok) await this.responseError(response, '')
+      if (!response.ok) this.stopIfOutdated(await readApiError(response))
       controller.abort()
       throw new Error(`Live connection failed: HTTP ${response.status}`)
     }

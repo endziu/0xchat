@@ -52,7 +52,7 @@ export function useSSE(token: string | null, onEvent: (event: LiveEvent) => void
     // stream re-dials a single-use token that now 401s. SseConnection drives
     // recovery with a fresh token and backoff on every failure.
     const conn = new SseConnection({
-      getSseToken: async () => (await api.getSseToken(activeToken)).sse_token,
+      getSseToken: () => api.getSseToken(activeToken),
       buildUrl: (sseToken) => {
         dialedAttention = isWindowAttentive()
         return `/api/events?token=${sseToken}&attentive=${dialedAttention}`

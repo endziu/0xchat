@@ -3,20 +3,13 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'preac
 import { api } from '../lib/api'
 import type { ConversationRefreshResult } from './useConversations'
 import type { LiveConnection } from './useSSE'
-import { decrypt } from '../../shared/crypto'
 import { Keypair } from '../../shared/keypair'
-import { createSignedMessageEnvelope } from '../../shared/signed-message-envelope'
+import { sealMessage, unsealMessage, type DecryptedMessage } from '../../shared/protocol-client'
 import { errorMessage } from '../lib/errors'
 import { markConversationSeen } from '../lib/contacts'
-import type { DecryptedMessage } from '../lib/conversation-messages'
 import { ConversationSession, type ConversationProtocol, type SessionSnapshot } from '../lib/conversation-session'
 import type { ConnectionEpoch } from '../lib/sse-connection'
 import { isWindowAttentive, watchWindowAttention } from '../lib/window-attention'
-import {
-  canonicalMessageAad,
-  isEnvelopeParticipant,
-  verifyDeliveredMessage,
-} from '../../shared/message-envelope'
 import type { LiveEvent } from '../../shared/live-events'
 
 const NO_CONVERSATION: SessionSnapshot = {
@@ -34,9 +27,9 @@ function apiProtocol(identity: Keypair, partner: Address, token: string, refresh
     clear: () => api.clearConversation(partner, token),
     refreshConversations: async () => await refreshConversations() === 'refreshed',
     send: async (plaintext, ttl, partnerPubkey) => {
-      const envelope = await createSignedMessageEnvelope(plaintext, ttl, identity, partner, partnerPubkey)
+      const envelope = await sealMessage(identity, partner, partnerPubkey, plaintext, ttl)
       try {
-        return await api.sendMessage(envelope, token)
+        return await api.sendMessage(identity, envelope, token)
       } catch (err) {
         throw new Error(errorMessage(err, 'Server rejected the message'))
       }
@@ -51,28 +44,10 @@ export function decryptFor(identity: Keypair, partner: Address) {
     if (typeof input !== 'object' || input === null) return null
     const raw = input as { sender?: unknown; recipient?: unknown }
     if (raw.sender !== partner && raw.recipient !== partner) return null
-    const msg = await verifyDeliveredMessage(input)
-    if (!msg || !isEnvelopeParticipant(msg, identity.address)) {
-      console.error('Rejected unauthenticated or misaddressed message envelope')
-      return null
-    }
-    if (!isEnvelopeParticipant(msg, identity.address, partner)) return null
-    const isMine = msg.sender === identity.address
-    const ciphertext = isMine ? msg.ct_sender : msg.ct_recipient
-    const ephPub = isMine ? msg.ephemeral_pub_sender : msg.ephemeral_pub_recipient
-    const iv = isMine ? msg.iv_sender : msg.iv_recipient
-
     try {
-      const plaintext = await decrypt(
-        ciphertext,
-        ephPub,
-        iv,
-        identity.privateKey,
-        canonicalMessageAad(msg),
-      )
-      return { ...msg, plaintext }
+      return await unsealMessage(identity, input, partner)
     } catch (err) {
-      console.error('Rejected undecryptable message envelope:', err)
+      console.error('Rejected message envelope:', err)
       return null
     }
   }

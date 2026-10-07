@@ -1,8 +1,7 @@
 import { requireAddress } from '../../shared/address'
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { ConversationSession, type ConversationProtocol, type SessionClock } from './conversation-session'
-import type { DecryptedMessage } from './conversation-messages'
-import type { MessagePage, RecoveryPage } from './api'
+import type { ConfirmationResponse, DecryptedMessage, MessagePage, RecoveryPage } from '../../shared/protocol-client'
 import { isEnvelopeParticipant, UNOPENED_RETENTION_MS, type DeliveredMessage } from '../../shared/message-envelope'
 
 // The session runs against an in-memory server and a manual clock: every
@@ -119,11 +118,11 @@ class FakeServer implements ConversationProtocol {
     })
   }
 
-  states(ids: string[]): Promise<unknown> {
+  states(ids: string[]): Promise<ConfirmationResponse | null> {
     return this.respond('states', `states ${ids.join(',')}`, () => this.results(ids))
   }
 
-  open(ids: string[]): Promise<unknown> {
+  open(ids: string[]): Promise<ConfirmationResponse | null> {
     return this.respond('open', `open ${ids.join(',')}`, () => {
       for (const { message } of this.available()) {
         if (ids.includes(message.id) && message.recipient === SELF) this.openStored(message.id)
@@ -164,7 +163,7 @@ class FakeServer implements ConversationProtocol {
       .filter(({ message }) => message.created_at > this.clearedAt && message.expires_at > now)
   }
 
-  private results(ids: string[]) {
+  private results(ids: string[]): ConfirmationResponse {
     const available = new Map(this.available().map(({ message }) => [message.id, message]))
     return {
       server_time: this.clock.now(),
