@@ -1,7 +1,7 @@
 import type { Address } from '../../shared/address'
 import { ConversationMessages, type DecryptedMessage } from './conversation-messages'
 import { errorMessage } from './errors'
-import type { MessagePage, RecoveryPage } from './api'
+import type { ConfirmationResponse, MessagePage, RecoveryPage } from '../../shared/protocol-client'
 import type { ConnectionEpoch } from './sse-connection'
 import { isEnvelopeParticipant, type DeliveredMessage, type ExpiryUpdate } from '../../shared/message-envelope'
 import type { LiveEvent } from '../../shared/live-events'
@@ -28,10 +28,10 @@ export interface ConversationProtocol {
   /** The newest history page, or the page before `before`. */
   history(limit: number, before?: HistoryCursor): Promise<MessagePage>
   recover(cursor: { after: string } | { cursor: string }): Promise<RecoveryPage>
-  /** Lifecycle state lookup, which never opens. The response is unvalidated server input. */
-  states(ids: string[]): Promise<unknown>
-  /** Message opening, which starts lifetimes. The response is unvalidated server input. */
-  open(ids: string[]): Promise<unknown>
+  /** Lifecycle state lookup, which never opens; null for a malformed response. */
+  states(ids: string[]): Promise<ConfirmationResponse | null>
+  /** Message opening, which starts lifetimes; null for a malformed response. */
+  open(ids: string[]): Promise<ConfirmationResponse | null>
   clear(): Promise<{ cleared_at: number }>
   /** Refreshes the conversation list; false when that failed. */
   refreshConversations(): Promise<boolean>
@@ -361,7 +361,7 @@ export class ConversationSession {
       const ids = store.takePending()
       if (ids.length === 0) return
       await Promise.all(batches(ids, ID_BATCH).map(async batch => {
-        let response: unknown
+        let response: ConfirmationResponse | null
         const requestStarted = this.clock.now()
         try {
           response = await this.protocol.open(batch)

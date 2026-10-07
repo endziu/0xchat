@@ -1,18 +1,12 @@
 import { requireAddress } from '../../shared/address'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
-import * as secp from '@noble/secp256k1'
-import { bytesToHex, hexToBytes } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
-import { ApiError, api } from './api'
-import { buildSessionChallenge } from '../../shared/session-challenge'
+import { api, CLIENT_UPDATE_REQUIRED_EVENT } from './api'
+import { CLIENT_UPDATE_REQUIRED_CODE } from '../../shared/api-error'
 
 const originalFetch = globalThis.fetch
 const originalStorage = globalThis.localStorage
-const privateKey = `0x${'33'.repeat(32)}` as const
-const address = requireAddress(privateKeyToAccount(privateKey).address)
-const publicKey = bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true))
 
-// Bun has no `window`; challenge verification reads `window.location.origin`.
+// Bun has no `window`; the client binds challenges to `window.location.origin`.
 const TEST_ORIGIN = 'https://app.example'
 const originalWindow = globalThis.window as unknown
 
@@ -36,110 +30,6 @@ afterAll(() => {
   globalThis.fetch = originalFetch
   globalThis.localStorage = originalStorage
   globalThis.window = originalWindow as Window & typeof globalThis
-})
-
-describe('api.getChallenge', () => {
-  const mockChallengeResponse = (challenge: string, nonce: string) => {
-    globalThis.fetch = Object.assign(
-      async () => Response.json({ challenge, nonce }),
-      { preconnect: originalFetch.preconnect },
-    )
-  }
-
-  test('returns a session challenge that matches the browser origin', async () => {
-    const nonce = 'a1'.repeat(16)
-    const challenge = buildSessionChallenge(TEST_ORIGIN, address, nonce)
-    mockChallengeResponse(challenge, nonce)
-
-    expect(await api.getChallenge(address)).toEqual({ challenge, nonce })
-  })
-
-  test('rejects a session challenge bound to a different origin', async () => {
-    const nonce = 'a2'.repeat(16)
-    const challenge = buildSessionChallenge('https://attacker.example', address, nonce)
-    mockChallengeResponse(challenge, nonce)
-
-    await expect(api.getChallenge(address)).rejects.toThrow('Invalid session challenge')
-  })
-
-  test('rejects a session challenge that names a different address', async () => {
-    const nonce = 'a3'.repeat(16)
-    const challenge = buildSessionChallenge(TEST_ORIGIN, requireAddress(`0x${'44'.repeat(20)}`), nonce)
-    mockChallengeResponse(challenge, nonce)
-
-    await expect(api.getChallenge(address)).rejects.toThrow('Invalid session challenge')
-  })
-
-  test('rejects a session challenge whose embedded nonce differs from the returned nonce', async () => {
-    const nonce = 'a5'.repeat(16)
-    const challenge = buildSessionChallenge(TEST_ORIGIN, address, `0f`.repeat(16))
-    mockChallengeResponse(challenge, nonce)
-
-    await expect(api.getChallenge(address)).rejects.toThrow('Invalid session challenge')
-  })
-
-  test('rejects a session challenge that does not follow the expected format', async () => {
-    const nonce = 'a4'.repeat(16)
-    const challenge = `0xChat session request\nAddress: ${address}\nNonce: ${nonce}`
-    mockChallengeResponse(challenge, nonce)
-
-    await expect(api.getChallenge(address)).rejects.toThrow('Invalid session challenge')
-  })
-})
-
-describe('api.getPubkey', () => {
-  test('returns a fetched encryption key only after address verification', async () => {
-    globalThis.fetch = Object.assign(
-      async () => Response.json({ pubkey: publicKey }),
-      { preconnect: originalFetch.preconnect },
-    )
-    expect(await api.getPubkey(address)).toEqual({ pubkey: publicKey })
-  })
-
-  test('rejects a fetched encryption key for another address', async () => {
-    globalThis.fetch = Object.assign(
-      async () => Response.json({ pubkey: publicKey }),
-      { preconnect: originalFetch.preconnect },
-    )
-    await expect(api.getPubkey(requireAddress(`0x${'44'.repeat(20)}`))).rejects.toThrow(
-      'Encryption public key does not match address',
-    )
-  })
-})
-
-describe('api errors', () => {
-  test('preserves a stable server error code', async () => {
-    globalThis.fetch = Object.assign(
-      async () => Response.json(
-        { error: 'Unsupported push service', code: 'unsupported_push_service' },
-        { status: 400 },
-      ),
-      { preconnect: originalFetch.preconnect },
-    )
-
-    const error = await api.subscribePush(
-      { endpoint: 'https://jmt17.google.com/fcm/send/token', keys: {} },
-      'token-a',
-    ).then(() => null, (caught: unknown) => caught)
-
-    expect(error).toBeInstanceOf(ApiError)
-    expect((error as ApiError).message).toBe('Unsupported push service')
-    expect((error as ApiError).code).toBe('unsupported_push_service')
-  })
-
-  test('turns a null JSON error body into a generic ApiError', async () => {
-    globalThis.fetch = Object.assign(
-      async () => Response.json(null, { status: 400, statusText: 'Bad Request' }),
-      { preconnect: originalFetch.preconnect },
-    )
-
-    const error = await api.getConversations('token-a')
-      .then(() => null, (caught: unknown) => caught)
-
-    expect(error).toBeInstanceOf(ApiError)
-    expect((error as ApiError).message).toBe('Bad Request')
-    expect((error as ApiError).code).toBeUndefined()
-  })
 })
 
 describe('api per-request auth', () => {
@@ -226,12 +116,15 @@ describe('api per-request auth', () => {
   })
 })
 
-test('conversation responses parse legacy casing and reject invalid addresses', async () => {
-  globalThis.fetch = Object.assign(async () => Response.json({ conversations: [
-    { address: '0x52908400098527886E0F7030069857D2E4169EE7', last_message_at: 123 },
-  ] }), { preconnect: originalFetch.preconnect })
-  const result = await api.getConversations('token')
-  expect<string>(result.conversations[0]!.address).toBe(requireAddress('0x52908400098527886e0f7030069857d2e4169ee7'))
-  globalThis.fetch = Object.assign(async () => Response.json({ conversations: [{ address: 'bad', last_message_at: 123 }] }), { preconnect: originalFetch.preconnect })
-  await expect(api.getConversations('token')).rejects.toThrow('address')
+test('a client update requirement is announced to the page', async () => {
+  let announced = 0
+  const onUpdate = () => { announced++ }
+  globalThis.addEventListener(CLIENT_UPDATE_REQUIRED_EVENT, onUpdate)
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ error: 'outdated', code: CLIENT_UPDATE_REQUIRED_CODE }, { status: 426 }),
+    { preconnect: originalFetch.preconnect },
+  )
+  await expect(api.getConversations('token-a')).rejects.toThrow('outdated')
+  expect(announced).toBe(1)
+  globalThis.removeEventListener(CLIENT_UPDATE_REQUIRED_EVENT, onUpdate)
 })

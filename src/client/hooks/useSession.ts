@@ -1,7 +1,7 @@
 import type { Address } from '../../shared/address'
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks'
 import { getToken, saveToken, clearToken } from '../lib/session'
-import { Keypair, signEIP191 } from '../../shared/keypair'
+import type { Keypair } from '../../shared/keypair'
 import { api } from '../lib/api'
 
 export function useSession(identity: Keypair | null) {
@@ -16,12 +16,7 @@ export function useSession(identity: Keypair | null) {
     setError(null)
   }, [identity?.address])
 
-  const createSession = useCallback(async (keypair: Keypair): Promise<string> => {
-    const { challenge, nonce } = await api.getChallenge(keypair.address)
-    const signature = await signEIP191(challenge, keypair.privateKey)
-    const { token: newToken } = await api.createSession(keypair.address, signature, nonce)
-    return newToken
-  }, [])
+  const createSession = useCallback((keypair: Keypair): Promise<string> => api.login(keypair), [])
 
   const commitSession = useCallback((address: Address, newToken: string): void => {
     saveToken(address, newToken)

@@ -2,6 +2,7 @@ import { requireAddress } from '../../shared/address'
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { ConversationMessages, type DecryptedMessage } from './conversation-messages'
 import { UNOPENED_RETENTION_MS, type MessageLifecycle } from '../../shared/message-envelope'
+import { parseConfirmationResponse } from '../../shared/protocol-client'
 
 // This store receives envelopes only after signature verification and decryption.
 const message: DecryptedMessage = {
@@ -50,7 +51,7 @@ test('malformed confirmation time and conflicting final deadlines require retry'
     const store = new ConversationMessages(requireAddress('0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2'))
     store.add([{ ...message, ...opened }])
     store.takePending()
-    store.confirmOpening([message.id], invalid)
+    store.confirmOpening([message.id], parseConfirmationResponse(invalid))
     expect(store.hasFailedOpenings()).toBe(true)
     expect(store.display(store.now(), conditions)).toEqual([])
     store.retryFailed()
@@ -67,7 +68,9 @@ test('state refresh rejects inconsistent metadata and malformed server time', ()
   expect(store.applyStates([message.id], response({
     delivery_policy: 'recipient-opening', created_at: 1_000, opened_at: null, expires_at: 6_000,
   }))).toBe(false)
-  expect(store.applyStates([message.id], { ...response(opened), server_time: '2000' })).toBe(false)
+  expect(store.applyStates([message.id], parseConfirmationResponse({ ...response(opened), server_time: '2000' }))).toBe(false)
+  // Unopened, so only its acceptance can be later than server time.
+  expect(store.applyStates([message.id], response(message, 999))).toBe(false)
   expect(store.applyStates([message.id], response(opened))).toBe(true)
   expect(store.applyStates([message.id], response({ ...opened, opened_at: 2_001, expires_at: 7_001 }, 2_001))).toBe(false)
 })

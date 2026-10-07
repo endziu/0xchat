@@ -28,6 +28,9 @@ export interface MessageEnvelope extends MessageMetadata {
 }
 
 export const UNOPENED_RETENTION_MS = 24 * 60 * 60 * 1000
+// Sent on every request, separately from the signed envelope version: tells
+// the server this client implements recipient-opening expiry.
+export const DELIVERY_CAPABILITY_HEADER = 'X-0xChat-Delivery-Capability'
 export const DELIVERY_CAPABILITY = 'recipient-opening-v1'
 // Single-valued, but stays on the wire: deployed clients reject messages without it.
 // Removing it takes two releases: clients that stop requiring it, then a server that stops sending it.
@@ -59,7 +62,7 @@ export interface ExpiryUpdate extends MessageLifecycle {
 }
 
 export function advertisesDeliveryCapability(headers: Headers): boolean {
-  return headers.get('X-0xChat-Delivery-Capability') === DELIVERY_CAPABILITY
+  return headers.get(DELIVERY_CAPABILITY_HEADER) === DELIVERY_CAPABILITY
 }
 
 const MESSAGE_ID = /^0x[0-9a-f]{32}$/
@@ -206,36 +209,6 @@ export function parseExpiryUpdate(input: unknown): ExpiryUpdate | null {
   if (!Number.isSafeInteger(value['created_at']) || !Number.isSafeInteger(value['expires_at'])) return null
   if (value['opened_at'] !== null && !Number.isSafeInteger(value['opened_at'])) return null
   return value as unknown as ExpiryUpdate
-}
-
-export async function verifyMessageConfirmation(
-  deliveryInput: unknown,
-  confirmationInput: unknown,
-  serverTime: unknown,
-  kind: ConfirmationKind,
-): Promise<MessageLifecycle | null> {
-  if (!Number.isSafeInteger(serverTime) || (serverTime as number) < 0
-    || typeof confirmationInput !== 'object' || confirmationInput === null
-    || Array.isArray(confirmationInput)) return null
-  const confirmation = confirmationInput as Record<string, unknown>
-  const confirmationKeys = ['created_at', 'delivery_policy', 'expires_at', 'id', 'opened_at', 'status']
-  if (Object.keys(confirmation).sort().join(',') !== confirmationKeys.join(',')
-    || confirmation['status'] !== 'available') return null
-  const delivery = await verifyDeliveredMessage(deliveryInput)
-  if (!delivery || confirmation['id'] !== delivery.id) return null
-  const lifecycle = {
-    delivery_policy: confirmation['delivery_policy'],
-    created_at: confirmation['created_at'],
-    opened_at: confirmation['opened_at'],
-    expires_at: confirmation['expires_at'],
-  } as MessageLifecycle
-  const updated = await verifyDeliveredMessage({ ...(deliveryInput as object), ...lifecycle })
-  if (!updated || updated.created_at !== delivery.created_at
-    || (delivery.opened_at !== null && updated.opened_at !== delivery.opened_at)
-    || (kind === 'opening' && updated.opened_at === null)
-    || (updated.opened_at !== null && updated.opened_at > (serverTime as number))
-    || updated.expires_at <= (serverTime as number)) return null
-  return lifecycle
 }
 
 export function isEnvelopeParticipant(

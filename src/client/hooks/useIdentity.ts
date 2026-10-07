@@ -1,6 +1,6 @@
 import type { Address } from '../../shared/address'
 import { useState, useEffect, useCallback } from 'preact/hooks'
-import { Keypair, generateKeypair, signEIP191 } from '../../shared/keypair'
+import { Keypair, generateKeypair } from '../../shared/keypair'
 import { loadKeypair, saveKeypair, clearKeypair } from '../lib/keypair-storage'
 import { api } from '../lib/api'
 import { getToken, clearToken } from '../lib/session'
@@ -17,9 +17,7 @@ export function useIdentity() {
   }, [])
 
   const registerIdentity = useCallback(async (keypair: Keypair): Promise<void> => {
-    const { challenge, nonce } = await api.getRegChallenge(keypair.address, keypair.publicKey)
-    const signature = await signEIP191(challenge, keypair.privateKey)
-    await api.register(keypair.address, keypair.publicKey, signature, nonce)
+    await api.register(keypair)
   }, [])
 
   const prepareIdentity = useCallback(async (keypair: Keypair): Promise<void> => {

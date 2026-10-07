@@ -1,7 +1,8 @@
 import type { Address } from '../../shared/address'
-import { parseDeliveryLifecycle, type DeliveredMessage, type MessageLifecycle } from '../../shared/message-envelope'
+import { parseDeliveryLifecycle, type MessageLifecycle } from '../../shared/message-envelope'
+import { confirmMessage, type ConfirmationResponse, type OpenedMessage } from '../../shared/protocol-client'
 
-export type DecryptedMessage = DeliveredMessage & { plaintext: string }
+export type DecryptedMessage = OpenedMessage
 
 // Incoming messages move pending → requested → confirmed; a failed request
 // parks them as failed until an explicit retry. Sender copies never open.
@@ -40,36 +41,6 @@ function mergeLifecycle(current: MessageLifecycle, next: MessageLifecycle): Mess
 
 function pickLifecycle({ delivery_policy, created_at, opened_at, expires_at }: MessageLifecycle): MessageLifecycle {
   return { delivery_policy, created_at, opened_at, expires_at }
-}
-
-/** The per-ID results of an opening or state response, or null if malformed. */
-function resultsOf(response: unknown): Record<string, unknown>[] | null {
-  if (typeof response !== 'object' || response === null) return null
-  const serverTime = (response as { server_time?: unknown }).server_time
-  if (!Number.isSafeInteger(serverTime) || (serverTime as number) < 0) return null
-  const results = (response as { results?: unknown }).results
-  if (!Array.isArray(results)) return null
-  return results.filter((result): result is Record<string, unknown> => typeof result === 'object' && result !== null)
-}
-
-function matchesLifecycle(current: MessageLifecycle, next: MessageLifecycle, serverTime: number): boolean {
-  return next.created_at === current.created_at
-    && next.created_at <= serverTime && (next.opened_at === null || next.opened_at <= serverTime)
-    && next.expires_at > serverTime
-    && !(isFinalDeadline(current) && isFinalDeadline(next)
-      && (current.opened_at !== next.opened_at || current.expires_at !== next.expires_at))
-}
-
-/**
- * The single result for `id`: 'unavailable', or its lifecycle validated
- * against the signed lifetime. Missing, duplicated or invalid results are null.
- */
-function readResult(results: Record<string, unknown>[], id: string, ttl: number): MessageLifecycle | 'unavailable' | null {
-  const matches = results.filter(result => result['id'] === id)
-  if (matches.length !== 1) return null
-  const result = matches[0]!
-  if (result['status'] === 'unavailable') return 'unavailable'
-  return result['status'] === 'available' ? parseDeliveryLifecycle(ttl, result) : null
 }
 
 /**
@@ -200,23 +171,21 @@ export class ConversationMessages {
    * confirmed independently, unavailable ones are removed, and missing,
    * duplicate or invalid results fail for retry.
    */
-  confirmOpening(ids: string[], response: unknown, requestStarted = this.monotonic()): void {
-    const results = resultsOf(response) ?? []
-    const serverTime = (response as { server_time?: number } | null)?.server_time ?? NaN
+  confirmOpening(ids: string[], response: ConfirmationResponse | null, requestStarted = this.monotonic()): void {
     for (const id of ids) {
       const entry = this.entries.get(id)
       if (entry?.opening !== 'requested') continue
-      const result = readResult(results, id, entry.message.ttl)
+      const result = response && confirmMessage(entry.message, response, 'opening')
       if (result === 'unavailable') {
         this.remove(id)
         continue
       }
-      if (!result || !isFinalDeadline(result) || !matchesLifecycle(entry.message, result, serverTime)) {
+      if (!response || !result) {
         entry.opening = 'failed'
         continue
       }
       this.applyTo(entry, result)
-      this.observeTime(serverTime, requestStarted)
+      this.observeTime(response.server_time, requestStarted)
       entry.opening = 'confirmed'
     }
   }
@@ -226,19 +195,17 @@ export class ConversationMessages {
    * unavailable IDs are removed. Returns false when any loaded ID lacks
    * exactly one valid result, so the refresh cannot count as authoritative.
    */
-  applyStates(ids: string[], response: unknown, requestStarted = this.monotonic()): boolean {
-    const results = resultsOf(response)
-    if (!results) return false
-    const serverTime = (response as { server_time: number }).server_time
+  applyStates(ids: string[], response: ConfirmationResponse | null, requestStarted = this.monotonic()): boolean {
+    if (!response) return false
     let complete = true
     for (const id of ids) {
       const entry = this.entries.get(id)
       if (!entry) continue
-      const result = readResult(results, id, entry.message.ttl)
+      const result = confirmMessage(entry.message, response, 'availability')
       if (result === 'unavailable') this.remove(id)
-      else if (result && matchesLifecycle(entry.message, result, serverTime)) {
+      else if (result) {
         this.applyTo(entry, result)
-        this.observeTime(serverTime, requestStarted)
+        this.observeTime(response.server_time, requestStarted)
       }
       else complete = false
     }

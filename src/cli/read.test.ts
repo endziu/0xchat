@@ -14,6 +14,7 @@ import { createSignedMessageEnvelope } from '../shared/signed-message-envelope'
 import { canonicalMessageEnvelope, type DeliveredMessage, type OpeningResponse } from '../shared/message-envelope'
 import { signEIP191 } from '../shared/keypair'
 import * as serverConstants from '../server/constants'
+import * as viem from 'viem'
 
 let server: ReturnType<typeof Bun.serve>
 let alice: ChatClient
@@ -274,6 +275,31 @@ test('rejects duplicate or invalid lifecycle confirmations without revealing pla
     }
     expect((await bob.read(alice.identity.address)).messages).toEqual([])
   }
+})
+
+test('rejects a state confirmation from before the message was accepted', async () => {
+  await alice.send(bob.identity.address, 'unopened sender copy')
+  transform = async (request, response) => {
+    if (!isMessageAction(request, 'state')) return response
+    const body: OpeningResponse = await response.json()
+    const result = body.results[0]!
+    if (result.status !== 'available' || result.opened_at !== null) throw new Error('Expected unopened fixture')
+    body.server_time = result.created_at - 1
+    return Response.json(body)
+  }
+  expect((await alice.read(bob.identity.address)).messages).toEqual([])
+  expect(stateBodies).toHaveLength(1)
+})
+
+test('recovers each message signature once across decoding and confirmation', async () => {
+  await alice.send(bob.identity.address, 'first')
+  await alice.send(bob.identity.address, 'second')
+  const recover = spyOn(viem, 'recoverMessageAddress')
+  try {
+    expect((await bob.read(alice.identity.address)).messages).toHaveLength(2)
+    expect(openingBodies).toHaveLength(1)
+    expect(recover).toHaveBeenCalledTimes(2)
+  } finally { recover.mockRestore() }
 })
 
 test('JSON output excludes messages that expire during serialization', async () => {
