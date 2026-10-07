@@ -37,7 +37,7 @@ export class ApiError extends Error {
  */
 export type ApiErrorHandler = (error: ApiError, request: { path: string; token: string | null }) => Error | void
 
-export type OpenedMessage = DeliveredMessage & { plaintext: string }
+export type DecryptedMessage = DeliveredMessage & { plaintext: string }
 
 export interface MessagePage {
   recovery_cursor: string
@@ -65,7 +65,7 @@ export interface ConfirmationResponse {
 }
 
 /** Maps a server error response to an ApiError, keeping a known error code. */
-export async function apiError(response: Response): Promise<ApiError> {
+export async function readApiError(response: Response): Promise<ApiError> {
   const parsed: unknown = await response.json().catch(() => null)
   const body = typeof parsed === 'object' && parsed !== null ? parsed as { error?: unknown; code?: unknown } : {}
   const message = typeof body.error === 'string' && body.error ? body.error : response.statusText || `HTTP ${response.status}`
@@ -95,7 +95,7 @@ export async function sealMessage(
  * misaddressed and undecryptable messages. This is the only signature check:
  * confirmations are checked against the returned message.
  */
-export async function openMessage(identity: Keypair, input: unknown, partner: Address): Promise<OpenedMessage> {
+export async function unsealMessage(identity: Keypair, input: unknown, partner: Address): Promise<DecryptedMessage> {
   const message = await verifyDeliveredMessage(input)
   if (!message || !isEnvelopeParticipant(message, identity.address, partner)) {
     throw new Error('Rejected unauthenticated or misaddressed message')
@@ -187,7 +187,7 @@ export class ProtocolClient {
       ...(keepalive ? { keepalive } : {}),
     })
     if (!response.ok) {
-      const error = await apiError(response)
+      const error = await readApiError(response)
       throw this.onError(error, { path, token }) ?? error
     }
     return response.status === 204 ? undefined as T : await response.json() as T
@@ -225,10 +225,10 @@ export class ProtocolClient {
     return token
   }
 
-  /** Sends a sealed message; returns the server's acknowledgement, opened and verified. */
-  async send(identity: Keypair, envelope: MessageEnvelope, token: string): Promise<OpenedMessage> {
+  /** Sends a sealed message; returns the server's acknowledgement, verified and decrypted. */
+  async send(identity: Keypair, envelope: MessageEnvelope, token: string): Promise<DecryptedMessage> {
     const ack = await this.request<unknown>('/api/messages', { method: 'POST', body: envelope, token })
-    const message = await openMessage(identity, ack, envelope.recipient)
+    const message = await unsealMessage(identity, ack, envelope.recipient)
     if (message.id !== envelope.id) throw new Error('Invalid message acknowledgement')
     return message
   }
@@ -237,7 +237,8 @@ export class ProtocolClient {
     const query = new URLSearchParams()
     if (limit !== undefined) query.set('limit', String(limit))
     if (before !== undefined) query.set('before_seq', String(before))
-    return this.request(`/api/messages/${partner}${query.size ? `?${query}` : ''}`, { token })
+    const search = query.toString()
+    return this.request(`/api/messages/${partner}${search ? `?${search}` : ''}`, { token })
   }
 
   recover(partner: Address, token: string, cursor: { after: string } | { cursor: string }): Promise<RecoveryPage> {

@@ -17,10 +17,10 @@ import { createSignedMessageEnvelope } from './signed-message-envelope'
 import {
   ApiError,
   confirmMessage,
-  openMessage,
   parseConfirmationResponse,
   ProtocolClient,
   sealMessage,
+  unsealMessage,
   type ApiErrorHandler,
 } from './protocol-client'
 
@@ -177,10 +177,10 @@ describe('messages', () => {
     await expect(sealMessage(alice, bob.address, carol.publicKey, 'hi', 300)).rejects.toThrow('does not match address')
   })
 
-  test('each participant opens its own copy', async () => {
+  test('each participant decrypts its own copy', async () => {
     const delivered = deliver(await sealMessage(alice, bob.address, bob.publicKey, 'hello', 300))
-    expect((await openMessage(alice, delivered, bob.address)).plaintext).toBe('hello')
-    expect((await openMessage(bob, delivered, alice.address)).plaintext).toBe('hello')
+    expect((await unsealMessage(alice, delivered, bob.address)).plaintext).toBe('hello')
+    expect((await unsealMessage(bob, delivered, alice.address)).plaintext).toBe('hello')
   })
 
   test('a forged, misaddressed or undecryptable message is rejected', async () => {
@@ -194,9 +194,9 @@ describe('messages', () => {
       [bob, deliver(toCarol), alice.address],
       [carol, deliver(envelope), alice.address],
     ] as const) {
-      await expect(openMessage(identity, input, partner)).rejects.toThrow('Rejected unauthenticated or misaddressed message')
+      await expect(unsealMessage(identity, input, partner)).rejects.toThrow('Rejected unauthenticated or misaddressed message')
     }
-    await expect(openMessage(bob, deliver(await resign(envelope, { ct_recipient: `0x${'00'.repeat(32)}` })), alice.address))
+    await expect(unsealMessage(bob, deliver(await resign(envelope, { ct_recipient: `0x${'00'.repeat(32)}` })), alice.address))
       .rejects.toThrow('Rejected undecryptable message')
   })
 
@@ -204,11 +204,11 @@ describe('messages', () => {
     const envelope = await sealMessage(alice, bob.address, bob.publicKey, 'hello', 300)
     const brokenSenderCopy = deliver(await resign(envelope, { ct_sender: `0x${'00'.repeat(32)}` }))
     const brokenRecipientCopy = deliver(await resign(envelope, { ct_recipient: `0x${'00'.repeat(32)}` }))
-    expect((await openMessage(bob, brokenSenderCopy, alice.address)).plaintext).toBe('hello')
-    expect((await openMessage(alice, brokenRecipientCopy, bob.address)).plaintext).toBe('hello')
+    expect((await unsealMessage(bob, brokenSenderCopy, alice.address)).plaintext).toBe('hello')
+    expect((await unsealMessage(alice, brokenRecipientCopy, bob.address)).plaintext).toBe('hello')
   })
 
-  test('sending opens the acknowledgement of exactly the sealed message', async () => {
+  test('sending verifies the acknowledgement of exactly the sealed message', async () => {
     const envelope = await sealMessage(alice, bob.address, bob.publicKey, 'hello', 300)
     const other = await sealMessage(alice, bob.address, bob.publicKey, 'other', 300)
     const { api, requests } = client(() => Response.json(deliver(envelope), { status: 201 }))

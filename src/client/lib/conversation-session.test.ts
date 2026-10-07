@@ -1,8 +1,7 @@
 import { requireAddress } from '../../shared/address'
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { ConversationSession, type ConversationProtocol, type SessionClock } from './conversation-session'
-import type { DecryptedMessage } from './conversation-messages'
-import type { ConfirmationResponse, MessagePage, RecoveryPage } from '../../shared/protocol-client'
+import type { ConfirmationResponse, DecryptedMessage, MessagePage, RecoveryPage } from '../../shared/protocol-client'
 import { isEnvelopeParticipant, UNOPENED_RETENTION_MS, type DeliveredMessage } from '../../shared/message-envelope'
 
 // The session runs against an in-memory server and a manual clock: every

@@ -4,10 +4,9 @@ import { api } from '../lib/api'
 import type { ConversationRefreshResult } from './useConversations'
 import type { LiveConnection } from './useSSE'
 import { Keypair } from '../../shared/keypair'
-import { openMessage, sealMessage } from '../../shared/protocol-client'
+import { sealMessage, unsealMessage, type DecryptedMessage } from '../../shared/protocol-client'
 import { errorMessage } from '../lib/errors'
 import { markConversationSeen } from '../lib/contacts'
-import type { DecryptedMessage } from '../lib/conversation-messages'
 import { ConversationSession, type ConversationProtocol, type SessionSnapshot } from '../lib/conversation-session'
 import type { ConnectionEpoch } from '../lib/sse-connection'
 import { isWindowAttentive, watchWindowAttention } from '../lib/window-attention'
@@ -46,7 +45,7 @@ export function decryptFor(identity: Keypair, partner: Address) {
     const raw = input as { sender?: unknown; recipient?: unknown }
     if (raw.sender !== partner && raw.recipient !== partner) return null
     try {
-      return await openMessage(identity, input, partner)
+      return await unsealMessage(identity, input, partner)
     } catch (err) {
       console.error('Rejected message envelope:', err)
       return null

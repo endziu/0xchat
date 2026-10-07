@@ -1,8 +1,8 @@
 import { requireAddress } from '../../shared/address'
 import { afterEach, expect, spyOn, test } from 'bun:test'
-import { ConversationMessages, type DecryptedMessage } from './conversation-messages'
+import { ConversationMessages } from './conversation-messages'
 import { UNOPENED_RETENTION_MS, type MessageLifecycle } from '../../shared/message-envelope'
-import { parseConfirmationResponse } from '../../shared/protocol-client'
+import { parseConfirmationResponse, type DecryptedMessage } from '../../shared/protocol-client'
 
 // This store receives envelopes only after signature verification and decryption.
 const message: DecryptedMessage = {

@@ -1,8 +1,19 @@
 import type { Address } from '../shared/address'
 import type { Keypair } from '../shared/keypair'
 import { CLIENT_UPDATE_REQUIRED_CODE } from '../shared/api-error'
-import { parseDeliveryLifecycle, type ExpiryUpdate, type MessageLifecycle } from '../shared/message-envelope'
-import { apiError, ApiError, confirmMessage, openMessage, ProtocolClient, sealMessage, type ConfirmationResponse, type Conversation, type OpenedMessage } from '../shared/protocol-client'
+import { parseDeliveryLifecycle, type ConfirmationKind, type ExpiryUpdate, type MessageLifecycle } from '../shared/message-envelope'
+import { ApiError, confirmMessage, ProtocolClient, readApiError, sealMessage, unsealMessage, type ConfirmationResponse, type Conversation, type DecryptedMessage } from '../shared/protocol-client'
+
+interface Confirmation {
+  kind: ConfirmationKind
+  operation: string
+  request(api: ProtocolClient, partner: Address, ids: string[], token: string): Promise<ConfirmationResponse | null>
+}
+
+const CONFIRMATIONS: Record<'open' | 'state', Confirmation> = {
+  open: { kind: 'opening', operation: 'opening', request: (api, partner, ids, token) => api.open(partner, ids, token) },
+  state: { kind: 'availability', operation: 'availability check', request: (api, partner, ids, token) => api.states(partner, ids, token) },
+}
 
 const availabilityDeadline = Symbol('availabilityDeadline')
 export interface PlainMessage extends MessageLifecycle {
@@ -165,10 +176,10 @@ export class ChatClient {
   }
 
   async decode(input: unknown, partner: Address): Promise<PlainMessage> {
-    return this.plain(await openMessage(this.identity, input, partner))
+    return this.plain(await unsealMessage(this.identity, input, partner))
   }
 
-  private plain(message: OpenedMessage): PlainMessage {
+  private plain(message: DecryptedMessage): PlainMessage {
     return { id: message.id, sender: message.sender, recipient: message.recipient, ttl: message.ttl,
       delivery_policy: message.delivery_policy, created_at: message.created_at, opened_at: message.opened_at,
       expires_at: message.expires_at, plaintext: message.plaintext,
@@ -186,22 +197,20 @@ export class ChatClient {
   ): Promise<Map<string, MessageLifecycle>> {
     const confirmed = new Map<string, MessageLifecycle>()
     if (!messages.length) return confirmed
+    const { kind, operation, request } = CONFIRMATIONS[action]
     let response: ConfirmationResponse | null
     const requestStarted = performance.now()
     const ids = messages.map(message => message.id)
     try {
-      response = await this.authenticated(token => action === 'open'
-        ? this.api.open(partner, ids, token)
-        : this.api.states(partner, ids, token))
+      response = await this.authenticated(token => request(this.api, partner, ids, token))
     } catch (error) {
       // A stopped client reports why it stopped, not a retry hint.
       if (this.signal.aborted) throw error
-      const operation = action === 'open' ? 'opening' : 'availability check'
       throw new Error(`Message ${operation} failed; retry read to confirm availability`)
     }
     if (!response) throw new Error('Invalid message confirmation response')
     for (const message of messages) {
-      const lifecycle = confirmMessage(message, response, action === 'open' ? 'opening' : 'availability')
+      const lifecycle = confirmMessage(message, response, kind)
       if (!lifecycle || lifecycle === 'unavailable') continue
       confirmed.set(message.id, lifecycle)
       message[availabilityDeadline] = requestStarted + lifecycle.expires_at - response.server_time
@@ -267,7 +276,7 @@ export class ChatClient {
     } finally { clearTimeout(connectTimer) }
     if (!response.ok || !response.body) {
       // Read only to abort this client if the server requires an update.
-      if (!response.ok) this.stopIfOutdated(await apiError(response))
+      if (!response.ok) this.stopIfOutdated(await readApiError(response))
       controller.abort()
       throw new Error(`Live connection failed: HTTP ${response.status}`)
     }

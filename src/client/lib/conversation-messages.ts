@@ -1,8 +1,6 @@
 import type { Address } from '../../shared/address'
 import { parseDeliveryLifecycle, type MessageLifecycle } from '../../shared/message-envelope'
-import { confirmMessage, type ConfirmationResponse, type OpenedMessage } from '../../shared/protocol-client'
-
-export type DecryptedMessage = OpenedMessage
+import { confirmMessage, type ConfirmationResponse, type DecryptedMessage } from '../../shared/protocol-client'
 
 // Incoming messages move pending → requested → confirmed; a failed request
 // parks them as failed until an explicit retry. Sender copies never open.
