@@ -11,8 +11,7 @@
     "build": "vite build",
     "icons": "bun run scripts/gen-icons.ts",
     "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
-    "start": "bun clear:db; bun run build; DEBUG=1 bun run server.ts",
-    "start:prod": "bun run server.ts",
+    "start": "bun run server.ts",
     "test": "bun clear:all && bun run build && bun test",
     "typecheck": "tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.cli.json",
     "lint": "oxlint src server.ts"

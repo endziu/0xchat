@@ -21,11 +21,11 @@ use another one. A fresh clone or worktree also needs `bun install` and a
 ```bash
 bun run build
 mkdir -p .scratch/run
-(DEBUG=1 bun run start:prod > .scratch/run/server.log 2>&1 &)
+(DEBUG=1 bun run start > .scratch/run/server.log 2>&1 &)
 timeout 30 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 0.5; done'
 ```
 
-`start:prod` serves `dist/`, so run `bun run build` again after client
+`start` serves `dist/`, so run `bun run build` again after client
 changes. Stop the server with:
 
 ```bash

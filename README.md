@@ -101,19 +101,14 @@ Build the frontend into `dist/`:
 bun run build
 ```
 
-Run an already-built production server:
-
-```sh
-bun run start:prod
-```
-
-For a clean local demonstration—delete the database, rebuild, and start with debug logs:
+Run the server against an already-built `dist/`:
 
 ```sh
 bun run start
 ```
 
-`start` is destructive to the local database. Use `start:prod` when existing data must be preserved.
+Add `DEBUG=1` for verbose logs. For a clean local demonstration, run
+`bun run clear:db` and `bun run build` first.
 
 ## Checks
 
@@ -140,8 +135,7 @@ bun run dev          # start Vite + backend with debug logs
 bun run build        # build frontend SPA into dist/
 bun run icons        # regenerate public icons and favicon
 bun run stats:dau    # read historical daily active identity totals from local chat.db (JSON)
-bun run start        # clear db, build, start server with debug logs
-bun run start:prod   # start server using an existing dist/
+bun run start        # start server using an existing dist/
 bun run clear:db     # delete chat.db and WAL/SHM files only
 bun run clear:dist   # delete dist/ only
 bun run clear:all    # delete database files and dist/
