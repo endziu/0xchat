@@ -89,7 +89,7 @@ export function Layout({
               <Settings size={14} />
             </button>
             {/* Open separately so help does not replace the installed app. */}
-            <a href="/docs/" target="_blank" rel="noopener" title="Help & docs" aria-label="Help & docs" className="header-action inline-flex items-center justify-center border border-neutral-800 px-2 py-1 hover:bg-neutral-950 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent pointer-coarse:min-h-11">
+            <a href="/docs/" target="_blank" rel="noopener" title="Help & docs" aria-label="Help & docs" className="header-action inline-flex items-center justify-center border border-neutral-800 max-sm:pointer-coarse:border-0 px-2 py-1 hover:bg-neutral-950 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent pointer-coarse:min-h-11">
               <CircleHelp size={14} />
             </a>
           </div>
