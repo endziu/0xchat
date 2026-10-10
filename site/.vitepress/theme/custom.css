@@ -20,3 +20,15 @@
 .VPNavBarTitle .title {
   font-family: var(--vp-font-family-mono);
 }
+
+.app-link {
+  margin-left: 16px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--vp-c-brand-1);
+}
+
+.app-link:hover {
+  color: var(--vp-c-brand-2);
+}

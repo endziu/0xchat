@@ -199,7 +199,10 @@ describe('public routes', () => {
   test('GET /docs/ returns the docs home, not the app shell', async () => {
     const res = await fetch(baseUrl + '/docs/');
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('/docs/assets/');
+    const html = await res.text();
+    expect(html).toContain('/docs/assets/');
+    // The link back to the app must escape the docs base and client router.
+    expect(html).toContain('href="/chat" target="_self"');
   });
 
   test('unknown docs pages return the docs 404, not the app shell', async () => {
