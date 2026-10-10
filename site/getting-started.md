@@ -1,44 +1,45 @@
 # Getting started
 
-## Your identity
+## Open the app
 
-The first time you open 0xChat, it creates a new private key in your browser and registers its
-public key with the server so others can message you. Your **address** (`0x…`) is derived from
-that key and is how people reach you.
+The first time you open 0xChat, it creates your account automatically. In the app, this is called
+your **identity**. Your **address** is a string of letters and numbers starting with `0x` that
+people use to contact you.
 
-There is nothing else to set up. Before you rely on the identity, though,
-[export your key](./your-key.md#back-up-your-key): if this browser's storage is cleared, the
-identity is gone for good.
+Want to keep this account? [Back up your key](./your-key.md#back-up-your-key).
+You can also use it as a throw-away account.
 
 ## Share your address
 
 Use the buttons at the top of the app:
 
-- **Copy address** copies your `0x…` address.
-- **Copy conversation link** copies a link that opens a conversation with you directly.
-- **My code** shows a QR code someone can scan.
+- **Copy address** copies your address so you can share it.
+- **Copy conversation link** copies a link that someone can open to start a conversation with you.
+- **Show QR code** displays a code someone can scan with their camera.
 
 Your address and QR code are also in **Settings → Profile**.
 
 ## Start a conversation
 
-1. Click **New conversation**.
+1. Select **New conversation**.
 2. Paste the other person's address, or use **Scan code** to scan their QR code with your camera.
-3. Optionally give them a name, then send your first message.
+3. Give the conversation a name if you like, then send your first message.
 
-If someone sent you a conversation link, just open it: it takes you straight to the conversation.
+If someone sent you a conversation link, open it to go straight to the conversation.
 
-The other person must have opened 0xChat at least once, so their identity is registered. If not,
-0xChat says the address is not registered yet.
+The other person must have opened 0xChat at least once before you can message them. If you see
+*Recipient not registered*, ask them to open the app and then try again.
 
-## Names are private
+## Names are just for you
 
-The name you give a conversation partner is a **label stored only in your browser**. They never
-see it, and the server never receives it. 0xChat has no usernames or display names.
+The name you give a conversation is saved only in your browser. The other person cannot see it,
+and it is not shared with the server. People contact you using your address, not a username.
 
-## Removing vs clearing a conversation
+## Remove or clear a conversation
 
-- **Remove** takes the conversation off your list and forgets its name. It does not delete any
-  messages; if a new message arrives, the conversation comes back, unnamed.
-- **Clear conversation** permanently deletes every message in it **for both of you**, right
-  away. The conversation itself stays.
+These actions do different things:
+
+- **Remove** takes the conversation off your list and forgets the name you gave it. It does not
+  delete any messages. If a new message arrives, the conversation comes back without a name.
+- **Clear conversation** immediately and permanently deletes all messages in the conversation
+  **for both of you**. The conversation stays in your list.

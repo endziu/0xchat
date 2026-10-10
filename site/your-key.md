@@ -1,49 +1,46 @@
-# Your key
-
-Your private key **is** your account. Whoever has it can read your messages and send as you, and
-without it you can never use that identity again. There is no password reset and no recovery.
+# Your key and account
 
 ## Back up your key
 
-Open **Settings → Backup → Export private key**, reveal or copy the key and store it somewhere
-safe, such as a password manager.
+1. Open **Settings → Backup**.
+2. Under **Export private key**, select the copy button. Use the eye button if you want to see
+   the key first.
+3. Save the key somewhere safe, such as a password manager.
 
-Back up before:
-
-- clearing site data or browser history;
-- using a private/incognito window (its storage is wiped when it closes);
-- uninstalling the app or switching browsers.
-
-::: danger Never use a valuable wallet key
-0xChat keeps your key in browser storage. Treat it as a burner. Do not import a key from a wallet
-that holds funds, NFTs or anything else of value.
-:::
+If you want to keep this account, make a backup before clearing your browser's site data, uninstalling the app or switching
+browsers. If you use a private or incognito window, back up the key before closing it: the
+browser deletes that window's saved data when the private session ends.
 
 ## Import a key
 
-Paste a key into **Settings → Backup → Import private key**. 0xChat shows the address it belongs
-to; click **Import**, then **Confirm import**.
+Importing a saved key lets you return to an account or use it on another device.
 
-Importing **replaces** the identity in this browser. Export the current key first if you want to
-keep it. Messages for an identity stay on the server until they expire, so importing a key back
-later shows whatever has not expired yet.
+1. Open **Settings → Backup → Import private key**.
+2. Paste your saved key and select the import button beside the field.
+3. Check the address shown, then select **Import**, followed by **Confirm import**.
+
+Importing **switches the account in this browser**. Back up the current key first if you want
+to use that account again. When you switch back, any messages that have not expired or been
+deleted will still be available. A key backup does not save copies of your messages.
 
 ## Use the same identity on several devices
 
-Import the same key on each device. Messages arrive on all of them, and once a message is opened
-on one device its deadline applies everywhere. Notifications are enabled separately on each
-browser.
+Import the same key on each device to use the same address and receive messages on all of them.
+Opening a message on one device starts its timer everywhere. Turn on notifications separately
+in each browser where you want them.
 
 ## Burn your identity
 
-**Settings → Danger zone → Burn identity…** permanently deletes your identity from this browser,
-removes your registration from the server and deletes your messages. It cannot be undone.
+In 0xChat, **burning your identity** means deleting your account and its messages.
 
-If you kept a backup and import that key again later, you get the same address back, but none of
-the deleted messages.
+Open **Settings → Danger zone → Burn identity…**, then select **Burn** to confirm. This removes
+the account from this browser and the server, and permanently deletes its messages.
 
-## Inactive identities
+If you kept a backup of the key, importing it later lets you use the same address again.
+It does **not** bring back deleted messages.
 
-The server forgets a registration after **30 days** with no activity (no new session and no
-messages sent or received). Until you open the app again, people cannot message you and see
-*Recipient not registered*. Opening the app with your key registers you again.
+## If you haven't used 0xChat for a while
+
+After **30 days** without opening the app or sending or receiving messages, your address
+can no longer receive messages. People trying to contact you will see *Recipient not registered*.
+Open the app with your existing key to make your address available again.

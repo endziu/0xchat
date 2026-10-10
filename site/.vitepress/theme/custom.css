@@ -32,3 +32,43 @@
 .app-link:hover {
   color: var(--vp-c-brand-2);
 }
+
+.vp-doc .wallet-key-warning {
+  margin: 24px 0;
+  padding: 20px 24px;
+  border: 2px solid #fbbf24;
+  border-radius: 8px;
+  background: #2a1d05;
+  color: #fef3c7;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.vp-doc .wallet-key-warning p {
+  margin: 12px 0 0;
+}
+
+.vp-doc .wallet-key-warning .wallet-key-warning-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: #fbbf24;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.wallet-key-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fbbf24;
+  color: #2a1d05;
+  font-size: 24px;
+  font-weight: 800;
+}

@@ -1,42 +1,53 @@
 # Privacy and security
 
-## What is protected
+## What stays private
 
-- **Message contents.** Each message is encrypted in your browser to the recipient's public key
-  and signed with your key. The server stores and forwards only ciphertext it cannot read, and
-  the recipient's app checks the signature before showing anything.
-- **Names you give conversations.** They stay in your browser.
-- **Notifications.** Push alerts carry no message content.
+- **Message contents.** Your browser encrypts each message before sending it, so the server
+  that delivers it cannot read it. The recipient's app also checks that the message was signed
+  with the sender's private key. This confirms which address sent it, not who owns that address.
+- **Names you give conversations.** These are saved only in your browser.
+- **Message text in notifications.** Alerts tell you a message arrived without including its
+  contents.
 
 ## What the server can see
 
-The server has to route messages, so it knows:
+To deliver messages and delete them on time, the server can see:
 
-- which addresses talk to each other, and when;
+- which addresses exchange messages, and when;
 - roughly how large each message is;
-- when a message was opened, in order to delete it on time;
-- your IP address while connected, used for rate limiting;
-- your browser's push endpoint, if you enabled notifications.
+- when a message is opened;
+- your IP address while connected, which it uses to limit spam and excessive requests;
+- the delivery address your browser uses for notifications, if you turn them on.
 
-0xChat is pseudonymous, not anonymous: anyone who can link your address to you can link your
-conversations to you.
+You do not have to give 0xChat your real name, but that does not make you completely anonymous.
+If someone connects your chat address to you, activity associated with that address may also
+be linked to you.
 
 ## What is deleted, and when
 
-- Messages: when their lifetime ends after opening, 24 hours after sending if never opened, or
-  immediately when either side clears the conversation. See [Messages and lifetimes](./messages.md).
-- Registrations: after 30 days without activity.
-- Everything for your identity: when you [burn it](./your-key.md#burn-your-identity).
+- **Messages** are deleted when their timer runs out, 24 hours after sending if never opened,
+  or immediately when either person clears the conversation.
+  See [Disappearing messages](./messages.md).
+- **Inactive addresses** are removed from the server after 30 days without activity. Opening
+  the app with your key makes your address available again.
+- **Your account and its messages** are removed when you
+  [burn your identity](./your-key.md#burn-your-identity). A saved key lets you reuse the address,
+  but it cannot restore deleted messages.
 
 ## Usage statistics
 
-The server counts how many distinct identities were active each day. Each day uses a fresh random
-key to deduplicate, and the per-identity data is thrown away the next day; only the daily totals
-are kept. No message contents, IP addresses or third-party analytics are involved.
+The server counts how many different accounts use 0xChat each day. To avoid counting an account
+more than once, it uses temporary codes that change daily. After the day ends, those codes are
+deleted and only the daily total is kept.
 
-## Your side of the bargain
+These statistics do not include message contents or IP addresses, and do not use third-party
+analytics services.
 
-- Anyone who gets your private key can read messages addressed to you and impersonate you. Keep
-  the backup safe and never reuse a wallet key.
-- Expiring messages cannot stop a recipient from copying or photographing them.
-- Your device's own security (screen lock, malware, shared computers) still applies.
+## How to protect your account
+
+- Keep your private key and its backup secret. Anyone with the key can read your available
+  messages and send messages as you. Never reuse a key from a crypto wallet that holds anything
+  of value.
+- Remember that disappearing messages can still be copied or photographed.
+- Lock your device and take care on shared computers. 0xChat cannot protect your messages from
+  someone who has access to your unlocked device or from harmful software running on it.

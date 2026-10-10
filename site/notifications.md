@@ -1,32 +1,31 @@
 # Notifications
 
-0xChat can wake your device when a new message arrives, even when the app is closed.
+0xChat can notify you when a new message arrives, even when the app is closed.
 
-## Turn them on
+## Turn on notifications
 
-Open **Settings → Notifications** and switch on **Notify me of new messages**, then allow
-notifications when your browser asks. This is a per-browser choice: turn it on separately on each
-device.
+1. Open **Settings → Notifications**.
+2. Turn on **Notify me of new messages**.
+3. Allow notifications when your browser asks.
 
-On iPhone and iPad, notifications only work once 0xChat is [installed](./install.md) to your home
-screen.
+Turn them on separately in each browser where you want alerts. On iPhone and iPad, first
+[add 0xChat to your home screen](./install.md), then open the installed app.
 
-## What a notification contains
+## What an alert shows
 
-Nothing about the message. A notification only says that something new arrived; the message
-itself is fetched and decrypted when you open the app.
+An alert tells you that a new message has arrived. It does not include the message itself.
+Open 0xChat to read it.
 
-You get one alert per message, and only when you don't have 0xChat open and focused somewhere.
-If your device is offline, the alert can wait for up to 24 hours, the same time an unopened
-message is kept.
+0xChat sends an alert for each new message when you are not actively using the app on any
+device. If your device is offline, an alert may wait for up to 24 hours, which is how long an
+unopened message is kept. Alerts are not guaranteed to arrive.
 
 ## Troubleshooting
 
-- **The switch is missing and the app says notifications are blocked.** You declined the
-  permission earlier. Open the site's settings in your browser (usually the icon beside the
-  address bar), allow Notifications, then reload.
-- **Notifications stopped arriving.** Turn the switch off and on again. This re-registers your
-  browser with the push service.
-- **No Notifications section at all.** Your browser does not support web push.
-- **You switched identity.** Notifications belong to the identity that enabled them. Turn them on
-  again for the new identity.
+- **Notifications are blocked and there is no switch.** Open the site's settings in your
+  browser, usually through the icon beside the address bar. Allow notifications, then reload
+  0xChat.
+- **Notifications stopped arriving.** Try turning them off and on again in 0xChat's settings.
+- **There is no Notifications section.** Your browser does not support the notifications
+  0xChat uses. On iPhone or iPad, make sure you opened the installed app.
+- **You switched accounts.** Turn on notifications again for the account you are now using.

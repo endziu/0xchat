@@ -1,42 +1,46 @@
-# FAQ
+# Frequently asked questions
 
-## I lost my key. Can I recover my identity?
+## I lost my key. Can I get my account back?
 
-No. Nobody, including the server, has a copy of your private key. Start with a new identity and
-share the new address. Next time, [back up your key](./your-key.md#back-up-your-key).
+Only if you have another copy, such as a backup or a browser where you still use the account.
+The server does not have your private key and cannot recover it for you.
 
-## Sending says "Recipient not registered"
+If you have no copy left, start with a new account and share the new address. To keep access
+next time, [back up your key](./your-key.md#back-up-your-key).
 
-The address has never opened 0xChat, or its owner has been inactive for 30 days, or they burned
-their identity. They need to open the app (with their key) before you can message them.
+## Why do I see "Recipient not registered"?
 
-## Sending says "Too many requests"
+The other person's address is not currently available to receive messages. They may never have
+opened 0xChat, may have been inactive for 30 days, or may have deleted their account.
+Ask them to open the app with their key, then try sending again.
 
-You hit a rate limit that protects the server from spam. Wait a minute and try again.
+## Why do I see "Too many requests"?
 
-## A message I sent disappeared before the other person read it
+0xChat limits how many actions you can take in a short time to help prevent spam. Wait a minute,
+then try again.
 
-Unopened messages are deleted 24 hours after sending. If they opened it, its lifetime started then
-and it was deleted when the lifetime ran out. Clearing the conversation from either side also
-deletes everything.
+## Why did my message disappear before the other person read it?
 
-## Messages vanished when I switched tabs
+Unopened messages are deleted 24 hours after sending. A message's timer can also start before
+the person has read the text: loading it in the conversation they are viewing counts as
+opening it. See [what counts as opened](./messages.md#what-counts-as-opened).
 
-Messages whose deadline could still change are hidden while the app is in the background or
-disconnected, and come back when you return. See
-[why messages are sometimes hidden](./messages.md#why-messages-are-sometimes-hidden).
+Clearing the conversation from either side deletes its messages too.
 
 ## Can I use 0xChat on my phone and my computer?
 
-Yes. Import the same key on both. See
-[Use the same identity on several devices](./your-key.md#use-the-same-identity-on-several-devices).
+Yes. Import the same private key on both to use the same account. See
+[how to use your account on several devices](./your-key.md#use-the-same-identity-on-several-devices).
 
-## Does 0xChat cost anything, or touch the blockchain?
+## Do I need cryptocurrency or a wallet?
 
-No. There are no tokens, gas or transactions. 0xChat only borrows Ethereum's key and address
-format.
+No. You do not need to buy cryptocurrency, connect a wallet or pay transaction fees to chat.
+0xChat uses the same kind of addresses as Ethereum, but your chats are not published to a
+blockchain.
 
 ## Can I change my address?
 
-Your address comes from your key, so a new address means a new identity. You can create one by
-burning the current identity, or by importing a different key.
+A new address means a new account. You can
+[burn your current identity](./your-key.md#burn-your-identity) to start fresh, but this
+permanently deletes its messages. You can also switch accounts by importing a different
+0xChat key. Back up your current key first if you want to use that account again.

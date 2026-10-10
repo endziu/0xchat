@@ -8,7 +8,7 @@ import { defineConfig } from 'vitepress'
 // test checks the built pages.
 export default defineConfig({
   title: '0xChat Docs',
-  description: 'How to use 0xChat: burner identities, expiring messages, backups and privacy.',
+  description: 'How to use 0xChat: start chatting, back up your account and manage disappearing messages.',
   base: '/docs/',
   outDir: '../dist/docs',
   cleanUrls: false,
@@ -29,8 +29,8 @@ export default defineConfig({
         items: [
           { text: 'What is 0xChat?', link: '/' },
           { text: 'Getting started', link: '/getting-started' },
-          { text: 'Messages and lifetimes', link: '/messages' },
-          { text: 'Your key', link: '/your-key' },
+          { text: 'Disappearing messages', link: '/messages' },
+          { text: 'Your key and account', link: '/your-key' },
           { text: 'Notifications', link: '/notifications' },
           { text: 'Install the app', link: '/install' },
         ],

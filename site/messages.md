@@ -1,53 +1,35 @@
-# Messages and lifetimes
+# Disappearing messages
 
-Every message in 0xChat is deleted on a timer. The timer the sender chooses only starts when the
-recipient actually opens the message.
+Every message in 0xChat is deleted automatically. You choose how long each message you send
+stays after the other person opens it. The app calls this its **message lifetime**.
 
-## Choosing a lifetime
+## Choose a timer
 
-Pick a lifetime in the composer before sending: **5s, 10s, 30s, 1m, 5m, 30m, 1h, 6h or 24h**.
-
-In **Settings → Message lifetime** you can set a default, or choose **Remember last** to reuse
-whatever you picked most recently.
+Choose a timer beside the message box before sending. Set your default in
+**Settings → Message lifetime**, or use **Remember last** to keep your most recent choice.
 
 ## When a message disappears
 
 | Situation | What happens |
 |---|---|
-| Recipient opens the message | It is deleted when its lifetime ends, counted from the moment it was opened. |
-| Recipient never opens it | It is deleted 24 hours after it was sent. |
-| Either person clears the conversation | Every message in it is deleted immediately, for both of you. |
+| The other person opens your message | Its timer starts. When the time runs out, the message is deleted for both of you. |
+| The other person never opens it | The message is deleted 24 hours after you sent it. |
+| Either of you clears the conversation | All messages in the conversation are deleted immediately for both of you. |
 
-Once a lifetime has started it cannot be paused, reset or extended, and an expired message cannot
-be brought back. The deadline is the same on every device.
+Once a timer starts, it keeps running even if you leave the conversation or close the app.
+It cannot be paused, reset or extended. The message disappears at the same time on every device,
+and deleted messages cannot be recovered.
 
 ## What counts as "opened"
 
-A message is opened when it has loaded in a conversation you have **open in a visible, focused
-window**. You do not need to scroll to each message.
+A message counts as opened when it has loaded in the conversation you are viewing and the
+0xChat window is active. **You do not need to scroll to each message or tap it.**
 
-These do **not** open a message:
+If a new message arrives while you are viewing that conversation, its timer starts immediately.
+Loading older messages also starts their timers if they have not been opened before.
 
-- the app sitting in a background tab, a minimized window or a locked phone;
+These do **not** start a message's timer:
+
+- leaving the app in a background tab, a minimized window or on a locked phone;
 - seeing the conversation in your conversation list;
-- older history you have not loaded yet (loading older messages opens them).
-
-If a message arrives while you already have its conversation open and focused, its lifetime starts
-immediately.
-
-## Why messages are sometimes hidden
-
-0xChat only shows a newly opened message once the server has confirmed its deadline, so every
-device agrees on when it disappears. If that confirmation fails you will see an error you can
-retry.
-
-While the app is disconnected, or the window loses focus, messages whose deadline could still
-change are hidden until the app reconnects and refreshes. Messages whose deadline is already fixed
-stay visible until they expire. This also applies to your own sent messages that the recipient has
-not opened yet.
-
-## What a lifetime does not protect against
-
-A lifetime deletes the message from 0xChat. It cannot stop the other person from taking a
-screenshot, copying the text or photographing their screen. Only send what you are comfortable
-with the recipient keeping.
+- leaving older messages unloaded.
