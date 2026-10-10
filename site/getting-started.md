@@ -23,12 +23,13 @@ Your address and QR code are also in **Settings → Profile**.
 ## Start a conversation
 
 1. Click **New conversation**.
-2. Paste the other person's address or conversation link, or use **Scan code** to scan their QR
-   code with your camera.
+2. Paste the other person's address, or use **Scan code** to scan their QR code with your camera.
 3. Optionally give them a name, then send your first message.
 
-The other person must have opened 0xChat at least once (so their identity is registered). If not,
-sending fails with *Recipient not registered*.
+If someone sent you a conversation link, just open it: it takes you straight to the conversation.
+
+The other person must have opened 0xChat at least once, so their identity is registered. If not,
+0xChat says the address is not registered yet.
 
 ## Names are private
 

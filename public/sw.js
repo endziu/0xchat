@@ -90,7 +90,9 @@ self.addEventListener('notificationclick', (event) => {
       const usableClients = clients.filter((client) => {
         if (typeof client.focus !== 'function') return false
         try {
-          return new URL(client.url).origin === self.location.origin
+          const url = new URL(client.url)
+          // A docs tab cannot show messages, so never reuse one for an alert.
+          return url.origin === self.location.origin && url.pathname !== '/docs' && !url.pathname.startsWith('/docs/')
         } catch {
           return false
         }

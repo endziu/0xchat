@@ -21,7 +21,6 @@ export default defineConfig({
     .replace(/<script id="check-mac-os">.*?<\/script>/, ''),
   themeConfig: {
     siteTitle: '0xChat Docs',
-    nav: [{ text: 'Open 0xChat', link: '/chat', target: '_self' }],
     search: { provider: 'local' },
     notFound: { quote: "That page doesn't exist.", linkText: 'Docs home' },
     sidebar: [
