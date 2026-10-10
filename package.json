@@ -1,6 +1,6 @@
 {
   "name": "0xchat",
-  "version": "0.5.2",
+  "version": "0.5.5",
   "type": "module",
   "scripts": {
     "cli": "bun run src/cli/main.ts",
