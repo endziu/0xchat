@@ -93,9 +93,16 @@ bunx web-push generate-vapid-keys
 
 Copy the generated values into `.env`. Rotating the pair invalidates existing browser push subscriptions; each browser recovers when its user clicks **Enable notifications** again. Missing keys do not stop the server; they soft-disable push support.
 
+## User docs
+
+End-user documentation lives in `site/` as Markdown, is built with VitePress into
+`dist/docs/`, and is served by the app at `/docs/` (linked from Settings). Preview it
+with `bun run docs:dev`. The docs share the app's origin and strict CSP, so they must not
+emit inline scripts; a server test checks the built pages.
+
 ## Build and run
 
-Build the frontend into `dist/`:
+Build the frontend and docs into `dist/`:
 
 ```sh
 bun run build
@@ -132,7 +139,8 @@ The full command deletes the local database and `dist/`, builds the app, then ru
 ```sh
 bun install          # install dependencies
 bun run dev          # start Vite + backend with debug logs
-bun run build        # build frontend SPA into dist/
+bun run build        # build frontend SPA and user docs into dist/
+bun run docs:dev     # preview the user docs (site/) with live reload
 bun run icons        # regenerate public icons and favicon
 bun run stats:dau    # read historical daily active identity totals from local chat.db (JSON)
 bun run start        # start server using an existing dist/

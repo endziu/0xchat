@@ -34,6 +34,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
   // API and SSE must never be cached or replayed.
   if (url.pathname.startsWith('/api/')) return
+  // The docs are a separate site; a docs page must never become the cached shell.
+  if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) return
 
   // Navigations: network-first so a deploy is picked up immediately, cached
   // shell only as an offline fallback.

@@ -33,7 +33,8 @@ export const SECURITY_HEADERS = {
     "font-src 'self'",
     "form-action 'self'",
     "connect-src 'self'",
-    "img-src 'self'",
+    // data: covers the docs theme's inline SVG icons; images cannot run script.
+    "img-src 'self' data:",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "object-src 'none'",

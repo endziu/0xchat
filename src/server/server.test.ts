@@ -9,11 +9,13 @@ import {
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
+import { join } from 'node:path';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { decrypt } from '../shared/crypto.ts';
 import { createSignedMessageEnvelope } from '../shared/signed-message-envelope.ts';
+import { distDir } from './constants.ts';
 import {
   canonicalMessageAad,
   MESSAGE_ENVELOPE_VERSION,
@@ -186,6 +188,34 @@ describe('public routes', () => {
     const res = await fetch(baseUrl + '/chat/' + addr);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
+  });
+
+  test('GET /docs redirects to /docs/', async () => {
+    const res = await fetch(baseUrl + '/docs', { redirect: 'manual' });
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe('/docs/');
+  });
+
+  test('GET /docs/ returns the docs home, not the app shell', async () => {
+    const res = await fetch(baseUrl + '/docs/');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('/docs/assets/');
+  });
+
+  test('unknown docs pages return the docs 404, not the app shell', async () => {
+    const res = await fetch(baseUrl + '/docs/nope');
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain('/docs/assets/');
+  });
+
+  test('docs pages contain no inline scripts or handlers the CSP would block', async () => {
+    const pages = Array.from(new Bun.Glob('docs/**/*.html').scanSync({ cwd: distDir }));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const page of pages) {
+      const html = await Bun.file(join(distDir, page)).text();
+      expect({ page, inline: html.match(/<script(?![^>]*\ssrc=)[^>]*>/g) }).toEqual({ page, inline: null });
+      expect({ page, handlers: html.match(/\son[a-z]+="/g) }).toEqual({ page, handlers: null });
+    }
   });
 
   test('GET /api/pubkey returns null for unknown', async () => {

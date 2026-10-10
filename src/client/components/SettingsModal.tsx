@@ -1,7 +1,7 @@
 import { checksumAddress } from '../../shared/address'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Keypair } from '../../shared/keypair'
-import { Check, Copy, Flame, X } from 'lucide-preact'
+import { BookOpen, Check, Copy, Flame, X } from 'lucide-preact'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
 import { Modal } from './Modal'
@@ -115,6 +115,19 @@ export function SettingsModal({
         )}
 
         <KeyManagement identity={identity} onImport={onImport} />
+
+        <section className="border-t border-neutral-800 p-3">
+          <h3>Help</h3>
+          {/* A new tab, so an installed app opens the docs in the browser instead of replacing itself. */}
+          <a
+            href="/docs/"
+            target="_blank"
+            rel="noopener"
+            className="mt-2 inline-flex items-center gap-1 border border-neutral-800 px-2 py-1 text-sm pointer-coarse:min-h-11"
+          >
+            <BookOpen size={14} /> Read the docs
+          </a>
+        </section>
 
         {onBurn && (
           <section className="border-t border-red-900 p-3">
