@@ -1,6 +1,6 @@
 {
   "name": "0xchat",
-  "version": "0.5.2",
+  "version": "0.5.5",
   "type": "module",
   "scripts": {
     "cli": "bun run src/cli/main.ts",
@@ -8,7 +8,8 @@
     "clear:db": "rm -f chat.db chat.db-shm chat.db-wal && echo 'DB cleared'",
     "clear:dist": "rm -rf dist && echo 'Dist cleared'",
     "clear:all": "bun clear:db; bun clear:dist",
-    "build": "vite build",
+    "build": "vite build && vitepress build site",
+    "docs:dev": "vitepress dev site",
     "icons": "bun run scripts/gen-icons.ts",
     "dev": "DEBUG=1 concurrently 'bun run server.ts' 'vite'",
     "start": "bun run server.ts",
@@ -36,6 +37,7 @@
     "oxlint": "1.78.0",
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
-    "vite": "8.2.1"
+    "vite": "8.2.1",
+    "vitepress": "^1.6.4"
   }
 }

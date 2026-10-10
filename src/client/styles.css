@@ -107,6 +107,7 @@
 
 @utility header-action {
   @media (width < 40rem) {
+    box-sizing: border-box;
     min-width: 32px;
     padding-inline: 4px;
     justify-content: center;

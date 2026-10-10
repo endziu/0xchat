@@ -1,22 +1,25 @@
 # 0xChat
 
-0xChat is a pseudonymous, end-to-end encrypted chat app where an Ethereum address is your identity. There is no signup, email address, phone number, username, friend request, or wallet connection.
+0xChat is a chat app with end-to-end encryption and messages that disappear. Your browser encrypts messages before sending them, so the server cannot read their contents. There is no signup, and you don't need an email address or phone number.
 
-Open the app and it creates a fresh **burner identity** in your browser. Share its address or QR code, start a conversation with another registered address, and choose how long each message lasts once it is opened—from 5 seconds to 24 hours.
+Open the app and it creates an account for you. Share your **address** (a string of letters and numbers starting with `0x`), conversation link or QR code so people can message you. Choose how long each message stays after the other person opens it, from 5 seconds to 24 hours.
 
-> **Important:** your private key is your account. Export it if you want to keep the identity. Losing browser storage without a backup means losing access permanently. Use a dedicated burner key; do not import a wallet that holds valuable assets.
+> **Keep access to your account:** the app saves a secret code called a **private key** in your browser. Back it up and keep it secret. If you lose every copy, you lose access to the account permanently. Creating a new address is quick and free, so you can also use a throw-away account without backing it up. Use the key 0xChat creates for you; never import a key from a crypto wallet that holds money or anything else of value.
 
 ## What 0xChat does
 
-- Creates and registers an Ethereum-compatible burner identity automatically.
-- Lets people contact each other directly by address or QR code.
-- Encrypts and signs messages in the browser before sending them.
-- Delivers messages live and can send optional, content-free push alerts.
-- Deletes each message when its lifetime ends after the recipient opens it (or 24 hours after sending if it is never opened), or right away when either side clears the conversation.
-- Works as an installable PWA on mobile and desktop.
-- Lets you export/import your identity and delete your account.
+- Creates an account automatically, with no password to remember.
+- Lets people contact you through your address, conversation link or QR code.
+- Encrypts messages and checks which address sent them.
+- Delivers messages live, with optional notifications that keep message contents private.
+- Deletes messages when their timer runs out, or 24 hours after sending if they are never opened.
+- Lets either person clear a conversation's messages for both of them immediately.
+- Works in your browser and can be installed on your phone or computer.
+- Lets you back up your key, use your account on another device or delete your account.
 
-0xChat uses Ethereum cryptography and address formatting, but chatting is **not an onchain transaction**. It does not require a wallet extension, network connection, tokens, or gas.
+0xChat uses the same kind of addresses as Ethereum, but you don't need cryptocurrency or a wallet to chat. There are no transaction fees, and chats are not published to a blockchain. You do need an internet connection.
+
+See [Getting started](site/getting-started.md) for a walkthrough, or [Your key and account](site/your-key.md) to learn how to back up your key.
 
 ---
 
@@ -93,9 +96,16 @@ bunx web-push generate-vapid-keys
 
 Copy the generated values into `.env`. Rotating the pair invalidates existing browser push subscriptions; each browser recovers when its user clicks **Enable notifications** again. Missing keys do not stop the server; they soft-disable push support.
 
+## User docs
+
+End-user documentation lives in `site/` as Markdown, is built with VitePress into
+`dist/docs/`, and is served by the app at `/docs/` (linked from the header help icon). Preview it
+with `bun run docs:dev`. The docs share the app's origin and strict CSP, so they must not
+emit inline scripts; a server test checks the built pages.
+
 ## Build and run
 
-Build the frontend into `dist/`:
+Build the frontend and docs into `dist/`:
 
 ```sh
 bun run build
@@ -132,7 +142,8 @@ The full command deletes the local database and `dist/`, builds the app, then ru
 ```sh
 bun install          # install dependencies
 bun run dev          # start Vite + backend with debug logs
-bun run build        # build frontend SPA into dist/
+bun run build        # build frontend SPA and user docs into dist/
+bun run docs:dev     # preview the user docs (site/) with live reload
 bun run icons        # regenerate public icons and favicon
 bun run stats:dau    # read historical daily active identity totals from local chat.db (JSON)
 bun run start        # start server using an existing dist/

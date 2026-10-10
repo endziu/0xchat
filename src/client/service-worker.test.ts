@@ -152,6 +152,8 @@ describe('production service worker notifications', () => {
       { id: 'no-focus', url: 'https://chat.example/chat' },
       { id: 'outside', url: 'https://evil.example/chat', focus: async () => {} },
       { id: 'bad-url', url: 'not a url', focus: async () => {} },
+      { id: 'docs', url: 'https://chat.example/docs/', focus: async () => {} },
+      { id: 'docs-page', url: 'https://chat.example/docs/faq.html', focus: async () => {} },
     ])
 
     await dispatch(handlers.get('notificationclick')!, {
@@ -167,6 +169,8 @@ describe('production service worker notifications', () => {
     { method: 'GET', url: 'https://chat.example/api/session' },
     { method: 'GET', url: 'https://other.example/chat' },
     { method: 'POST', url: 'https://chat.example/chat' },
+    { method: 'GET', url: 'https://chat.example/docs' },
+    { method: 'GET', url: 'https://chat.example/docs/faq.html' },
   ])('leaves $method $url outside worker handling', async (request) => {
     const { handlers, fetched, cached } = await loadWorker()
     let responded = false

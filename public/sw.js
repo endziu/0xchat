@@ -34,6 +34,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
   // API and SSE must never be cached or replayed.
   if (url.pathname.startsWith('/api/')) return
+  // The docs are a separate site; a docs page must never become the cached shell.
+  if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) return
 
   // Navigations: network-first so a deploy is picked up immediately, cached
   // shell only as an offline fallback.
@@ -88,7 +90,9 @@ self.addEventListener('notificationclick', (event) => {
       const usableClients = clients.filter((client) => {
         if (typeof client.focus !== 'function') return false
         try {
-          return new URL(client.url).origin === self.location.origin
+          const url = new URL(client.url)
+          // A docs tab cannot show messages, so never reuse one for an alert.
+          return url.origin === self.location.origin && url.pathname !== '/docs' && !url.pathname.startsWith('/docs/')
         } catch {
           return false
         }
