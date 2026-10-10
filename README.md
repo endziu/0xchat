@@ -99,7 +99,7 @@ Copy the generated values into `.env`. Rotating the pair invalidates existing br
 ## User docs
 
 End-user documentation lives in `site/` as Markdown, is built with VitePress into
-`dist/docs/`, and is served by the app at `/docs/` (linked from Settings). Preview it
+`dist/docs/`, and is served by the app at `/docs/` (linked from the header help icon). Preview it
 with `bun run docs:dev`. The docs share the app's origin and strict CSP, so they must not
 emit inline scripts; a server test checks the built pages.
 

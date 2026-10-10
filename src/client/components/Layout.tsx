@@ -3,7 +3,7 @@ import { checksumAddress, shortAddress } from '../../shared/address'
 import type { ComponentChildren } from 'preact'
 import { useState, useEffect } from 'preact/hooks'
 import type { Keypair } from '../../shared/keypair'
-import { Settings, Copy, Check, Link, QrCode } from 'lucide-preact'
+import { Settings, Copy, Check, Link, QrCode, CircleHelp } from 'lucide-preact'
 import { AddressAvatar } from './AddressAvatar'
 import { InstallBanner } from './InstallBanner'
 import { QRModal } from './QRModal'
@@ -88,6 +88,10 @@ export function Layout({
             <button onClick={() => setShowSettings(!showSettings)} title="Settings" aria-label="Settings" aria-expanded={showSettings} className="header-action">
               <Settings size={14} />
             </button>
+            {/* Open separately so help does not replace the installed app. */}
+            <a href="/docs/" target="_blank" rel="noopener" title="Help & docs" aria-label="Help & docs" className="header-action inline-flex items-center justify-center border border-neutral-800 px-2 py-1 hover:bg-neutral-950 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent pointer-coarse:min-h-11">
+              <CircleHelp size={14} />
+            </a>
           </div>
         )}
       </header>
