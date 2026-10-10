@@ -1,0 +1,72 @@
+/* PROTOTYPE — board chrome. Deliberately plain and mid-grey so it never
+   reads as part of a direction. */
+html, body { margin: 0; background: #3b3b3d; color: #ececec; font: 14px/1.45 system-ui, sans-serif; }
+body:has(.frame.solo) { background: #000; overflow: hidden; }
+* { box-sizing: border-box; }
+
+.board { padding: 0 32px 120px; max-width: 2460px; }
+.board-head {
+  position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 0 -32px; padding: 10px 32px; background: #2c2c2e; border-bottom: 1px solid #4a4a4d;
+  & strong { font-size: 15px; } & em { font-style: normal; font-weight: 400; color: #a5a5a8; margin-left: 6px; }
+}
+.board-spacer { flex: 1; }
+.board-tabs { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #1f1f21; }
+.board-tabs button, .board-btn {
+  all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px; color: #c8c8cb; font-size: 13px;
+  &[aria-pressed="true"] { background: #f2f2f2; color: #111; }
+  &:hover:not([aria-pressed="true"]) { background: #3a3a3d; }
+  &:focus-visible { outline: 2px solid #8ab4ff; }
+}
+.board-btn { border: 1px solid #55555a; }
+
+.board-intro {
+  display: grid; grid-template-columns: minmax(0, 68ch) minmax(0, 1fr); gap: 40px; padding: 28px 0 8px; align-items: start;
+  & h1 { margin: 0 0 8px; font-size: 22px; }
+  & p { margin: 0 0 8px; color: #d6d6d8; }
+  & .type { color: #b9b9bc; }
+  @media (width < 1100px) { grid-template-columns: 1fr; gap: 16px; }
+}
+.swatches {
+  list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px;
+  & li { display: grid; grid-template-columns: 22px 1fr; column-gap: 8px; align-items: center; }
+  & span { grid-row: span 2; width: 22px; height: 22px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .18); }
+  & code { font: 12px/1.3 ui-monospace, monospace; color: #e4e4e6; }
+  & .val { color: #a5a5a8; }
+}
+.board-h { margin: 36px 0 12px; font-size: 13px; font-weight: 600; color: #bdbdc0; }
+.board-foot { color: #a5a5a8; margin-top: 24px; }
+
+.row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.slot {
+  margin: 0; display: grid; gap: 8px;
+  & figcaption { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: #c8c8cb; }
+  & figcaption a { color: #a5a5a8; }
+}
+
+.frame { position: relative; overflow: hidden; isolation: isolate; contain: layout paint; }
+.frame.desktop { width: 1280px; height: 800px; border-radius: 10px; box-shadow: 0 0 0 1px #000, 0 12px 40px rgb(0 0 0 / .35); --safe-top: 0px; --safe-bottom: 0px; }
+.frame.phone { width: 390px; height: 844px; border-radius: 48px; box-shadow: 0 0 0 9px #0d0d0e, 0 0 0 10px #555, 0 16px 40px rgb(0 0 0 / .4); margin: 10px; --safe-top: 47px; --safe-bottom: 34px; }
+.frame.solo { position: fixed; inset: 0; --safe-top: env(safe-area-inset-top); --safe-bottom: env(safe-area-inset-bottom); }
+
+.phone-status {
+  position: absolute; z-index: 50; top: 0; left: 0; right: 0; height: 47px; padding: 14px 30px 0 44px; pointer-events: none;
+  display: flex; justify-content: space-between; color: var(--text); font: 600 16px/1 -apple-system, system-ui, sans-serif;
+}
+.phone-icons {
+  display: flex; gap: 6px; align-items: center;
+  & i { width: 17px; height: 11px; border-radius: 2px; background: currentColor; clip-path: polygon(0 100%, 100% 0, 100% 100%); }
+  & b { width: 25px; height: 12px; border-radius: 3.5px; border: 1.5px solid currentColor; opacity: .9; background: linear-gradient(90deg, currentColor 70%, transparent 70%) content-box; padding: 1.5px; }
+}
+.phone-home { position: absolute; z-index: 50; bottom: 8px; left: 50%; translate: -50% 0; width: 134px; height: 5px; border-radius: 3px; background: var(--text); opacity: .85; pointer-events: none; }
+
+.switcher {
+  position: fixed; z-index: 200; bottom: 18px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 4px; padding: 4px;
+  background: #fff; color: #111; border-radius: 999px; box-shadow: 0 6px 24px rgb(0 0 0 / .45), 0 0 0 1px rgb(0 0 0 / .2);
+  & button { all: unset; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; &:hover { background: #ececec; } &:focus-visible { outline: 2px solid #2563eb; } }
+  & span { min-width: 150px; text-align: center; font-size: 14px; }
+  & b { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 6px; border-radius: 5px; background: #111; color: #fff; font-size: 12px; }
+}
+
+.glyph { display: inline-flex; flex-shrink: 0; line-height: 0; & svg { width: 100%; height: 100%; } }
+.qr { display: inline-block; line-height: 0; & svg { width: 100%; height: 100%; } }
