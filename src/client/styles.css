@@ -4,14 +4,95 @@
    guards itself this way, so anything that *hides* an element until hover must
    be guarded too — otherwise it stays hidden forever on touch. */
 @custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+/* public/theme.js and lib/theme.ts set data-theme on <html>. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* The one brand accent ("ember", for things that burn): your own messages,
-   unread state, focus rings and links. Everything else stays neutral. */
+/* Atkinson Hyperlegible (SIL OFL), self-hosted. Picked for legibility: it
+   tells 0/O and 1/l/I apart, which matters for hex addresses. */
+@font-face { font-family: 'Atkinson Hyperlegible Next'; font-style: normal; font-weight: 200 800; font-display: swap; src: url('./fonts/atkinson-next-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Atkinson Hyperlegible Next'; font-style: normal; font-weight: 200 800; font-display: swap; src: url('./fonts/atkinson-next-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Atkinson Hyperlegible Mono'; font-style: normal; font-weight: 200 800; font-display: swap; src: url('./fonts/atkinson-mono-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Atkinson Hyperlegible Mono'; font-style: normal; font-weight: 200 800; font-display: swap; src: url('./fonts/atkinson-mono-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+/* Warm neutrals and one dusk-indigo accent that marks what is yours. Only
+   these colours exist: the stock palette is dropped so nothing drifts off it.
+   Light is the base; the dark values below replace them at runtime. Every
+   text pair is at least 4.5:1, accents and field borders at least 3:1. */
 @theme {
-  --color-accent: oklch(82.8% 0.189 84.429); /* amber-400 */
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-bg: #f1efeb;
+  --color-surface: #fbfaf8;
+  --color-raised: #e9e6e1;
+  --color-line: #e2ded7;
+  --color-line-strong: #c9c4bb;
+  --color-field: #8a847a;
+  --color-text: #1e1d1b;
+  --color-text-2: #57534d;
+  --color-text-3: #66615a;
+  --color-accent: #4f52c9;
+  --color-accent-text: #4346b8;
+  --color-on-accent: #ffffff;
+  --color-bubble-mine: #4f52c9;
+  --color-on-bubble-mine: #ffffff;
+  --color-bubble-them: #ffffff;
+  --color-danger: #c0342b;
+  --color-on-danger: #ffffff;
+  --color-ok: #2f8a4a;
+  /* Opaque tints, so text on them keeps its contrast whatever sits behind. */
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+
+  --font-sans: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+
+  /* 12.5 / 14 / 16 / 18 / 30px; wider screens take 19px headings and 28px titles. */
+  --text-xs: 0.78125rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.45;
+  --text-base: 1rem;
+  --text-base--line-height: 1.45;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.3;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 1.2;
 }
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --panel-shadow: 0 1px 2px rgb(40 35 25 / .06), 0 8px 24px rgb(40 35 25 / .06);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg: #121110;
+    --color-surface: #1c1b19;
+    --color-raised: #292724;
+    --color-line: #2f2d2a;
+    --color-line-strong: #4a4642;
+    --color-field: #6f6a63;
+    --color-text: #edeae5;
+    --color-text-2: #b9b3ab;
+    --color-text-3: #958f86;
+    --color-accent: #9a9df5;
+    --color-accent-text: #a9acff;
+    --color-on-accent: #15163a;
+    --color-bubble-mine: #3b3e96;
+    --color-on-bubble-mine: #f1f1ff;
+    --color-bubble-them: #292724;
+    --color-danger: #ff8a7a;
+    --color-on-danger: #2a0a06;
+    --color-ok: #6fd08c;
+    --panel-shadow: none;
+  }
+  @media (width >= 40rem) {
+    :root {
+      --text-lg: 1.1875rem;
+      --text-3xl: 1.75rem;
+    }
+  }
+
   html {
     height: 100dvh;
     overflow: hidden;
@@ -27,7 +108,7 @@
     html { height: 100lvh; }
   }
   body {
-    @apply bg-black text-neutral-200 font-mono text-base m-0;
+    @apply bg-surface sm:bg-bg text-text font-sans text-base m-0;
     height: 100%;
     overflow: hidden;
     /* No rubber-band scroll of the page behind the app, and no grey flash on tap. */
@@ -36,85 +117,76 @@
   }
   #app { height: 100%; overflow: hidden; }
 
-  /* Increase the rem-based UI scale on desktop without scaling viewport units.
-     Scaling the app root itself makes 100dvh content 150% too tall. */
-  @media (min-width: 60rem) {
-    html {
-      font-size: 150%;
-    }
-
-    /* Lucide receives fixed pixel sizes from component props, so scale those
-       separately; unlike the app shell, icons have no viewport-sized layout. */
-    .lucide {
-      zoom: 1.5;
-    }
-  }
+  :focus-visible { @apply outline-2 outline-accent outline-offset-2; }
 
   button {
     all: unset;
-    @apply cursor-pointer inline-flex items-center gap-1 px-2 py-1 border border-neutral-800;
+    @apply cursor-pointer inline-flex items-center box-border;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation; /* kills the 300ms double-tap-zoom delay */
-    &:hover { @apply bg-neutral-950; }
-    &:disabled { @apply opacity-30 pointer-events-none; }
-    &:focus-visible { @apply outline outline-1 outline-accent; }
+    &:disabled { @apply opacity-40 cursor-default; }
+    &:focus-visible { @apply outline-2 outline-accent outline-offset-2; }
   }
   input, textarea, select {
     /* text-base = 16px, which is what keeps iOS from zooming on focus. */
-    @apply bg-neutral-950 text-neutral-200 border border-neutral-800 px-2 py-1.5 font-mono text-base outline-none w-full;
+    @apply box-border min-h-12 w-full rounded-md border-[1.5px] border-field bg-surface px-3.5 py-3 font-sans text-base text-text outline-none;
     &:focus { @apply border-accent; }
-    &::placeholder { @apply text-neutral-500; }
+    &::placeholder { @apply text-text-3; }
   }
   textarea { @apply resize-none overflow-y-hidden; }
-  select { @apply w-auto cursor-pointer; }
-  a { @apply text-inherit no-underline; }
-  h2, h3 { @apply text-sm font-normal uppercase tracking-wider text-neutral-500 m-0; }
-  p { @apply my-1 text-neutral-500 text-base; }
+  select { @apply cursor-pointer; }
+  a { @apply text-accent-text; }
+  h1, h2, h3, p { @apply m-0; }
 
-  /* Touch devices: every control gets a real 44px target regardless of how
+  /* Touch devices: every button gets a real 44px target regardless of how
      small its icon is, and labels stop being selectable on long-press. */
   @media (pointer: coarse) {
-    button, select {
+    button {
       min-height: 44px;
       min-width: 44px;
       justify-content: center;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    button { -webkit-user-select: none; user-select: none; }
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #333 transparent;
+    scrollbar-color: var(--color-line-strong) transparent;
   }
 }
 
-/* Native dialogs live in the top layer, outside the app's safe-area padding.
-   Bound both centering and scrolling to the unobstructed viewport. */
-@utility modal-safe-viewport {
-  --modal-top-gap: max(0.75rem, env(safe-area-inset-top));
-  --modal-bottom-gap: max(0.75rem, env(safe-area-inset-bottom));
-  top: var(--modal-top-gap);
-  bottom: var(--modal-bottom-gap);
-  max-height: calc(100% - var(--modal-top-gap) - var(--modal-bottom-gap));
+/* Buttons: small rounded rectangles on `raised`. The modifiers only set
+   variables, so any combination resolves the same way whatever the CSS order. */
+@utility btn {
+  @apply justify-center gap-1.5 whitespace-nowrap rounded-md font-semibold;
+  min-height: var(--btn-h, 40px);
+  padding-inline: var(--btn-px, 16px);
+  font-size: var(--btn-text, var(--text-sm));
+  background: var(--btn-bg, var(--color-raised));
+  color: var(--btn-fg, var(--color-text));
+  @media (pointer: coarse) { min-height: max(var(--btn-h, 40px), 44px); }
+  &:hover:not(:disabled) { filter: brightness(0.97); }
 }
+@utility btn-accent { --btn-bg: var(--color-accent); --btn-fg: var(--color-on-accent); }
+@utility btn-danger { --btn-bg: var(--color-danger-soft); --btn-fg: var(--color-danger); }
+@utility btn-danger-fill { --btn-bg: var(--color-danger); --btn-fg: var(--color-on-danger); }
+@utility btn-surface { --btn-bg: var(--color-surface); }
+@utility btn-sm { --btn-h: 34px; --btn-px: 12px; --btn-text: var(--text-xs); }
+@utility btn-lg { --btn-h: 48px; --btn-text: var(--text-base); width: 100%; }
+
+/* A 44px round icon button, quiet until hovered. */
+@utility icon-btn {
+  @apply size-11 shrink-0 justify-center rounded-full text-text-2;
+  &:hover:not(:disabled) { @apply bg-raised text-text; }
+}
+
+/* Desktop panels sit on `bg`; light mode lifts them with a soft shadow. */
+@utility shadow-panel { box-shadow: var(--panel-shadow); }
 
 @utility safe-top { padding-top: env(safe-area-inset-top); }
 @utility safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 @utility safe-x {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
-}
-
-@utility header-action {
-  @media (width < 40rem) {
-    box-sizing: border-box;
-    min-width: 32px;
-    padding-inline: 4px;
-    justify-content: center;
-    /* Touch targets fill the 44px bar, where a border would run into its
-       edges, so the icons stand alone there. */
-    @media (pointer: coarse) {
-      border-width: 0;
-    }
-  }
 }

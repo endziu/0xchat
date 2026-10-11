@@ -9,7 +9,7 @@ const SHELL = `0xchat-shell-${VERSION}`
 const ASSETS = `0xchat-assets-${VERSION}`
 
 // Enough to boot the SPA offline; hashed JS/CSS are picked up lazily below.
-const SHELL_URLS = ['/chat', '/manifest.webmanifest', '/icon-192.png', '/favicon.svg']
+const SHELL_URLS = ['/chat', '/theme.js', '/manifest.webmanifest', '/icon-192.png', '/favicon.svg']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

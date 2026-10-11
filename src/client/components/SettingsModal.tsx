@@ -1,13 +1,25 @@
 import { checksumAddress } from '../../shared/address'
+import { conversationUrl } from '../lib/address-links'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Keypair } from '../../shared/keypair'
-import { Check, Copy, Flame, X } from 'lucide-preact'
+import { Check, Copy, Flame, Link, QrCode } from 'lucide-preact'
+import { AddressAvatar } from './AddressAvatar'
+import { AddressHex } from './AddressHex'
 import { KeyManagement } from './KeyManagement'
 import { MessageLifetimeSettings } from './MessageLifetimeSettings'
 import { Modal } from './Modal'
-import { AddressQR } from './QRModal'
+import { Segmented } from './Segmented'
+import { ROW, SettingsGroup } from './SettingsGroup'
+import { useTheme } from '../hooks/useTheme'
+import { setThemeSetting, type ThemeSetting } from '../lib/theme'
 import { useCopied } from '../hooks/useCopied'
 import { version } from '../../../package.json'
+
+const THEME_OPTIONS: { value: ThemeSetting; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
 
 export interface PushSettings {
   supported?: boolean
@@ -22,6 +34,8 @@ interface SettingsModalProps {
   identity: Keypair
   onClose: () => void
   onImport: (keypair: Keypair) => Promise<void>
+  // Opens the share sheet with your QR code.
+  onShare?: () => void
   push: PushSettings
   // Permanently deletes the identity, its account and its messages.
   onBurn?: () => void
@@ -31,6 +45,7 @@ export function SettingsModal({
   identity,
   onClose,
   onImport,
+  onShare,
   push,
   onBurn,
 }: SettingsModalProps) {
@@ -43,6 +58,8 @@ export function SettingsModal({
     unsubscribe: onPushUnsubscribe,
   } = push
   const [copied, copy] = useCopied()
+  const [linkCopied, copyLink] = useCopied()
+  const { setting: themeSetting } = useTheme()
   const [burnConfirm, setBurnConfirm] = useState(false)
   const burnTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(burnTimeout.current), [])
@@ -57,85 +74,80 @@ export function SettingsModal({
   const cancelBurn = () => { clearTimeout(burnTimeout.current); setBurnConfirm(false) }
 
   return (
-    <Modal onClose={onClose} labelledBy="settings-title" className="max-w-lg">
-      <header className="flex items-center justify-between border-b border-neutral-800 p-2">
-        <div className="flex items-baseline gap-2">
-          <h2 id="settings-title">Settings</h2>
-          <span className="text-xs text-neutral-500">v{version}</span>
-        </div>
-        <button onClick={onClose} aria-label="Close settings" title="Close">
-          <X size={16} />
-        </button>
-      </header>
-
-      <div className="min-h-0 overflow-y-auto">
-        <section className="p-3">
-          <h3>Profile</h3>
-          <div className="mt-2 flex flex-col items-center gap-1">
-            <AddressQR address={identity.address} size={160} />
-            <button
-              onClick={() => copy(checksumAddress(identity.address))}
-              className="text-sm"
-            >
-              {copied ? <Check size={14} /> : <Copy size={14} />} Copy address
+    <Modal onClose={onClose} title="Settings">
+      <div className="min-h-0 overflow-y-auto px-4 pt-1 pb-[max(24px,env(safe-area-inset-bottom))]">
+        <section className="grid justify-items-center gap-3 px-2 pt-3 pb-1 text-center">
+          <AddressAvatar address={identity.address} size={64} />
+          <AddressHex address={identity.address} className="max-w-[22ch]" />
+          <div className="flex flex-wrap justify-center gap-2">
+            <button onClick={() => copy(checksumAddress(identity.address))} className="btn">
+              {copied ? <Check size={16} /> : <Copy size={16} />}Copy address
             </button>
+            <button onClick={() => copyLink(conversationUrl(identity.address))} className="btn">
+              {linkCopied ? <Check size={16} /> : <Link size={16} />}Copy link
+            </button>
+            <button onClick={onShare} className="btn"><QrCode size={16} />QR code</button>
           </div>
         </section>
+
+        <SettingsGroup title="Appearance" foot="System follows your device’s light or dark setting.">
+          <div className="p-2">
+            <Segmented label="Theme" value={themeSetting} onChange={setThemeSetting} options={THEME_OPTIONS} />
+          </div>
+        </SettingsGroup>
 
         <MessageLifetimeSettings />
 
         {pushSupported && (
-          <section className="border-t border-neutral-800 p-3">
-            <h3>Notifications</h3>
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <span id="notifications-label" className="text-sm text-neutral-400">Notify me of new messages</span>
-              {pushPermission !== 'denied' && (
+          <SettingsGroup
+            title="Notifications"
+            foot={<>
+              {pushPermission === 'denied'
+                ? <p>Blocked in this browser. To allow notifications, open this site's settings (usually the icon beside the address bar), allow Notifications, then reload.</p>
+                : <p>Alerts never include message text or who sent it.</p>}
+              {pushError && <p className="mt-1 text-danger">{pushError}</p>}
+            </>}
+          >
+            <div className={ROW}>
+              <span id="notifications-label" className="flex-1">Notify me of new messages</span>
+              {pushPermission === 'denied' ? <span className="mr-2 text-text-2">Blocked</span> : (
                 <button
                   role="switch"
                   aria-checked={!!pushSubscribed}
                   aria-labelledby="notifications-label"
                   onClick={pushSubscribed ? onPushUnsubscribe : onPushSubscribe}
-                  className="shrink-0 rounded-full border-0 p-0"
+                  className="mr-1.5 shrink-0 justify-center rounded-full"
                 >
                   {/* Keep the visual track independent of the button's 44px touch target. */}
-                  <span aria-hidden="true" className={`inline-flex h-6 w-11 box-border items-center rounded-full border p-0.5 ${pushSubscribed ? 'border-accent' : 'border-neutral-800'}`}>
-                    <span className={`block h-4 w-4 shrink-0 rounded-full transition-transform ${pushSubscribed ? 'translate-x-5 bg-accent' : 'bg-neutral-500'}`} />
+                  <span aria-hidden="true" className={`relative block h-8 w-13 rounded-full ${pushSubscribed ? 'bg-accent' : 'bg-line-strong'}`}>
+                    <span className={`absolute top-[3px] left-[3px] size-[26px] rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/.2)] transition-transform motion-reduce:transition-none ${pushSubscribed ? 'translate-x-5' : ''}`} />
                   </span>
                 </button>
               )}
             </div>
-            {pushPermission === 'denied' && (
-              <p className="mt-2 text-sm">
-                Blocked in this browser. To allow notifications, open this site's settings
-                (usually the icon beside the address bar), allow Notifications, then reload.
-              </p>
-            )}
-            {pushError && <p className="mt-2 text-sm text-red-400">{pushError}</p>}
-          </section>
+          </SettingsGroup>
         )}
 
         <KeyManagement identity={identity} onImport={onImport} />
 
         {onBurn && (
-          <section className="border-t border-red-900 p-3">
-            <h3 className="text-red-400">Danger zone</h3>
+          <SettingsGroup className="mt-6" foot="Deletes this account, its key and every message, for good.">
             {burnConfirm ? (
-              <div role="alert" className="mt-2">
-                <p className="text-sm text-red-400">
-                  This permanently deletes your identity, account, and all messages. This cannot be undone.
-                </p>
-                <div className="mt-2 flex gap-1">
-                  <button onClick={onBurn} className="text-sm text-red-400 border-red-900">Burn</button>
-                  <button ref={cancelBurnRef} onClick={cancelBurn} className="text-sm">Cancel</button>
-                </div>
+              <div role="alert" className="grid justify-items-center gap-3 px-4 py-5 text-center text-danger">
+                <Flame size={22} />
+                <p className="text-text">This permanently deletes your identity, account, and all messages. This cannot be undone.</p>
+                <button onClick={onBurn} className="btn btn-danger-fill btn-lg">Burn</button>
+                <button ref={cancelBurnRef} onClick={cancelBurn} className="btn btn-lg">Cancel</button>
               </div>
             ) : (
-              <button onClick={askBurn} className="mt-2 text-sm text-red-400 border-red-900">
-                <Flame size={14} /> Burn identity…
-              </button>
+              <button onClick={askBurn} className={`${ROW} justify-center font-bold text-danger hover:bg-raised/50`}>Burn identity…</button>
             )}
-          </section>
+          </SettingsGroup>
         )}
+
+        <p className="mt-6 text-center text-xs text-text-3">
+          0xChat {version} · <a href="/docs/" target="_blank" rel="noopener" className="underline">Help and docs</a>
+        </p>
       </div>
     </Modal>
   )

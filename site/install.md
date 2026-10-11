@@ -6,7 +6,7 @@ it to receive notifications.
 
 ## Android, Chrome and Edge
 
-Select **Install** in the banner near the top of 0xChat, or open your browser's menu and choose
+Select **Install** in the card above your chats, or open your browser's menu and choose
 **Install app** (or **Add to Home screen**).
 
 ## iPhone and iPad

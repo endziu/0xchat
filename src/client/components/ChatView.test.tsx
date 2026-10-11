@@ -154,7 +154,7 @@ function mount(recipient: Address | null = aliceAddress) {
   const navigations: string[] = []
   const view = () => (
     <ToastProvider>
-      <ChatView recipientAddress={selected} identity={identity} token={token} navigate={to => { navigations.push(to) }} />
+      <ChatView recipientAddress={selected} identity={identity} token={token} navigate={to => { navigations.push(to) }} onShare={() => {}} />
     </ToastProvider>
   )
   render(view(), container)
@@ -345,6 +345,7 @@ test('invalid envelopes are never opened and invalid confirmations never reveal 
 
 function button(label: string): HTMLButtonElement {
   const found = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+    ?? [...document.querySelectorAll<HTMLButtonElement>('button:not([aria-label])')].find(b => b.textContent === label)
   if (!found) throw new Error(`No button labelled ${label}`)
   return found
 }
@@ -741,7 +742,7 @@ test('the open conversation names the partner by their label and your own messag
   const view = mount()
   await waitFor(() => view.text().includes('hi from alice') && view.text().includes('hi from me'))
 
-  const senders = [...view.container.querySelectorAll('article .font-bold')].map(sender => sender.textContent)
+  const senders = [...view.container.querySelectorAll('article .sr-only')].map(sender => sender.textContent)
   expect(senders).toEqual(['Alice', 'You'])
   expect(button('Rename Alice')).not.toBeNull()
   await otherDevice.close()
@@ -756,7 +757,7 @@ test('removing a conversation takes two taps and forgets its label', async () =>
 
   button('Remove conversation').click()
   await Bun.sleep(50)
-  expect(view.text()).toContain('Remove and forget?')
+  expect(button('Confirm remove conversation').textContent).toBe('Remove')
   expect(listed()).toBe(true)
 
   button('Confirm remove conversation').click()
@@ -909,15 +910,15 @@ test('identity presentation copies checksums and uses the same checksummed link 
   const container = document.createElement('div')
   document.body.append(container)
   try {
-    render(<Layout identity={{ ...bobKey, address }} onLogout={() => {}} sseConnected={false} push={{ supported: false }}>Chat</Layout>, container)
+    render(<Layout identity={{ ...bobKey, address }} onLogout={() => {}} sseConnected={false} push={{ supported: false }}>{({ sidebarTop }) => sidebarTop}</Layout>, container)
     expect(container.textContent).toContain('0x5290…9EE7')
-    container.querySelector<HTMLButtonElement>('[aria-label="Copy address"]')!.click()
-    container.querySelector<HTMLButtonElement>('[aria-label="Copy conversation link"]')!.click()
-    expect(writes).toEqual([checksum, `${window.location.origin}/chat/${checksum}`])
-    container.querySelector<HTMLButtonElement>('[aria-label="Show QR code"]')!.click()
+    container.querySelector<HTMLButtonElement>('[aria-label="Share your address"]')!.click()
     await waitFor(() => qr.mock.calls.length > 0)
     expect(qr.mock.calls[0]![1]).toBe(`${window.location.origin}/chat/${checksum}`)
     expect(container.textContent).toContain(checksum)
+    button('Copy address').click()
+    button('Copy link').click()
+    expect(writes).toEqual([checksum, `${window.location.origin}/chat/${checksum}`])
   } finally {
     render(null, container)
     container.remove()
@@ -950,7 +951,7 @@ test('selecting or starting a conversation navigates to its checksummed link', a
   await waitFor(() => view.container.querySelector('nav li') !== null)
   view.container.querySelector<HTMLElement>('nav li')!.click()
 
-  button('New conversation').click()
+  button('New chat').click()
   await waitFor(() => view.container.querySelector('input[aria-label="Address"]') !== null)
   const input = view.container.querySelector<HTMLInputElement>('input[aria-label="Address"]')!
   input.value = aliceAddress
