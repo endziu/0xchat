@@ -59,30 +59,30 @@ function AppContent() {
       <div className="flex flex-col items-center justify-center h-full gap-2">
         {idError ? (
           <>
-            <p className="text-red-400">{idError}</p>
-            <button onClick={() => window.location.reload()}>Retry</button>
+            <p className="text-danger">{idError}</p>
+            <button onClick={() => window.location.reload()} className="btn">Retry</button>
           </>
         ) : (
-          <span className="text-neutral-500">Initializing...</span>
+          <span className="text-text-3">Initializing...</span>
         )}
       </div>
     )
   }
 
   if (transitioning) {
-    return <div className="flex items-center justify-center h-full text-neutral-500">Switching identity...</div>
+    return <div className="flex items-center justify-center h-full text-text-3">Switching identity...</div>
   }
 
   if (!token) {
     if (loginError) {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-2">
-          <p className="text-red-400">{loginError}</p>
-          <button onClick={login} disabled={sessionLoading}>{sessionLoading ? 'Retrying...' : 'Retry'}</button>
+          <p className="text-danger">{loginError}</p>
+          <button onClick={login} disabled={sessionLoading} className="btn">{sessionLoading ? 'Retrying...' : 'Retry'}</button>
         </div>
       )
     }
-    return <div className="flex items-center justify-center h-full text-neutral-500">Connecting...</div>
+    return <div className="flex items-center justify-center h-full text-text-3">Connecting...</div>
   }
 
   return (
@@ -95,13 +95,17 @@ function AppContent() {
       sseConnected={sseConnected}
       push={push}
     >
-      <ChatView
-        recipientAddress={parseConversationPath(path)}
-        identity={identity!}
-        token={token}
-        navigate={navigate}
-        onConnectedChange={setSseConnected}
-      />
+      {({ sidebarTop, openShare }) => (
+        <ChatView
+          recipientAddress={parseConversationPath(path)}
+          identity={identity!}
+          token={token}
+          navigate={navigate}
+          onConnectedChange={setSseConnected}
+          sidebarTop={sidebarTop}
+          onShare={openShare}
+        />
+      )}
     </Layout>
   )
 }

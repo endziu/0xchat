@@ -113,7 +113,7 @@ async function toggle(expected: 'on' | 'off') {
   await settle()
 }
 const endpoints = (address = alice) => getPushSubscriptionsForAddress(address).map(row => row.endpoint)
-const errorText = () => container.querySelector('.text-red-400')?.textContent ?? null
+const errorText = () => container.querySelector('.text-danger')?.textContent ?? null
 
 test('enabling subscribes the browser, stores the endpoint and shows notifications on', async () => {
   await mount()

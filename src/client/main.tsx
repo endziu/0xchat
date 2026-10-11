@@ -1,7 +1,9 @@
 import { render } from 'preact'
 import { App } from './components/App'
+import { startTheme } from './lib/theme'
 import './styles.css'
 
+startTheme()
 render(<App />, document.getElementById('app')!)
 
 // App-shell caching + the "Install" affordance. Dev is served by Vite, where a

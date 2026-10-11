@@ -11,17 +11,17 @@ You can also use it as a throw-away account.
 
 ## Share your address
 
-Use the buttons at the top of the app:
+Select the QR code button at the top of your chats, or your picture beside it, to open **Share**:
 
+- **My code** shows a QR code someone can scan with their camera.
 - **Copy address** copies your address so you can share it.
-- **Copy conversation link** copies a link that someone can open to start a conversation with you.
-- **Show QR code** displays a code someone can scan with their camera.
+- **Copy link** copies a link that someone can open to start a conversation with you.
 
-Your address and QR code are also in **Settings → Profile**.
+Your address, with the same copy buttons, is also at the top of **Settings**.
 
 ## Start a conversation
 
-1. Select **New conversation**.
+1. Select **New chat**.
 2. Paste the other person's address, or use **Scan code** to scan their QR code with your camera.
 3. Give the conversation a name if you like, then send your first message.
 
@@ -43,3 +43,9 @@ These actions do different things:
   delete any messages. If a new message arrives, the conversation comes back without a name.
 - **Clear conversation** immediately and permanently deletes all messages in the conversation
   **for both of you**. The conversation stays in your list.
+
+## Light or dark
+
+0xChat follows your device's light or dark setting. To pick one yourself, open
+**Settings → Appearance** and select **Light** or **Dark**. **System** goes back to following
+your device. The choice is saved in this browser only.

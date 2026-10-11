@@ -6,7 +6,7 @@ stays after the other person opens it. The app calls this its **message lifetime
 ## Choose a timer
 
 Choose a timer beside the message box before sending. Set your default in
-**Settings → Message lifetime**, or use **Remember last** to keep your most recent choice.
+**Settings → Messages → Message lifetime**, or use **Remember last** to keep your most recent choice.
 
 ## When a message disappears
 

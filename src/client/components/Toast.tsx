@@ -22,8 +22,6 @@ export const useToast = (): ToastContextType => {
   return ctx;
 };
 
-const borderColor = { success: 'border-green-900', error: 'border-red-900', info: 'border-neutral-700' };
-
 export const ToastProvider = ({ children }: { children: any }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -37,12 +35,13 @@ export const ToastProvider = ({ children }: { children: any }) => {
     <ToastContext.Provider value={{ toast }}>
       {children}
       {/* Clear of the notch and the rounded screen corners: offsets start at the
-          safe area, and on phones toasts span the width instead of hugging a corner. */}
-      <div className="fixed top-[calc(env(safe-area-inset-top)+0.75rem)] right-[calc(env(safe-area-inset-right)+0.75rem)] max-sm:left-[calc(env(safe-area-inset-left)+0.75rem)] flex flex-col gap-1.5 z-50">
+          safe area. On phones toasts span the width and sit above the composer,
+          clear of banners and the header. */}
+      <div className="fixed top-[calc(env(safe-area-inset-top)+0.75rem)] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex w-110 flex-col gap-1.5 max-sm:top-auto max-sm:bottom-[calc(env(safe-area-inset-bottom)+76px)] max-sm:left-[calc(env(safe-area-inset-left)+0.75rem)] max-sm:w-auto">
         {toasts.map((t) => (
-          <div key={t.id} className={`flex items-center gap-2 px-3 py-2 bg-neutral-900 border ${borderColor[t.type]}`} role="alert">
+          <div key={t.id} className="flex items-center gap-2 rounded-md bg-text py-1 pr-1 pl-4.5 text-sm text-bg shadow-[0_8px_24px_rgb(0_0_0/.2)]" role="alert">
             <p className="m-0 flex-1">{t.message}</p>
-            <button className="border-0 p-0.5 ml-2" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close"><X size={14} /></button>
+            <button className="icon-btn text-bg hover:bg-transparent hover:text-bg" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} aria-label="Close"><X size={18} /></button>
           </div>
         ))}
       </div>

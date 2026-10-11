@@ -1,6 +1,6 @@
 import { shortAddress, type Address } from '../../shared/address'
 import { useState, useEffect, useRef } from 'preact/hooks'
-import { UserX } from 'lucide-preact'
+import { QrCode, X } from 'lucide-preact'
 import { MergedConversation } from '../hooks/useConversations'
 import { getLastSeenKey, subscribeLastSeen } from '../lib/contacts'
 import { fmtDay, fmtTime } from '../lib/display'
@@ -10,8 +10,10 @@ import { ErrorState } from './ErrorState'
 interface ConversationListProps {
   conversations: MergedConversation[]
   activeAddress: Address | null
+  selfAddress: Address
   onSelect: (address: Address) => void
   onNewConversation: () => void
+  onShare: () => void
   // Takes the conversation off the list and forgets its label, on this device.
   onRemove: (address: Address) => void
   labels?: Record<Address, string>
@@ -19,9 +21,9 @@ interface ConversationListProps {
   onRetry: () => void
 }
 
-export function ConversationList({ conversations, activeAddress, onSelect, onNewConversation, onRemove, labels = {}, error, onRetry }: ConversationListProps) {
+export function ConversationList({ conversations, activeAddress, selfAddress, onSelect, onNewConversation, onShare, onRemove, labels = {}, error, onRetry }: ConversationListProps) {
   const [unreadMap, setUnreadMap] = useState<Record<string, boolean>>({})
-  // Removing takes two taps; the second tap's question is spelled out, since
+  // Removing takes two taps; the second tap's button says what it does, since
   // touch screens show no title.
   const [removeConfirm, setRemoveConfirm] = useState<string | null>(null)
   const removeConfirmTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -61,10 +63,12 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
 
   if (conversations.length === 0) {
     return errorNotice || (
-      <div className="flex flex-col items-center justify-center gap-3 h-full p-4 text-center">
-        <p className="m-0">No conversations yet</p>
-        <p className="m-0 text-sm">Share your address with the copy, link or QR buttons at the top to start.</p>
-        <button onClick={onNewConversation}>Start a conversation</button>
+      <div className="m-auto grid max-w-[34ch] justify-items-center gap-3 px-7 pt-6 pb-12 text-center">
+        <AddressAvatar address={selfAddress} size={64} />
+        <h2 className="mt-1.5 text-lg font-bold">No conversations yet</h2>
+        <p className="mb-2 text-text-2">Share your address or QR code. When someone writes to you, they’ll show up here.</p>
+        <button onClick={onShare} className="btn btn-accent btn-lg"><QrCode size={18} />Share your address</button>
+        <button onClick={onNewConversation} className="btn btn-lg">Start a conversation</button>
       </div>
     )
   }
@@ -72,7 +76,7 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
   return (
     <>
       {errorNotice}
-      <ul className="list-none m-0 p-0">
+      <ul className="m-0 list-none p-0">
         {conversations.map((conv) => {
           const addr = conv.address
           const isActive = activeAddress === addr
@@ -83,27 +87,29 @@ export function ConversationList({ conversations, activeAddress, onSelect, onNew
           return (
             <li
               key={conv.address}
-              className={`flex items-center gap-2 pl-1 pr-1 min-h-11 border-b border-neutral-900 cursor-pointer select-none ${isActive ? 'bg-neutral-900' : ''}`}
+              className={`group grid cursor-pointer select-none grid-cols-[46px_1fr_auto_auto] items-center gap-3 rounded-md py-2.5 pr-1 pl-3 ${isActive ? 'bg-raised' : 'hover:bg-raised/55'}`}
               onClick={() => onSelect(conv.address)}
             >
-              {/* The unread dot owns the left edge, where the eye starts reading;
-                  the slot is kept when read so the rows stay aligned. */}
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isUnread ? 'bg-accent' : ''}`} aria-label={isUnread ? 'Unread' : undefined} />
-              <AddressAvatar address={conv.address} />
-              <span className="flex-1 min-w-0 flex flex-col">
-                <span className={`truncate ${isUnread ? 'font-bold text-white' : label ? 'text-neutral-300' : 'text-sm text-neutral-400'}`}>
+              <AddressAvatar address={conv.address} size={46} />
+              <span className="grid min-w-0 leading-tight">
+                <span className={`truncate ${isUnread ? 'font-extrabold' : 'font-semibold'} ${label ? '' : 'font-mono'}`}>
                   {label || shortAddress(conv.address)}
                 </span>
-                {conv.stale && <span className="text-xs text-neutral-500">No messages</span>}
+                <span className="truncate text-sm text-text-3">
+                  {conv.stale ? 'No messages' : label ? <span className="font-mono">{shortAddress(conv.address)}</span> : 'No name yet'}
+                </span>
               </span>
-              <time className={`text-sm shrink-0 ${isUnread ? 'text-neutral-200' : 'text-neutral-500'}`}>{fmtDay(conv.last_message_at) ?? fmtTime(conv.last_message_at)}</time>
+              <span className="grid justify-items-end gap-1.5 text-xs">
+                <time className={isUnread ? 'font-bold text-accent-text' : 'text-text-3'}>{fmtDay(conv.last_message_at) ?? fmtTime(conv.last_message_at)}</time>
+                {isUnread && <span className="size-2.5 rounded-full bg-accent" aria-label="Unread" />}
+              </span>
               <button
                 onClick={(e) => handleRemove(e, conv.address)}
                 title="Remove from your conversations and forget the name"
                 aria-label={confirming ? 'Confirm remove conversation' : 'Remove conversation'}
-                className={`border-0 shrink-0 header-action ${confirming ? 'text-neutral-200' : 'text-neutral-500 hover:text-neutral-200'}`}
+                className={confirming ? 'btn btn-danger btn-sm' : 'icon-btn size-10 text-text-3 can-hover:opacity-0 can-hover:group-hover:opacity-100 can-hover:focus-visible:opacity-100'}
               >
-                {confirming ? <span className="text-sm whitespace-nowrap">Remove and forget?</span> : <UserX size={14} />}
+                {confirming ? 'Remove' : <X size={18} />}
               </button>
             </li>
           )

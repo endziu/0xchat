@@ -2,9 +2,8 @@
 
 ## Back up your key
 
-1. Open **Settings → Backup**.
-2. Under **Export private key**, select the copy button. Use the eye button if you want to see
-   the key first.
+1. Open **Settings → Your key**.
+2. Select **Copy private key**. Use the eye button if you want to see the key first.
 3. Save the key somewhere safe, such as a password manager.
 
 If you want to keep this account, make a backup before clearing your browser's site data, uninstalling the app or switching
@@ -15,7 +14,7 @@ browser deletes that window's saved data when the private session ends.
 
 Importing a saved key lets you return to an account or use it on another device.
 
-1. Open **Settings → Backup → Import private key**.
+1. Open **Settings → Your key → Import private key**.
 2. Paste your saved key and select the import button beside the field.
 3. Check the address shown, then select **Import**, followed by **Confirm import**.
 
@@ -33,7 +32,7 @@ in each browser where you want them.
 
 In 0xChat, **burning your identity** means deleting your account and its messages.
 
-Open **Settings → Danger zone → Burn identity…**, then select **Burn** to confirm. This removes
+Open **Settings**, select **Burn identity…** at the bottom, then select **Burn** to confirm. This removes
 the account from this browser and the server, and permanently deletes its messages.
 
 If you kept a backup of the key, importing it later lets you use the same address again.

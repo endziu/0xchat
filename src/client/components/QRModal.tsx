@@ -1,10 +1,13 @@
-import { conversationPath, parseScannedAddress } from '../lib/address-links'
+import { conversationUrl, parseScannedAddress } from '../lib/address-links'
 import { checksumAddress, type Address } from '../../shared/address'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
-import { X, QrCode, Camera } from 'lucide-preact'
+import { Camera, Check, Copy, Link } from 'lucide-preact'
+import { AddressHex } from './AddressHex'
 import { Modal } from './Modal'
+import { Segmented } from './Segmented'
+import { useCopied } from '../hooks/useCopied'
 
 interface QRModalProps {
   mode: 'show' | 'scan'
@@ -13,24 +16,25 @@ interface QRModalProps {
   onScan: (address: Address) => void
 }
 
-// Your address as a scannable conversation link, with the address beneath it.
-export function AddressQR({ address, size = 220 }: { address: Address; size?: number }) {
+// Your address as a scannable conversation link, dark on white whatever the theme.
+function AddressQR({ address, size = 208 }: { address: Address; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     if (!canvasRef.current) return
-    QRCode.toCanvas(canvasRef.current, `${window.location.origin}${conversationPath(address)}`, { margin: 1, width: size }).catch(() => {})
+    QRCode.toCanvas(canvasRef.current, conversationUrl(address), { margin: 1, width: size }).catch(() => {})
   }, [address, size])
   return (
-    <>
-      <canvas ref={canvasRef} className="bg-white" />
-      <p className="text-sm text-neutral-500 break-all text-center">{checksumAddress(address)}</p>
-    </>
+    <div className="rounded-md bg-white p-4 leading-[0] shadow-[0_0_0_1px_var(--color-line)]">
+      <canvas ref={canvasRef} />
+    </div>
   )
 }
 
 export function QRModal({ mode: initialMode, address, onClose, onScan }: QRModalProps) {
   const [mode, setMode] = useState(initialMode)
   const [scanError, setScanError] = useState('')
+  const [copied, copy] = useCopied()
+  const [linkCopied, copyLink] = useCopied()
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number>(0)
@@ -85,27 +89,38 @@ export function QRModal({ mode: initialMode, address, onClose, onScan }: QRModal
   }, [mode, onScan])
 
   return (
-    <Modal onClose={onClose} labelledBy="qr-title" className="max-w-xs">
-      <div className="flex items-center justify-between p-2 border-b border-neutral-800">
-        <h2 id="qr-title" className="sr-only">{mode === 'show' ? 'My QR code' : 'Scan a QR code'}</h2>
-        <div className="flex gap-1">
-          <button onClick={() => setMode('show')} aria-pressed={mode === 'show'} className={mode === 'show' ? 'text-neutral-200' : 'text-neutral-500'} title="My code" aria-label="My code">
-            <QrCode size={16} />
-          </button>
-          <button onClick={() => setMode('scan')} aria-pressed={mode === 'scan'} className={mode === 'scan' ? 'text-neutral-200' : 'text-neutral-500'} title="Scan code" aria-label="Scan code">
-            <Camera size={16} />
-          </button>
-        </div>
-        <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
-      </div>
-
-      <div className="p-3 flex flex-col items-center gap-2">
+    <Modal onClose={onClose} title={address ? 'Share' : 'Scan a QR code'} kind="sheet">
+      <div className="grid justify-items-center gap-4.5 px-5 pt-2 pb-6">
+        {address && (
+          <Segmented
+            label="Share or scan"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'show', label: 'My code' },
+              { value: 'scan', label: <><Camera size={16} />Scan</> },
+            ]}
+          />
+        )}
         {mode === 'show' ? (
-          address && <AddressQR address={address} />
+          address && (
+            <>
+              <AddressQR address={address} />
+              <AddressHex address={address} className="max-w-[22ch]" />
+              <div className="flex w-full gap-2">
+                <button onClick={() => copy(checksumAddress(address))} className="btn btn-accent btn-lg flex-1">
+                  {copied ? <Check size={18} /> : <Copy size={18} />}Copy address
+                </button>
+                <button onClick={() => copyLink(conversationUrl(address))} className="btn btn-lg flex-1">
+                  {linkCopied ? <Check size={18} /> : <Link size={18} />}Copy link
+                </button>
+              </div>
+            </>
+          )
         ) : (
           <>
-            <video ref={videoRef} className="w-full aspect-square object-cover bg-neutral-950" muted playsInline />
-            {scanError && <p className="text-red-400">{scanError}</p>}
+            <video ref={videoRef} className="aspect-square w-full rounded-md bg-raised object-cover" muted playsInline />
+            {scanError ? <p className="text-danger">{scanError}</p> : <p className="text-sm text-text-2">Point your camera at a 0xChat code</p>}
           </>
         )}
       </div>

@@ -10,10 +10,10 @@ interface ErrorStateProps {
 // side-by-side detail column collapses to one character per line.
 export function ErrorState({ title, detail, onRetry }: ErrorStateProps) {
   return (
-    <div role="alert" className="flex flex-col items-start gap-1 m-2 p-2 border border-red-900 text-sm">
-      <span className="text-red-400">{title}</span>
-      <span className="w-full break-words text-neutral-500">{detail}</span>
-      <button onClick={onRetry}>Retry</button>
+    <div role="alert" className="m-3 grid shrink-0 justify-items-start gap-1 rounded-md bg-bg px-4 py-3.5 text-sm">
+      <b className="text-danger">{title}</b>
+      <span className="w-full break-words text-text-2">{detail}</span>
+      <button onClick={onRetry} className="btn btn-sm mt-1.5">Retry</button>
     </div>
   )
 }

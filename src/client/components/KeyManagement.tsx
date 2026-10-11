@@ -1,8 +1,9 @@
-import { checksumAddress } from '../../shared/address'
 import { useState, useRef, useEffect } from 'preact/hooks'
 import { Keypair, deriveKeypair } from '../../shared/keypair'
-import { Copy, Check, Upload, Eye, EyeOff, X } from 'lucide-preact'
+import { Copy, Check, ChevronRight, Upload, Eye, EyeOff } from 'lucide-preact'
 import { AddressAvatar } from './AddressAvatar'
+import { AddressHex } from './AddressHex'
+import { ROW, SettingsGroup } from './SettingsGroup'
 import { useToast } from './Toast'
 import { useCopied } from '../hooks/useCopied'
 import { errorMessage } from '../lib/errors'
@@ -16,6 +17,7 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   const { toast } = useToast()
   const [showKey, setShowKey] = useState(false)
   const [keyCopied, copyKey] = useCopied()
+  const [importing, setImporting] = useState(false)
   const [importHex, setImportHex] = useState('')
   const [previewKeypair, setPreviewKeypair] = useState<Keypair | null>(null)
   const [confirmTimeout, setConfirmTimeout] = useState(false)
@@ -51,49 +53,50 @@ export function KeyManagement({ identity, onImport }: KeyManagementProps) {
   }
 
   return (
-    <section className="border-t border-neutral-800 p-3">
-      <h3>Backup</h3>
-
-      <div className="mt-3">
-        <label htmlFor="export-private-key" className="text-sm text-neutral-400">Export private key</label>
-        <div className="mt-1 flex items-center gap-1">
-          <input id="export-private-key" type={showKey ? 'text' : 'password'} readOnly value={identity.privateKey} className="min-w-0 flex-1" />
-          <button onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide private key' : 'Show private key'} aria-label={showKey ? 'Hide private key' : 'Show private key'}>
-            {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-          <button onClick={() => { copyKey(identity.privateKey); toast('Copied', 'success') }} title="Copy private key" aria-label="Copy private key">
-            {keyCopied ? <Check size={14} /> : <Copy size={14} />}
-          </button>
+    <SettingsGroup title="Your key" foot="Your key is your account. Export it and keep it somewhere safe, or you lose this identity if this browser's storage is cleared.">
+      <div className={`${ROW} pr-1`}>
+        <span className="flex-1 font-mono [overflow-wrap:anywhere] text-text-2">
+          {showKey ? identity.privateKey : '•••• •••• •••• •••• ••••'}
+        </span>
+        <button onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide private key' : 'Show private key'} aria-label={showKey ? 'Hide private key' : 'Show private key'} className="icon-btn">
+          {showKey ? <EyeOff size={20} /> : <Eye size={20} />}
+        </button>
+      </div>
+      <button onClick={() => { copyKey(identity.privateKey); toast('Copied', 'success') }} className={`${ROW} hover:bg-raised/50`}>
+        <span className="flex-1">Copy private key</span>
+        <span className="mr-2.5 text-text-3">{keyCopied ? <Check size={18} /> : <Copy size={18} />}</span>
+      </button>
+      <button onClick={() => setImporting(!importing)} aria-expanded={importing} className={`${ROW} hover:bg-raised/50`}>
+        <span className="flex-1">Import private key</span>
+        <ChevronRight size={18} className={`mr-2.5 text-text-3 transition-transform motion-reduce:transition-none ${importing ? 'rotate-90' : ''}`} />
+      </button>
+      {importing && (
+        <div className="grid justify-items-start gap-2.5 px-4 pt-3.5 pb-4">
+          {!previewKeypair ? (
+            <form className="flex w-full gap-2" onSubmit={(e) => { e.preventDefault(); handleImportPreview() }}>
+              <input type="password" aria-label="Private key to import" placeholder="0x..." value={importHex} onInput={(e: any) => setImportHex(e.target.value)} className="min-w-0 flex-1 font-mono" />
+              <button type="submit" disabled={!importHex.trim()} title="Import private key" aria-label="Import private key" className="btn min-h-12"><Upload size={18} /></button>
+            </form>
+          ) : (
+            <>
+              <span className="text-sm text-text-2">New address</span>
+              <div className="flex items-center gap-3">
+                <AddressAvatar address={previewKeypair.address} size={32} />
+                <AddressHex address={previewKeypair.address} className="justify-start text-sm" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-accent" onClick={() => {
+                  if (confirmTimeout) { handleImportConfirm() } else {
+                    setConfirmTimeout(true)
+                    confirmTimeoutRef.current = setTimeout(() => setConfirmTimeout(false), 3000)
+                  }
+                }}>{confirmTimeout ? 'Confirm import' : 'Import'}</button>
+                <button onClick={handleCancelPreview} className="btn">Cancel</button>
+              </div>
+            </>
+          )}
         </div>
-        <p className="mt-1 text-sm">Your key is your account. Export it and keep it somewhere safe, or you lose this identity if this browser's storage is cleared.</p>
-      </div>
-
-      <div className="mt-3">
-        <label htmlFor="import-private-key" className="text-sm text-neutral-400">Import private key</label>
-        {!previewKeypair ? (
-          <div className="mt-1 flex items-center gap-1">
-            <input id="import-private-key" type="password" placeholder="0x..." value={importHex} onInput={(e: any) => setImportHex(e.target.value)} className="min-w-0 flex-1" />
-            <button onClick={handleImportPreview} disabled={!importHex.trim()} title="Import private key" aria-label="Import private key"><Upload size={14} /></button>
-          </div>
-        ) : (
-          <div className="mt-1 border border-neutral-800 p-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-neutral-500">New address</span>
-              <button onClick={handleCancelPreview} title="Cancel import" aria-label="Cancel import" className="border-0 p-0.5"><X size={14} /></button>
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-sm text-neutral-400">
-              <AddressAvatar address={previewKeypair.address} />
-              <span className="min-w-0 break-all">{checksumAddress(previewKeypair.address)}</span>
-            </div>
-            <button className="mt-2" onClick={() => {
-              if (confirmTimeout) { handleImportConfirm() } else {
-                setConfirmTimeout(true)
-                confirmTimeoutRef.current = setTimeout(() => setConfirmTimeout(false), 3000)
-              }
-            }}>{confirmTimeout ? 'Confirm import' : 'Import'}</button>
-          </div>
-        )}
-      </div>
-    </section>
+      )}
+    </SettingsGroup>
   )
 }
