@@ -72,7 +72,7 @@ export function Layout({
     // is left to whatever sits there (composer, conversation list) so it isn't
     // stacked on top of their own padding. h-full, not h-dvh: see styles.css.
     <div className="mx-auto flex h-full max-w-[90rem] flex-col safe-top safe-x sm:p-3">
-      {error && <div role="alert" className="mb-2 rounded-md bg-raised p-2 text-center text-sm text-danger">{error}</div>}
+      {error && <div role="alert" className="mb-2 rounded-md bg-danger-soft p-2 text-center text-sm text-danger">{error}</div>}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {children({ sidebarTop, openShare })}
       </main>

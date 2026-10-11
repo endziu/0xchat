@@ -213,7 +213,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
 
       {newChatOpen && (
         <Modal title="New chat" action="Cancel" kind="sheet" onClose={closeNewChat}>
-          <form className="grid gap-3.5 px-5 pt-2 pb-6" onSubmit={(e) => { e.preventDefault(); handleNewChatSubmit() }}>
+          <form className="grid min-h-0 gap-3.5 overflow-y-auto overscroll-contain px-5 pt-2 pb-6" onSubmit={(e) => { e.preventDefault(); handleNewChatSubmit() }}>
             <label className="grid gap-1.5 text-sm font-semibold text-text-2">
               <span>Address</span>
               <input

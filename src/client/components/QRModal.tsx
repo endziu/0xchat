@@ -90,7 +90,7 @@ export function QRModal({ mode: initialMode, address, onClose, onScan }: QRModal
 
   return (
     <Modal onClose={onClose} title={address ? 'Share' : 'Scan a QR code'} kind="sheet">
-      <div className="grid justify-items-center gap-4.5 px-5 pt-2 pb-6">
+      <div className="grid min-h-0 justify-items-center gap-4.5 overflow-y-auto overscroll-contain px-5 pt-2 pb-6">
         {address && (
           <Segmented
             label="Share or scan"
