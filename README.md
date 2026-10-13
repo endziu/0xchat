@@ -19,7 +19,7 @@ Open the app and it creates an account for you. Share your **address** (a string
 
 0xChat uses the same kind of addresses as Ethereum, but you don't need cryptocurrency or a wallet to chat. There are no transaction fees, and chats are not published to a blockchain. You do need an internet connection.
 
-See [Getting started](site/getting-started.md) for a walkthrough, or [Your key and account](site/your-key.md) to learn how to back up your key.
+See [Getting started](site/getting-started.md) for a walkthrough, or [Your key](site/your-key.md) to learn how to back up your key.
 
 ---
 

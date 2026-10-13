@@ -2,45 +2,35 @@
 
 ## I lost my key. Can I get my account back?
 
-Only if you have another copy, such as a backup or a browser where you still use the account.
-The server does not have your private key and cannot recover it for you.
+Only if you still have a copy: a backup, or another browser where you use the account. The
+server never has your key. Otherwise, start a new account and share the new address.
 
-If you have no copy left, start with a new account and share the new address. To keep access
-next time, [back up your key](./your-key.md#back-up-your-key).
+## What does "Recipient not registered" mean?
 
-## Why do I see "Recipient not registered"?
+That address can't receive messages right now. The person hasn't opened 0xChat yet, hasn't
+used it for 30 days, or has deleted their account. Ask them to open the app, then send again.
 
-The other person's address is not currently available to receive messages. They may never have
-opened 0xChat, may have been inactive for 30 days, or may have deleted their account.
-Ask them to open the app with their key, then try sending again.
+## What does "Too many requests" mean?
 
-## Why do I see "Too many requests"?
+You've hit a limit that protects against spam. Wait a minute and try again.
 
-0xChat limits how many actions you can take in a short time to help prevent spam. Wait a minute,
-then try again.
+## Why did my message disappear before it was read?
 
-## Why did my message disappear before the other person read it?
-
-Unopened messages are deleted 24 hours after sending. A message's timer can also start before
-the person has read the text: loading it in the conversation they are viewing counts as
-opening it. See [what counts as opened](./messages.md#what-counts-as-opened).
-
-Clearing the conversation from either side deletes its messages too.
+It was cleared, it went unopened for 24 hours, or it was opened and its timer ran out. A
+message counts as opened as soon as it loads on screen, which can be before anyone reads it.
+See [when a message counts as opened](./messages.md#when-a-message-counts-as-opened).
 
 ## Can I use 0xChat on my phone and my computer?
 
-Yes. Import the same private key on both to use the same account. See
-[how to use your account on several devices](./your-key.md#use-the-same-identity-on-several-devices).
+Yes. Import the same key on both. See [Use several devices](./your-key.md#use-several-devices).
 
-## Do I need cryptocurrency or a wallet?
+## Is 0xChat a crypto app?
 
-No. You do not need to buy cryptocurrency, connect a wallet or pay transaction fees to chat.
-0xChat uses the same kind of addresses as Ethereum, but your chats are not published to a
-blockchain.
+No. Addresses use the same format as Ethereum, but 0xChat involves no cryptocurrency, wallet,
+fees or blockchain.
 
 ## Can I change my address?
 
-A new address means a new account. You can
-[burn your current identity](./your-key.md#burn-your-identity) to start fresh, but this
-permanently deletes its messages. You can also switch accounts by importing a different
-0xChat key. Back up your current key first if you want to use that account again.
+A new address is a new account. [Burn your identity](./your-key.md#burn-your-identity) to start
+fresh, or import a different 0xChat key to switch. Back up your current key first if you want
+it back.
