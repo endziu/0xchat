@@ -30,7 +30,7 @@ export default defineConfig({
           { text: 'What is 0xChat?', link: '/' },
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Disappearing messages', link: '/messages' },
-          { text: 'Your key and account', link: '/your-key' },
+          { text: 'Your key', link: '/your-key' },
           { text: 'Notifications', link: '/notifications' },
           { text: 'Install the app', link: '/install' },
         ],

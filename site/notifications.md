@@ -1,31 +1,26 @@
 # Notifications
 
-0xChat can notify you when a new message arrives, even when the app is closed.
+0xChat can alert you to new messages while it's closed.
 
 ## Turn on notifications
 
-1. Open **Settings → Notifications**.
-2. Turn on **Notify me of new messages**.
-3. Allow notifications when your browser asks.
+Open **Settings → Notifications**, turn on **Notify me of new messages**, and allow
+notifications when your browser asks. Do this in each browser where you want alerts.
 
-Turn them on separately in each browser where you want alerts. On iPhone and iPad, first
-[add 0xChat to your home screen](./install.md), then open the installed app.
+On iPhone and iPad, [install 0xChat](./install.md) first and turn notifications on from the
+installed app.
 
-## What an alert shows
+## What to expect
 
-An alert tells you that a new message has arrived. It does not include the message itself.
-Open 0xChat to read it.
-
-0xChat sends an alert for each new message when you are not actively using the app on any
-device. If your device is offline, an alert may wait for up to 24 hours, which is how long an
-unopened message is kept. Alerts are not guaranteed to arrive.
+You get one alert per new message, only when 0xChat isn't open and in focus on any of your
+devices. Alerts don't include the message or who sent it. If your device is offline, an alert
+can arrive up to 24 hours later. Delivery isn't guaranteed.
 
 ## Troubleshooting
 
-- **Notifications are blocked and there is no switch.** Open the site's settings in your
-  browser, usually through the icon beside the address bar. Allow notifications, then reload
-  0xChat.
-- **Notifications stopped arriving.** Try turning them off and on again in 0xChat's settings.
-- **There is no Notifications section.** Your browser does not support the notifications
-  0xChat uses. On iPhone or iPad, make sure you opened the installed app.
-- **You switched accounts.** Turn on notifications again for the account you are now using.
+- **Notifications are blocked.** Allow them in the site's settings (usually the icon beside the
+  address bar), then reload.
+- **Alerts stopped arriving.** Turn notifications off and on again.
+- **There's no Notifications section.** This browser doesn't support them. On iPhone or iPad,
+  use the installed app.
+- **You switched accounts.** Notifications belong to an account. Turn them on again.

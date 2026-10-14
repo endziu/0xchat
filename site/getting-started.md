@@ -1,51 +1,37 @@
 # Getting started
 
-## Open the app
-
-The first time you open 0xChat, it creates your account automatically. In the app, this is called
-your **identity**. Your **address** is a string of letters and numbers starting with `0x` that
-people use to contact you.
-
-Want to keep this account? [Back up your key](./your-key.md#back-up-your-key).
-You can also use it as a throw-away account.
-
 ## Share your address
 
-Select the QR code button at the top of your chats, or your picture beside it, to open **Share**:
+Select the QR code button at the top of your chats, or your picture beside it, to open
+**Share**. Someone nearby can scan **My code**, or you can **Copy address** or **Copy link** and
+send it however you like. The link opens a conversation with you directly.
 
-- **My code** shows a QR code someone can scan with their camera.
-- **Copy address** copies your address so you can share it.
-- **Copy link** copies a link that someone can open to start a conversation with you.
-
-Your address, with the same copy buttons, is also at the top of **Settings**.
+Your address and the copy buttons are also at the top of **Settings**.
 
 ## Start a conversation
 
 1. Select **New chat**.
-2. Paste the other person's address, or use **Scan code** to scan their QR code with your camera.
-3. Give the conversation a name if you like, then send your first message.
+2. Paste an address, or select **Scan QR** to scan someone's code.
+3. Add a name if you like, then select **Start**.
 
-If someone sent you a conversation link, open it to go straight to the conversation.
+Opening a conversation link does the same thing. If you see *Recipient not registered*, see
+[the FAQ](./faq.md#what-does-recipient-not-registered-mean).
 
-The other person must have opened 0xChat at least once before you can message them. If you see
-*Recipient not registered*, ask them to open the app and then try again.
+## Names stay on your device
 
-## Names are just for you
-
-The name you give a conversation is saved only in your browser. The other person cannot see it,
-and it is not shared with the server. People contact you using your address, not a username.
+Conversation names are saved only in this browser. The other person and the server never see
+them.
 
 ## Remove or clear a conversation
 
-These actions do different things:
-
-- **Remove** takes the conversation off your list and forgets the name you gave it. It does not
-  delete any messages. If a new message arrives, the conversation comes back without a name.
-- **Clear conversation** immediately and permanently deletes all messages in the conversation
-  **for both of you**. The conversation stays in your list.
+- **Remove** (the × beside a conversation in your list) hides it and forgets its name. No
+  messages are deleted, and the conversation comes back if a new message arrives.
+- **Clear conversation** (the bin icon inside a conversation) deletes every message in it, for
+  both of you, immediately. The conversation stays in your list.
 
 ## Light or dark
 
-0xChat follows your device's light or dark setting. To pick one yourself, open
-**Settings → Appearance** and select **Light** or **Dark**. **System** goes back to following
-your device. The choice is saved in this browser only.
+In **Settings → Appearance**, choose **Light** or **Dark**, or **System** to follow your device.
+The choice is saved in this browser only.
+
+If you plan to keep this address, [back up your key](./your-key.md#back-up-your-key).

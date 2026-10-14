@@ -1,35 +1,29 @@
 # Disappearing messages
 
-Every message in 0xChat is deleted automatically. You choose how long each message you send
-stays after the other person opens it. The app calls this its **message lifetime**.
+Every message in 0xChat is deleted eventually. You decide how long yours last once they're
+opened.
 
-## Choose a timer
+## Set the timer
 
-Choose a timer beside the message box before sending. Set your default in
-**Settings → Messages → Message lifetime**, or use **Remember last** to keep your most recent choice.
+Choose a lifetime with the timer beside the message box before you send. To change the
+default, open **Settings → Messages**. **Remember last** reuses your most recent choice.
 
-## When a message disappears
+## When messages are deleted
 
-| Situation | What happens |
+| Situation | Result |
 |---|---|
-| The other person opens your message | Its timer starts. When the time runs out, the message is deleted for both of you. |
-| The other person never opens it | The message is deleted 24 hours after you sent it. |
-| Either of you clears the conversation | All messages in the conversation are deleted immediately for both of you. |
+| The message is opened | Deleted when its timer runs out |
+| The message is never opened | Deleted 24 hours after it was sent |
+| Either of you clears the conversation | Every message deleted immediately |
 
-Once a timer starts, it keeps running even if you leave the conversation or close the app.
-It cannot be paused, reset or extended. The message disappears at the same time on every device,
-and deleted messages cannot be recovered.
+Deletion applies to both of you, on every device, and cannot be undone. Once a timer starts it
+cannot be paused or extended, and it keeps running after you leave the app.
 
-## What counts as "opened"
+## When a message counts as opened
 
-A message counts as opened when it has loaded in the conversation you are viewing and the
-0xChat window is active. **You do not need to scroll to each message or tap it.**
+A message is opened when it has loaded in the conversation on screen and the 0xChat window is
+in the foreground. You don't have to scroll to it or tap it. That includes messages arriving
+while the conversation is open, and older messages as they load.
 
-If a new message arrives while you are viewing that conversation, its timer starts immediately.
-Loading older messages also starts their timers if they have not been opened before.
-
-These do **not** start a message's timer:
-
-- leaving the app in a background tab, a minimized window or on a locked phone;
-- seeing the conversation in your conversation list;
-- leaving older messages unloaded.
+Timers don't start while 0xChat is in a background tab, minimized or on a locked phone, or
+just because a conversation appears in your list.
