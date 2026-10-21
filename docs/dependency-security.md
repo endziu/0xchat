@@ -23,7 +23,9 @@ queried with `bun pm view`.
 
 ## Remaining advisories
 
-`bun audit --json` still reports **seven advisories: two high and five moderate**.
+`bun audit --json` now reports **nine advisories: two high, six moderate and one low**.
+The verification rerun found two additional Vite advisories beyond the seven
+recorded initially; dependency versions have not changed.
 All are in the development dependency chain below. The top-level Vite 8.2.4,
 shell-quote 1.12.0 and source-map-js 1.2.2 have no findings in this audit.
 `bun audit --production --json` returns `{}` (exit 0).
@@ -43,6 +45,8 @@ shell-quote 1.12.0 and source-map-js 1.2.2 have no findings in this audit.
 | [GHSA-698v-4r3x-3vcv](https://github.com/vitejs/launch-editor/security/advisories/GHSA-698v-4r3x-3vcv) | Moderate | vitepress → vite | Windows command escaping can permit editor command injection with attacker-controlled filenames/environment or alternate streams. |
 | [GHSA-r825-w8mm-5pxw](https://github.com/vitejs/launch-editor/security/advisories/GHSA-r825-w8mm-5pxw) | Moderate | vitepress → vite | Editor flag interpretation can execute commands; upstream's Vite scenario requires WSL, a susceptible editor and an attacker-created filesystem entry. |
 | [GHSA-587h-7wmj-h5pm](https://github.com/vitejs/launch-editor/security/advisories/GHSA-587h-7wmj-h5pm) | High | vitepress → vite | Windows path handling bypasses the editor file-existence check, enabling command injection in combination with the escaping issue. |
+| [GHSA-9jrq-w75r-8gcw](https://github.com/vitejs/vite/security/advisories/GHSA-9jrq-w75r-8gcw) | Low | vitepress → vite | Cross-origin script execution requires a custom HTML middleware setup that passes the unchanged request URL to `transformIndexHtml`, inline module scripts, and sensitive state/actions. This repository adds no such custom middleware; the vulnerable nested dependency remains reported. |
+| [GHSA-rq7h-c2jc-7f22](https://github.com/vitejs/vite/security/advisories/GHSA-rq7h-c2jc-7f22) | Moderate | vitepress → vite | On non-Windows hosts, an imported project path matching a readable absolute host path can bypass `server.fs.allow`. Upstream lists network exposure as an impact condition; its PoC also uses loopback, so do not treat localhost binding as a complete security boundary. |
 | [GHSA-67mh-4wv8-2f99](https://github.com/evanw/esbuild/security/advisories/GHSA-67mh-4wv8-2f99) | Moderate | vitepress → vite → esbuild | A malicious website can read an esbuild development server's responses. This applies to esbuild's serve API; this repository does not start that server. |
 
 Chosen mitigation is to serve the generated `dist/docs/` through the Bun app
@@ -52,7 +56,10 @@ Loopback binding reduces remote exposure but does not by itself prevent a
 malicious website from reaching vulnerable local middleware. Avoid untrusted
 browsing while running the old docs development server, particularly on Windows
 or WSL. These development-server issues are not exercised by serving the built
-static docs through `bun run start`.
+static docs through `bun run start`. Prefer the built docs when previewing
+untrusted changes; do not rely on `server.fs.allow` alone to protect host files.
+The two newly recorded findings stay in the same deferred docs-toolchain batch:
+no forced nested-major upgrade or audit suppression is introduced here.
 
 Deferral is deliberate: registry tags still identify VitePress 1.6.4 as `latest`
 and 2.0.0-alpha.20 as `next`. Version 1.6.4 requires Vite `^5.4.14`, outside
@@ -76,8 +83,10 @@ checkout's existing database, `.env`, build output and installed dependencies.
   production builds, docs no-inline-script/handler checks and CSP header checks.
   The sandboxed attempt could not run localhost-dependent tests; the complete
   run passed with localhost networking available.
-- Full and production-only audits: results recorded above; the full audit
-  intentionally remains nonzero for the documented VitePress findings.
+- Full and production-only audits rerun against the unchanged lockfile: nine
+  documented VitePress-chain findings; production audit returns `{}` (exit 0).
+  The full audit intentionally remains nonzero. Both additional findings were
+  assessed against the upstream advisories linked above.
 - `bun run dev`: concurrently starts the API and Vite 8.2.4; browser identity
   registration, live connection through the API proxy, invalid-address
   validation and settings all work. Both child processes stop on SIGINT.
