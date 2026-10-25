@@ -6,7 +6,7 @@ import { pushSuppressingConnectionCount } from './sse.ts';
 
 export type SendPush = (
   subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
-  options: { TTL: number },
+  options: { TTL: number; urgency: 'high' },
 ) => Promise<unknown>;
 
 const SEND_TIMEOUT_MS = 15_000;
@@ -18,7 +18,7 @@ if (pushEnabled) {
 
 // No payload: the push relay and service worker learn nothing beyond "deliver a wake-up".
 const configuredSend: SendPush | null = pushEnabled
-  ? (subscription, { TTL }) => webpush.sendNotification(subscription, null, { TTL, timeout: SEND_TIMEOUT_MS })
+  ? (subscription, { TTL, urgency }) => webpush.sendNotification(subscription, null, { TTL, urgency, timeout: SEND_TIMEOUT_MS })
   : null;
 let send = configuredSend;
 
@@ -35,7 +35,8 @@ const DEAD_STATUS = new Set([401, 403, 404, 410]);
  * Wake the recipient's browsers once, unless one of them is already looking.
  * The deadline is fixed at acceptance: acceptance plus the unopened retention
  * limit. There is no retry; a failed wake-up is dropped and the next message
- * tries again.
+ * tries again. High urgency, because push services may hold normal-urgency
+ * wake-ups on idle phones for an hour or more.
  */
 export async function pushNotify(address: Address, deadline: number): Promise<void> {
   const ttl = Math.floor((deadline - Date.now()) / 1000);
@@ -43,7 +44,7 @@ export async function pushNotify(address: Address, deadline: number): Promise<vo
   if (!transport || ttl < 1 || pushSuppressingConnectionCount(address) > 0) return;
   await Promise.all(getPushSubscriptionsForAddress(address).map(async (subscription) => {
     try {
-      await transport({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, { TTL: ttl });
+      await transport({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, { TTL: ttl, urgency: 'high' });
       log('[push] sent', address);
     } catch (caught: unknown) {
       const statusCode = (caught as { statusCode?: unknown } | null)?.statusCode;
