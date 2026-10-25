@@ -16,7 +16,7 @@ import { DELIVERY_CAPABILITY } from '../shared/message-envelope.ts'
 const alice = requireAddress(`0x${'a'.repeat(40)}`)
 const keys = { p256dh: 'p256dh-key', auth: 'auth-key' }
 const endpoint = (name: string) => `https://fcm.googleapis.com/fcm/send/${name}`
-let sent: Array<{ endpoint: string; TTL: number }>
+let sent: Array<{ endpoint: string; TTL: number; urgency: string }>
 let respond: (endpoint: string) => Promise<unknown>
 
 beforeEach(() => {
@@ -25,7 +25,7 @@ beforeEach(() => {
   sent = []
   respond = async () => undefined
   const send: SendPush = async (subscription, options) => {
-    sent.push({ endpoint: subscription.endpoint, TTL: options.TTL })
+    sent.push({ endpoint: subscription.endpoint, TTL: options.TTL, urgency: options.urgency })
     return respond(subscription.endpoint)
   }
   setPushSender(send)
@@ -35,7 +35,7 @@ afterEach(() => setPushSender(undefined))
 const rejectWith = (statusCode: number) => async () => { throw Object.assign(new Error('rejected'), { statusCode }) }
 const endpoints = () => getPushSubscriptionsForAddress(alice).map(row => row.endpoint)
 
-test('wakes every subscription of the recipient with the remaining whole seconds as TTL', async () => {
+test('wakes every subscription of the recipient at high urgency with the remaining whole seconds as TTL', async () => {
   savePushSubscription(alice, { endpoint: endpoint('one'), ...keys })
   savePushSubscription(alice, { endpoint: endpoint('two'), ...keys })
 
@@ -43,6 +43,7 @@ test('wakes every subscription of the recipient with the remaining whole seconds
 
   expect(sent.map(item => item.endpoint).sort()).toEqual([endpoint('one'), endpoint('two')])
   expect(sent.every(item => item.TTL === 90)).toBe(true)
+  expect(sent.every(item => item.urgency === 'high')).toBe(true)
 })
 
 test('an accepted message wakes the recipient until its unopened retention deadline', async () => {
@@ -67,6 +68,7 @@ test('an accepted message wakes the recipient until its unopened retention deadl
     expect(sent[0]!.endpoint).toBe(endpoint('recipient'))
     expect(sent[0]!.TTL).toBeGreaterThanOrEqual(ttl - 1)
     expect(sent[0]!.TTL).toBeLessThanOrEqual(ttl)
+    expect(sent[0]!.urgency).toBe('high')
   } finally {
     server.stop(true)
   }
