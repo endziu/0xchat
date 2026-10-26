@@ -34,11 +34,11 @@ function vectorRandom(length: number): Uint8Array<ArrayBuffer> {
 describe('authenticated message encryption vector', () => {
   test('encrypts, signs, verifies, and decrypts a stable canonical vector', async () => {
     expect(aad).toBe(
-      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300`,
+      `hushhash message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300`,
     )
     const encrypted = await encrypt('hello envelope', recipientPublicKey, aad, vectorRandom)
     expect(encrypted).toEqual({
-      ciphertext: '0xa79df7c892565c6d35e048e2dd83351b2c026ba9406e8500fd87ab3955d3',
+      ciphertext: '0x0e6a828c69e13c93b8ccdaf0fb6cf81308ecb9188a24034ed9f9e70a659b',
       ephemeral_pubkey: bytesToHex(secp.getPublicKey(new Uint8Array(32).fill(0x33), true)),
       iv: `0x${'66'.repeat(12)}`,
     })
@@ -55,7 +55,7 @@ describe('authenticated message encryption vector', () => {
       ...unsigned,
       signature: await sender.signMessage({ message: canonicalMessageEnvelope(unsigned) }),
     }
-    expect(envelope.signature).toBe('0x123c4ff60948cf8f850fef7a9a3ca30aeaafb00b0c7e5ac91d966b8e43016d4c7b1ea13c4cecbe8774a3cf04ba5c37bf6c2b1c09f25356c631d74f89d50342701b')
+    expect(envelope.signature).toBe('0x6473c0d66ea0e2817c8aec26397731477ec4100ec27a83c80fd68da27c0a90034284fc5e4b4cb8609a2fb625684679af1bd703c2f65d4c1705bacf8211b88af61c')
     const verified = await verifyMessageEnvelope(envelope)
     expect(verified).not.toBeNull()
     expect(await decrypt(

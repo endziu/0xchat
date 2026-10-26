@@ -191,7 +191,7 @@ test('a subscription made with a rotated VAPID key is removed and Enable replace
 
 test('Enable replaces a browser subscription made with another key without a reload', async () => {
   browserSub = fakeSubscription(keyBytes('C'.repeat(87)))
-  localStorage.setItem(`0xchat.push.${alice}`, JSON.stringify({ enabled: false }))
+  localStorage.setItem(`hushhash_push_${alice}`, JSON.stringify({ enabled: false }))
   await mount()
 
   await toggle('on')

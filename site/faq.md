@@ -7,7 +7,7 @@ server never has your key. Otherwise, start a new account and share the new addr
 
 ## What does "Recipient not registered" mean?
 
-That address can't receive messages right now. The person hasn't opened 0xChat yet, hasn't
+That address can't receive messages right now. The person hasn't opened hushhash yet, hasn't
 used it for 30 days, or has deleted their account. Ask them to open the app, then send again.
 
 ## What does "Too many requests" mean?
@@ -20,17 +20,17 @@ It was cleared, it went unopened for 24 hours, or it was opened and its timer ra
 message counts as opened as soon as it loads on screen, which can be before anyone reads it.
 See [when a message counts as opened](./messages.md#when-a-message-counts-as-opened).
 
-## Can I use 0xChat on my phone and my computer?
+## Can I use hushhash on my phone and my computer?
 
 Yes. Import the same key on both. See [Use several devices](./your-key.md#use-several-devices).
 
-## Is 0xChat a crypto app?
+## Is hushhash a crypto app?
 
-No. Addresses use the same format as Ethereum, but 0xChat involves no cryptocurrency, wallet,
+No. Addresses use the same format as Ethereum, but hushhash involves no cryptocurrency, wallet,
 fees or blockchain.
 
 ## Can I change my address?
 
 A new address is a new account. [Burn your identity](./your-key.md#burn-your-identity) to start
-fresh, or import a different 0xChat key to switch. Back up your current key first if you want
+fresh, or import a different hushhash key to switch. Back up your current key first if you want
 it back.

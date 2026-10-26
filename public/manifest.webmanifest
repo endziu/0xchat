@@ -1,6 +1,6 @@
 {
-  "name": "0xChat",
-  "short_name": "0xChat",
+  "name": "hushhash",
+  "short_name": "hushhash",
   "description": "End-to-end encrypted ephemeral chat between Ethereum addresses.",
   "id": "/chat",
   "start_url": "/chat",

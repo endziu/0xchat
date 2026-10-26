@@ -49,7 +49,7 @@ export function Layout({
         <button onClick={openShare} title={status} aria-label={`Your address ${shortAddress(identity.address)}, ${status}`} className="relative gap-2.5 rounded-md py-1 pr-2.5 pl-1 hover:bg-raised">
           <AddressAvatar address={identity.address} size={32} />
           <span className="grid text-left leading-tight max-sm:hidden">
-            <b className="font-bold">0xChat</b>
+            <b className="font-bold">hushhash</b>
             <small className="font-mono text-xs text-text-3">{shortAddress(identity.address)}</small>
           </span>
           <span aria-hidden="true" className={`absolute top-[26px] left-7 size-2.5 rounded-full border-2 border-surface ${sseConnected ? 'bg-ok' : 'bg-text-3'}`} />

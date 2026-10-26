@@ -48,13 +48,13 @@ describe('message envelope protocol', () => {
     const envelope = await signedEnvelope()
     const { signature: _, ...unsigned } = envelope
     expect(canonicalMessageAad(envelope)).toBe(
-      `0xChat message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300`,
+      `hushhash message AAD v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300`,
     )
     expect(canonicalMessageEnvelope(unsigned)).toBe(
-      `0xChat signed message envelope v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300\nRecipient ciphertext: 0x${'55'.repeat(32)}\nRecipient ephemeral public key: ${ephemeral}\nRecipient IV: 0x${'66'.repeat(12)}\nSender ciphertext: 0x${'77'.repeat(32)}\nSender ephemeral public key: ${ephemeral}\nSender IV: 0x${'88'.repeat(12)}`,
+      `hushhash signed message envelope v2\nVersion: 2\nMessage ID: 0x${'44'.repeat(16)}\nSender: ${requireAddress(sender.address)}\nRecipient: ${requireAddress(recipient.address)}\nTTL: 300\nRecipient ciphertext: 0x${'55'.repeat(32)}\nRecipient ephemeral public key: ${ephemeral}\nRecipient IV: 0x${'66'.repeat(12)}\nSender ciphertext: 0x${'77'.repeat(32)}\nSender ephemeral public key: ${ephemeral}\nSender IV: 0x${'88'.repeat(12)}`,
     )
     expect(envelope.signature).toBe(
-      '0x6cd306a871ad6df8447ce426fca91939a3fe4d58a969199ce0e33d699988a51d6298d00de84b3aeffe78985cd33cb59a9ba7c0b9fbb0445fde5ee7c09813ab4d1b',
+      '0x940fe953eb8baddcc6eafc89f5838e4383d59d2a3e70e0ad5005d6116d890d226b1c573ce4f8aae4c7c6efeebc129697fc0bd7844ff1663387a896dd189ab9b71b',
     )
     expect(await verifyMessageEnvelope(envelope)).toEqual(envelope)
   })

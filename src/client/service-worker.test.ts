@@ -80,9 +80,9 @@ describe('production service worker notifications', () => {
     await dispatch(handlers.get('push')!, { data: { json: () => ({ title: 'Secret', url: 'https://evil.example' }) } })
 
     expect(shown).toEqual([{
-      title: '0xChat',
+      title: 'hushhash',
       options: {
-        body: 'New message', icon: '/icon-192.png', badge: '/icon-192.png', tag: '0xchat-message',
+        body: 'New message', icon: '/icon-192.png', badge: '/icon-192.png', tag: 'hushhash-message',
       },
     }])
   })
@@ -196,7 +196,7 @@ describe('production service worker notifications', () => {
   })
 
   test('activating the lifecycle release purges shells cached by clients that predate it', async () => {
-    const previous = ['0xchat-shell-v1', '0xchat-assets-v1', '0xchat-shell-v2', '0xchat-assets-v2']
+    const previous = ['hushhash-shell-v1', 'hushhash-assets-v1', 'hushhash-shell-v2', 'hushhash-assets-v2']
     const { handlers, stored } = await loadWorker([], previous)
 
     await dispatch(handlers.get('activate')!, {})
@@ -206,7 +206,7 @@ describe('production service worker notifications', () => {
 
   test('a shell cached before the release can no longer boot once the updated worker activates', async () => {
     const { handlers, stored, network, settled } = await loadWorker([], {
-      '0xchat-shell-v2': { '/chat': 'pre-release shell' },
+      'hushhash-shell-v2': { '/chat': 'pre-release shell' },
     })
     const navigate = async () => {
       let response: Promise<Response> | undefined
@@ -224,6 +224,6 @@ describe('production service worker notifications', () => {
     network.online = false
 
     expect(await navigate()).toBe('updated shell')
-    expect([...stored.keys()]).not.toContain('0xchat-shell-v2')
+    expect([...stored.keys()]).not.toContain('hushhash-shell-v2')
   })
 })

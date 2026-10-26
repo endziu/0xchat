@@ -2,8 +2,8 @@
 // most recently selected lifetime when no default is configured.
 import { MESSAGE_TTLS } from '../../shared/message-ttl'
 
-const DEFAULT_SETTING_KEY = '0xchat_default_message_lifetime_v1'
-const LAST_SELECTION_KEY = '0xchat_last_message_lifetime_v1'
+const DEFAULT_SETTING_KEY = 'hushhash_default_message_lifetime_v1'
+const LAST_SELECTION_KEY = 'hushhash_last_message_lifetime_v1'
 
 interface MessageLifetimeOption {
   seconds: number

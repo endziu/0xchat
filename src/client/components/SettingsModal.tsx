@@ -146,7 +146,7 @@ export function SettingsModal({
         )}
 
         <p className="mt-6 text-center text-xs text-text-3">
-          0xChat {version} · <a href="/docs/" target="_blank" rel="noopener" className="underline">Help and docs</a>
+          hushhash {version} · <a href="/docs/" target="_blank" rel="noopener" className="underline">Help and docs</a>
         </p>
       </div>
     </Modal>

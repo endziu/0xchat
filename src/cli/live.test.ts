@@ -30,7 +30,7 @@ beforeEach(async () => {
   for (const limiter of Object.values(limiters)) limiter.reset()
   logging = spyOn(constants, 'log').mockImplementation(() => {})
   clock = spyOn(Date, 'now').mockReturnValue(accepted)
-  directory = await mkdtemp(join(tmpdir(), '0xchat-live-'))
+  directory = await mkdtemp(join(tmpdir(), 'hushhash-live-'))
   identityPath = join(directory, 'bob.json')
   const identity = await createIdentity(identityPath)
   transform = async (_request, response) => response
@@ -122,7 +122,7 @@ function refuseOutdated(matches: (path: string) => boolean): () => number {
 async function expectUpdateAction(cli: ReturnType<typeof start>, rejections: () => number) {
   await cli.proc.exited
   expect(cli.proc.exitCode).toBe(1)
-  expect(cli.notices()).toContain('This 0xChat CLI is out of date')
+  expect(cli.notices()).toContain('This hushhash CLI is out of date')
   expect(cli.notices()).toContain('git pull && bun install')
   expect(rejections()).toBe(1)
 }

@@ -35,7 +35,7 @@ const recipient = identity('99');
 function messageContext(ip: string, token: string, body: unknown = { version: 2 }): Context {
   const req = new Request('https://chat.example/api/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     body: JSON.stringify(body),
   });
   return {
@@ -161,7 +161,7 @@ test('history rejects a non-positive or non-integer before_seq', async () => {
   createSession('history-token', alice.address, Date.now() + 60_000);
   const get = (query: string) => {
     const req = new Request(`https://chat.example/api/messages/${bob.address}?${query}`, {
-      headers: { Authorization: 'Bearer history-token', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+      headers: { Authorization: 'Bearer history-token', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     });
     const url = new URL(req.url);
     return handleGetMessages({ req, url, path: url.pathname, method: 'GET', ip: 'history-ip' });

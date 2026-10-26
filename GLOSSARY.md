@@ -1,6 +1,6 @@
-# 0xChat
+# hushhash
 
-0xChat is pseudonymous messaging between identities identified by Ethereum addresses, with messages that expire after a sender-selected lifetime.
+hushhash is pseudonymous messaging between identities identified by Ethereum addresses, with messages that expire after a sender-selected lifetime.
 
 ## Language
 
@@ -9,7 +9,7 @@ A pseudonymous chat identity controlled by a private key and identified by an Et
 _Avoid_: Account, wallet, user
 
 **Registration**:
-An identity’s enrollment in 0xChat, allowing others to message it.
+An identity’s enrollment in hushhash, allowing others to message it.
 _Avoid_: Identity, account
 
 **Conversation**:

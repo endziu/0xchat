@@ -11,5 +11,5 @@ names verbatim as its label strings, so a skill that asks for a role can apply i
 | `ready-for-human` | Requires human implementation            |
 | `wontfix`         | Will not be actioned                     |
 
-All five exist in `endziu/0xChat`. If a role ever diverges from its label string here, record the
+All five exist in `endziu/hushhash`. If a role ever diverges from its label string here, record the
 mapping in this table rather than guessing at the tracker.

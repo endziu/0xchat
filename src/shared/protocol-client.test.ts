@@ -149,7 +149,7 @@ describe('keys, registration and sessions', () => {
       buildSessionChallenge('https://attacker.example', alice.address, nonce),
       buildSessionChallenge(ORIGIN, bob.address, nonce),
       buildSessionChallenge(ORIGIN, alice.address, 'b2'.repeat(16)),
-      `0xChat session request\nAddress: ${alice.address}\nNonce: ${nonce}`,
+      `hushhash session request\nAddress: ${alice.address}\nNonce: ${nonce}`,
     ]) {
       const { api, requests } = client(() => Response.json({ challenge, nonce }))
       await expect(api.login(alice)).rejects.toThrow('Invalid session challenge')

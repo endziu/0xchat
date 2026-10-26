@@ -143,7 +143,7 @@ export function ChatView({ recipientAddress, identity, token, navigate, onConnec
       {/* Outside the responsive row, which hides one pane on small screens. */}
       {updateRequired && (
         <div role="alert" className="mx-3 mt-2 flex shrink-0 items-center gap-3 rounded-md bg-accent-soft py-2 pr-2 pl-4 text-sm font-semibold sm:m-0">
-          <span className="flex-1">0xChat has been updated. Reload to keep chatting.</span>
+          <span className="flex-1">hushhash has been updated. Reload to keep chatting.</span>
           <button onClick={() => void reloadForUpdate()} className="btn btn-accent btn-sm">Reload to update</button>
         </div>
       )}

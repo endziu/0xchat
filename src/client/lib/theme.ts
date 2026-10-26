@@ -6,7 +6,7 @@ export type ThemeSetting = 'system' | 'light' | 'dark'
 export type Theme = 'light' | 'dark'
 
 // Shared with public/theme.js, which cannot import it.
-export const THEME_STORAGE_KEY = '0xchat_theme_v1'
+export const THEME_STORAGE_KEY = 'hushhash_theme_v1'
 // The browser chrome matches the panels' surface colour.
 export const THEME_COLORS: Record<Theme, string> = { light: '#fbfaf8', dark: '#1c1b19' }
 

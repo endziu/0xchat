@@ -165,7 +165,7 @@ interface RequestOptions {
 }
 
 /**
- * The client side of the 0xChat protocol: requests that advertise this
+ * The client side of the hushhash protocol: requests that advertise this
  * client's delivery capability, one error mapping, and validated responses.
  * Session tokens are passed per request, so nothing here outlives an identity.
  */

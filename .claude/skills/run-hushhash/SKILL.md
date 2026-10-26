@@ -1,10 +1,10 @@
 ---
-name: run-0xchat
-description: Build, run, and drive 0xChat in headless Chromium. Use when asked to start or run the app, take a screenshot of its UI at desktop or phone width, check a UI change in the real app, or send messages between a browser identity and the CLI.
+name: run-hushhash
+description: Build, run, and drive hushhash in headless Chromium. Use when asked to start or run the app, take a screenshot of its UI at desktop or phone width, check a UI change in the real app, or send messages between a browser identity and the CLI.
 ---
 
 Build the SPA, start the Bun server on port 3000, then drive a headless
-Chromium with `.claude/skills/run-0xchat/driver.ts`, which reads one command
+Chromium with `.claude/skills/run-hushhash/driver.ts`, which reads one command
 per line on stdin. The CLI (`bun run cli`) is the easiest second chat party.
 
 All paths are relative to the repo root. Output (screenshots, logs, the CLI
@@ -37,7 +37,7 @@ lsof -ti:3000 -sTCP:LISTEN | xargs -r kill
 Screenshot the header at phone and desktop width:
 
 ```bash
-bun .claude/skills/run-0xchat/driver.ts <<'EOF'
+bun .claude/skills/run-hushhash/driver.ts <<'EOF'
 size 360
 nav /chat
 wait-for header [aria-label="Copy address"]
@@ -53,13 +53,13 @@ error and the page console, saves `.scratch/run/error.png`, and exits 1.
 
 Chat between the browser and the CLI. `PROFILE` keeps the browser identity
 across driver runs, and `--identity` keeps the CLI away from your real
-`~/.config/0xchat/identity.json`:
+`~/.config/hushhash/identity.json`:
 
 ```bash
 C="bun run cli --identity .scratch/run/cli.json"
 $C init
 CLI=$($C address 2>/dev/null)
-PROFILE=.scratch/run/profile bun .claude/skills/run-0xchat/driver.ts <<EOF
+PROFILE=.scratch/run/profile bun .claude/skills/run-hushhash/driver.ts <<EOF
 size 360
 nav /chat/$CLI
 fill textarea hello from the browser
@@ -69,7 +69,7 @@ EOF
 BROWSER=$($C conversations --json 2>/dev/null | bun -e 'console.log(JSON.parse(await Bun.stdin.text()).conversations[0].address)')
 $C read $BROWSER
 $C send $BROWSER 'hello from the cli'
-PROFILE=.scratch/run/profile bun .claude/skills/run-0xchat/driver.ts <<EOF
+PROFILE=.scratch/run/profile bun .claude/skills/run-hushhash/driver.ts <<EOF
 size 360
 nav /chat/$CLI
 wait-text hello from the cli

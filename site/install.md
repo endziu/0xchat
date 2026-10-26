@@ -1,6 +1,6 @@
 # Install the app
 
-Installing gives 0xChat its own window and home screen icon. It's optional, except on iPhone and
+Installing gives hushhash its own window and home screen icon. It's optional, except on iPhone and
 iPad, where you need it for notifications.
 
 ## Android, Chrome and Edge

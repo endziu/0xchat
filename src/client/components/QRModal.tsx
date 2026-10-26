@@ -120,7 +120,7 @@ export function QRModal({ mode: initialMode, address, onClose, onScan }: QRModal
         ) : (
           <>
             <video ref={videoRef} className="aspect-square w-full rounded-md bg-raised object-cover" muted playsInline />
-            {scanError ? <p className="text-danger">{scanError}</p> : <p className="text-sm text-text-2">Point your camera at a 0xChat code</p>}
+            {scanError ? <p className="text-danger">{scanError}</p> : <p className="text-sm text-text-2">Point your camera at a hushhash code</p>}
           </>
         )}
       </div>

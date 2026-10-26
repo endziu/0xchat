@@ -2,8 +2,7 @@ import { requireAddress } from '../../shared/address'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { clearToken, clearTokenIfMatches, getToken, saveToken } from './session'
 
-const OLD_SESSION_KEY = 'eth_chat_session_v1'
-const NEW_SESSION_KEY = '0xchat_session_v1'
+const SESSION_KEY = 'hushhash_session_v1'
 
 const values = new Map<string, string>()
 
@@ -26,26 +25,15 @@ describe('identity-bound session storage', () => {
 
     expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBe('token-a')
     expect(getToken(requireAddress('0xbb00000000000000000000000000000000000000'))).toBeNull()
-    expect(values.has(NEW_SESSION_KEY)).toBe(false)
+    expect(values.has(SESSION_KEY)).toBe(false)
   })
 
-  test('discards legacy unbound tokens', () => {
-    values.set('eth_chat_token', 'legacy-token')
-
-    expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBeNull()
-    expect(values.has('eth_chat_token')).toBe(false)
-    expect(values.has(NEW_SESSION_KEY)).toBe(false)
-  })
-
-  test('clears both current and legacy storage', () => {
+  test('clears the stored session', () => {
     saveToken(requireAddress('0xaa00000000000000000000000000000000000000'), 'token-a')
-    values.set('eth_chat_token', 'legacy-token')
-    values.set(OLD_SESSION_KEY, JSON.stringify({ address: requireAddress('0xaa00000000000000000000000000000000000000'), token: 'old-token' }))
 
     clearToken()
 
-    expect(values.has(NEW_SESSION_KEY)).toBe(false)
-    expect(values.has(OLD_SESSION_KEY)).toBe(false)
+    expect(values.has(SESSION_KEY)).toBe(false)
     expect(getToken(requireAddress('0xaa00000000000000000000000000000000000000'))).toBeNull()
   })
 })
@@ -54,7 +42,7 @@ describe('clearTokenIfMatches', () => {
   test('clears and reports a match for the stored token', () => {
     saveToken(requireAddress('0xaa00000000000000000000000000000000000000'), 'token-a')
     expect(clearTokenIfMatches('token-a')).toBe(true)
-    expect(values.has(NEW_SESSION_KEY)).toBe(false)
+    expect(values.has(SESSION_KEY)).toBe(false)
   })
 
   test('keeps a newer session when the token does not match', () => {
@@ -64,7 +52,7 @@ describe('clearTokenIfMatches', () => {
   })
 
   test('a stale token against corrupt storage does not report a match', () => {
-    values.set(NEW_SESSION_KEY, '{not-json')
+    values.set(SESSION_KEY, '{not-json')
     expect(clearTokenIfMatches('token-a')).toBe(false)
   })
 })

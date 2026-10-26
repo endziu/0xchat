@@ -17,7 +17,7 @@ beforeEach(() => values.clear())
 test('a stored identity loads by its private key, whatever its stored address says', () => {
   const keypair = deriveKeypair(`0x${'12'.repeat(32)}`)
   for (const address of [checksumAddress(keypair.address), 'corrupt', undefined]) {
-    values.set('eth_chat_burner_v1', JSON.stringify({ ...keypair, address }))
+    values.set('hushhash_burner_v1', JSON.stringify({ ...keypair, address }))
     expect(loadKeypair()).toEqual(keypair)
   }
 })

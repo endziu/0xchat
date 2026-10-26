@@ -62,7 +62,7 @@ export function applyExpiryUpdate(message: PlainMessage, update: ExpiryUpdate): 
 }
 
 export function serverOrigin(value: string): string {
-  if (value === 'prod') value = 'https://chat.endziu.xyz'
+  if (value === 'prod') value = 'https://hushhash.org'
   if (value === 'local') value = 'http://localhost:3000'
   const url = new URL(value)
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') {
@@ -78,7 +78,7 @@ export function serverOrigin(value: string): string {
 /** The server no longer accepts this client's delivery protocol; retrying cannot help. */
 export class ClientUpdateRequiredError extends Error {
   constructor() {
-    super('This 0xChat CLI is out of date for this server. Update it with git pull && bun install, then retry.')
+    super('This hushhash CLI is out of date for this server. Update it with git pull && bun install, then retry.')
   }
 }
 

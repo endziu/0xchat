@@ -1,6 +1,6 @@
-# What is 0xChat?
+# What is hushhash?
 
-0xChat is a private messenger for conversations that don't need to last. Messages are end-to-end
+hushhash is a private messenger for conversations that don't need to last. Messages are end-to-end
 encrypted and delete themselves on a timer you choose. There is no sign-up: no email, phone
 number or password.
 
@@ -17,7 +17,7 @@ number or password.
 
 <aside class="wallet-key-warning" aria-labelledby="wallet-key-warning-title">
   <p id="wallet-key-warning-title" class="wallet-key-warning-title"><span class="wallet-key-warning-icon" aria-hidden="true">!</span> Use a separate key for chatting</p>
-  <p>Use the key 0xChat creates for you. <strong>Never import a key from a crypto wallet that holds money or anything else of value.</strong></p>
+  <p>Use the key hushhash creates for you. <strong>Never import a key from a crypto wallet that holds money or anything else of value.</strong></p>
 </aside>
 
 ## Next steps

@@ -35,7 +35,7 @@ function request(path: string, caller: Caller, as = bob.address, body?: unknown,
   return fetch(new URL(path, server.url), {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: { Authorization: `Bearer ${as}`, 'Content-Type': 'application/json',
-      ...(caller === 'updated' ? { 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY } : {}) },
+      ...(caller === 'updated' ? { 'X-Hushhash-Delivery-Capability': DELIVERY_CAPABILITY } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
@@ -49,7 +49,7 @@ test('old senders are told to update and updated senders get recipient-opening d
   const rejected = await send('old');
   expect(rejected.status).toBe(426);
   expect(await rejected.json()).toEqual({ code: 'client_update_required',
-    error: 'This 0xChat client is out of date. Reload the page or update the CLI.' });
+    error: 'This hushhash client is out of date. Reload the page or update the CLI.' });
 
   const accepted = await send('updated');
   expect(accepted.status).toBe(201);

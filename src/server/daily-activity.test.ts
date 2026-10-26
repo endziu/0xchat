@@ -81,7 +81,7 @@ test('recording uses one captured UTC day even if the clock crosses midnight', (
 });
 
 test('persistent deduplication survives restart and the command reads only aggregates', () => {
-  const path = `/tmp/0xchat-dau-${crypto.randomUUID()}.db`;
+  const path = `/tmp/hushhash-dau-${crypto.randomUUID()}.db`;
   getDb().close();
   initDb(path);
   try {
@@ -121,7 +121,7 @@ test('sending counts only the sender; reading state and unavailable openings do 
 function context(path: string, body?: unknown, token = 'activity-session'): Context {
   const req = new Request(`https://chat.example${path}`, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    headers: { Authorization: `Bearer ${token}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   return { req, url: new URL(req.url), path, method: req.method, ip: 'daily-activity-test' };

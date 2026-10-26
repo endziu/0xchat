@@ -5,7 +5,7 @@ export function buildSessionChallenge(
   nonce: string,
 ): string {
   return [
-    '0xChat session request',
+    'hushhash session request',
     `Origin: ${origin}`,
     `Address: ${address}`,
     `Nonce: ${nonce}`,
