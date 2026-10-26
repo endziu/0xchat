@@ -61,7 +61,7 @@ test('an accepted message wakes the recipient until its unopened retention deadl
     const envelope = await createSignedMessageEnvelope('hello', 5, sender, recipient.address, recipient.publicKey)
     const response = await fetch(new URL('/api/messages', server.url), { method: 'POST', body: JSON.stringify(envelope),
       headers: { Authorization: `Bearer ${sender.address}`, 'Content-Type': 'application/json',
-        'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY } })
+        'X-Hushhash-Delivery-Capability': DELIVERY_CAPABILITY } })
     expect(response.status).toBe(201)
     await Bun.sleep(10)
     expect(sent).toHaveLength(1)

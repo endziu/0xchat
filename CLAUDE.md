@@ -16,7 +16,7 @@ Commands, environment variables, rate limits, and retention rules are in the REA
 
 ### Issue tracker
 
-Issues live in GitHub Issues for `endziu/0xChat`. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues for `endziu/hushhash`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

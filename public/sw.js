@@ -5,8 +5,8 @@
 // cache, so a client cached before the release cannot boot again offline.
 // v3: recipient-opening lifecycle release gate.
 const VERSION = 'v3'
-const SHELL = `0xchat-shell-${VERSION}`
-const ASSETS = `0xchat-assets-${VERSION}`
+const SHELL = `hushhash-shell-${VERSION}`
+const ASSETS = `hushhash-assets-${VERSION}`
 
 // Enough to boot the SPA offline; hashed JS/CSS are picked up lazily below.
 const SHELL_URLS = ['/chat', '/theme.js', '/manifest.webmanifest', '/icon-192.png', '/favicon.svg']
@@ -74,11 +74,11 @@ self.addEventListener('push', (event) => {
   // event.data is intentionally ignored — pushes carry no payload by design,
   // so the relay and this worker never learn who messaged whom or what.
   event.waitUntil(
-    self.registration.showNotification('0xChat', {
+    self.registration.showNotification('hushhash', {
       body: 'New message',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      tag: '0xchat-message',
+      tag: 'hushhash-message',
     }),
   )
 })

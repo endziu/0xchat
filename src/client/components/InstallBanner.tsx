@@ -9,7 +9,7 @@ export function InstallBanner() {
     <aside className="mx-3 mt-2 flex shrink-0 items-center gap-2 rounded-md bg-raised py-2.5 pr-1.5 pl-4">
       {mode === 'prompt' ? (
         <>
-          <b className="min-w-0 flex-1 font-bold">Install 0xChat as an app</b>
+          <b className="min-w-0 flex-1 font-bold">Install hushhash as an app</b>
           <button onClick={install} className="btn btn-accent shrink-0">Install</button>
         </>
       ) : (

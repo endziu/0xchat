@@ -36,14 +36,14 @@ afterEach(() => {
 function request(suffix = '', address: string = bob.address, body?: unknown, partner = alice.address) {
   return fetch(new URL(`/api/messages/${partner}${suffix}`, server.url), {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    headers: { Authorization: `Bearer ${address}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
 async function send(ttl = 5) {
   const envelope = await createSignedMessageEnvelope('hello', ttl, alice, bob.address, bob.publicKey);
   const response = await fetch(new URL('/api/messages', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${alice.address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    method: 'POST', headers: { Authorization: `Bearer ${alice.address}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     body: JSON.stringify(envelope),
   });
   expect(response.status).toBe(201);
@@ -126,7 +126,7 @@ test('expired and deleted page boundaries do not invalidate progress or admit la
 test('checkpoints survive deletion and restart', async () => {
   server.stop(true);
   getDb().close();
-  directory = mkdtempSync(join(tmpdir(), '0xchat-recovery-'));
+  directory = mkdtempSync(join(tmpdir(), 'hushhash-recovery-'));
   const path = join(directory, 'chat.db');
   initDb(path);
   for (const person of [alice, bob]) {
@@ -201,7 +201,7 @@ test('state lookup bounds IDs, streamed bodies, and request rate independently o
       controller.close();
     } });
     const response = await fetch(new URL(`/api/messages/${alice.address}/state`, server.url), {
-      method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }, body,
+      method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' }, body,
     });
     expect(response.status).toBe(status);
     await response.body?.cancel();

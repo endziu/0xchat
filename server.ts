@@ -29,4 +29,4 @@ Bun.serve({
   },
 });
 
-console.log(`0xChat server running on http://localhost:${PORT}`);
+console.log(`hushhash server running on http://localhost:${PORT}`);

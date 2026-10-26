@@ -1,11 +1,11 @@
 # Terminal client
 
-The Bun CLI talks to the same 0xChat API as the browser and shares its identity,
+The Bun CLI talks to the same hushhash API as the browser and shares its identity,
 encryption, signed envelope, and verification code.
 
 ## Quick start
 
-Select production with `--server prod` (`https://chat.endziu.xyz`):
+Select production with `--server prod` (`https://hushhash.org`):
 
 ```sh
 bun run cli --server prod init
@@ -25,8 +25,8 @@ Use `init` instead of `register` if you have not created an identity yet. Each
 server has its own registrations and conversations. These examples reuse the
 same identity; use `--identity FILE` for a separate development identity.
 
-To select a server for the shell session, run `export OXCHAT_SERVER=prod` or
-`export OXCHAT_SERVER=local`. An explicit `--server` overrides this setting.
+To select a server for the shell session, run `export HUSHHASH_SERVER=prod` or
+`export HUSHHASH_SERVER=local`. An explicit `--server` overrides this setting.
 Custom origins also work, for example `--server http://localhost:4000` or
 `--server https://your-chat.example`. The CLI connects to the Bun API port, not
 the Vite frontend port.
@@ -59,12 +59,12 @@ saved. Incoming control sequences are escaped before rendering.
 Choose a separate identity file for each terminal:
 
 ```sh
-bun run cli --identity /tmp/alice-0xchat.json init
-bun run cli --identity /tmp/bob-0xchat.json init
+bun run cli --identity /tmp/alice-hushhash.json init
+bun run cli --identity /tmp/bob-hushhash.json init
 
 # Copy the addresses printed above into the two commands:
-bun run cli --identity /tmp/alice-0xchat.json chat 0xBOBS_ADDRESS
-bun run cli --identity /tmp/bob-0xchat.json chat 0xALICES_ADDRESS
+bun run cli --identity /tmp/alice-hushhash.json chat 0xBOBS_ADDRESS
+bun run cli --identity /tmp/bob-hushhash.json chat 0xALICES_ADDRESS
 ```
 
 Use persistent paths for identities you want to keep.
@@ -110,9 +110,9 @@ command exits with status 1 and an update instruction (`git pull && bun install`
 
 ## Identity storage and browser interoperability
 
-The default file is `$XDG_CONFIG_HOME/0xchat/identity.json`, falling back to
-`~/.config/0xchat/identity.json`. Override it with `--identity FILE` or
-`OXCHAT_IDENTITY`. `OXCHAT_SERVER` accepts `prod`, `local`, or an explicit origin
+The default file is `$XDG_CONFIG_HOME/hushhash/identity.json`, falling back to
+`~/.config/hushhash/identity.json`. Override it with `--identity FILE` or
+`HUSHHASH_IDENTITY`. `HUSHHASH_SERVER` accepts `prod`, `local`, or an explicit origin
 and selects the default server; flags take precedence.
 
 `init` creates a fresh identity. `import` accepts the browser's exported raw hex

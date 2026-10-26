@@ -95,8 +95,8 @@ describe('composer message lifetime', () => {
   })
 
   test('ignores stored values that are not supported lifetimes', () => {
-    values.set('0xchat_default_message_lifetime_v1', 'garbage')
-    values.set('0xchat_last_message_lifetime_v1', '999')
+    values.set('hushhash_default_message_lifetime_v1', 'garbage')
+    values.set('hushhash_last_message_lifetime_v1', '999')
 
     expect(getDefaultLifetimeSetting()).toBeNull()
     expect(resolveComposerLifetime()).toBe(1800)

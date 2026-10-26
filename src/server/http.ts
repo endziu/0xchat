@@ -56,7 +56,7 @@ export function isOutdatedClient(req: Request): boolean {
 }
 
 export function clientUpdateRequired(): Response {
-  return json({ error: 'This 0xChat client is out of date. Reload the page or update the CLI.', code: CLIENT_UPDATE_REQUIRED_CODE }, 426);
+  return json({ error: 'This hushhash client is out of date. Reload the page or update the CLI.', code: CLIENT_UPDATE_REQUIRED_CODE }, 426);
 }
 
 export function getClientIp(

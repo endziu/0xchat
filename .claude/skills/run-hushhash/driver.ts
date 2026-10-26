@@ -1,4 +1,4 @@
-// Drives a headless Chromium against a running 0xChat server over the
+// Drives a headless Chromium against a running hushhash server over the
 // DevTools protocol. Reads one command per line from stdin; see SKILL.md.
 // No dependencies: Bun's fetch/WebSocket plus whatever Chromium is installed.
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -9,7 +9,7 @@ const BASE = process.env.BASE ?? 'http://localhost:3000'
 const OUT = resolve(process.env.OUT ?? '.scratch/run')
 const CHROMIUM = process.env.CHROMIUM ?? 'chromium'
 // A fresh profile is a fresh burner identity; PROFILE keeps one across runs.
-const profile = process.env.PROFILE ? resolve(process.env.PROFILE) : mkdtempSync(join(tmpdir(), '0xchat-run-'))
+const profile = process.env.PROFILE ? resolve(process.env.PROFILE) : mkdtempSync(join(tmpdir(), 'hushhash-run-'))
 mkdirSync(OUT, { recursive: true })
 
 const browser = Bun.spawn([CHROMIUM, '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',

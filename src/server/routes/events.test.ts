@@ -40,7 +40,7 @@ function makeContext(
     headers: {
       ...init?.headers,
       Authorization: `Bearer ${auth}`,
-      ...(outdated ? {} : { 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }),
+      ...(outdated ? {} : { 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' }),
     },
   })
   return { req, url: new URL(req.url), path, method: req.method, ip }
@@ -336,7 +336,7 @@ describe('SSE over real HTTP', () => {
   test('a real client disconnect frees the slot and the accepted token cannot be replayed', async () => {
     const mint = await fetch(`${base}/api/events/token`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${sessionToken}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+      headers: { Authorization: `Bearer ${sessionToken}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     })
     expect(mint.status).toBe(200)
     const { sse_token } = (await mint.json()) as { sse_token: string }

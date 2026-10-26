@@ -18,7 +18,7 @@ To deliver messages and delete them on time, the server knows:
 - your IP address while you're connected, used to limit spam;
 - your browser's notification endpoint, if notifications are on.
 
-0xChat doesn't ask who you are, but that isn't the same as anonymity. If someone links your
+hushhash doesn't ask who you are, but that isn't the same as anonymity. If someone links your
 address to you, they can link its activity to you too.
 
 ## What is deleted, and when
@@ -35,7 +35,7 @@ The server counts how many accounts are active each day. To count each one once,
 identifiers that change daily and are deleted when the day ends; only the totals are kept. No
 message contents, IP addresses or third-party analytics are involved.
 
-## What 0xChat can't protect against
+## What hushhash can't protect against
 
 - Someone who has your private key.
 - The other person copying or photographing a message before it disappears.

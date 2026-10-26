@@ -30,10 +30,10 @@ regardless of a later opening.
 
 ## Client capability
 
-The browser and CLI send `X-0xChat-Delivery-Capability: recipient-opening-v1` on
+The browser and CLI send `X-Hushhash-Delivery-Capability: recipient-opening-v1` on
 every request. Send, conversation read, conversation list, clear, open, state,
 recover, SSE token and attention requests without it return 426
-`{ "error": "This 0xChat client is out of date. Reload the page or update the CLI.", "code": "client_update_required" }`.
+`{ "error": "This hushhash client is out of date. Reload the page or update the CLI.", "code": "client_update_required" }`.
 The check follows authentication, so a missing session is still 401. Push
 subscription management, session removal, registration removal, registration
 and authentication stay open to every client.

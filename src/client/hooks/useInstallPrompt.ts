@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'preact/hooks'
-import { migrateKey } from '../lib/storage-migration'
 
-const DISMISSED_KEY = '0xchat_install_dismissed_v1'
-const OLD_DISMISSED_KEY = 'eth_chat_install_dismissed_v1'
+const DISMISSED_KEY = 'hushhash_install_dismissed_v1'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -35,7 +33,6 @@ export function useInstallPrompt() {
   const [mode, setMode] = useState<InstallMode>(null)
 
   useEffect(() => {
-    migrateKey(OLD_DISMISSED_KEY, DISMISSED_KEY)
     if (isStandalone() || localStorage.getItem(DISMISSED_KEY)) return
 
     const onBeforeInstall = (e: Event) => {
@@ -65,7 +62,6 @@ export function useInstallPrompt() {
   }, [deferred])
 
   const dismiss = useCallback(() => {
-    localStorage.removeItem(OLD_DISMISSED_KEY)
     localStorage.setItem(DISMISSED_KEY, String(Date.now()))
     setMode(null)
   }, [])

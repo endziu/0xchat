@@ -129,7 +129,7 @@ async function createSession(identity: Keypair): Promise<string> {
 async function lifecycle(id: string): Promise<(MessageLifecycle & { status: string }) | { status: string }> {
   const response = await bunFetch(`${origin}/api/messages/${requireAddress(bobKey.address)}/state`, {
     method: 'POST',
-    headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
+    headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': DELIVERY_CAPABILITY },
     body: JSON.stringify({ ids: [id] }),
   })
   return ((await response.json()) as OpeningResponse).results[0]!
@@ -612,7 +612,7 @@ test('the update action stays outside the pane hidden on small screens while the
     return clientUpdateRequired()
   }
   const view = mount(null)
-  await waitFor(() => view.text().includes('0xChat has been updated'))
+  await waitFor(() => view.text().includes('hushhash has been updated'))
   // On small screens the responsive row hides the pane that is not selected.
   const row = view.container.querySelector('nav')!.parentElement!
   const banner = view.container.querySelector('[role="alert"]')!
@@ -629,7 +629,7 @@ test('a client running a cached pre-release shell recovers after reloading to up
   intercept = async (request, next) => {
     if (!cachedShell) return next()
     const headers = new Headers(request.headers)
-    headers.delete('X-0xChat-Delivery-Capability')
+    headers.delete('X-Hushhash-Delivery-Capability')
     const response = await next(new Request(request, { headers }))
     if (response.status === 426) refused.push(new URL(request.url).pathname)
     return response
@@ -637,7 +637,7 @@ test('a client running a cached pre-release shell recovers after reloading to up
   const reload = spyOn(window.location, 'reload').mockImplementation(() => { cachedShell = false })
   try {
     const stale = mount()
-    await waitFor(() => stale.text().includes('0xChat has been updated'))
+    await waitFor(() => stale.text().includes('hushhash has been updated'))
     expect(refused.length).toBeGreaterThan(0)
     expect(stale.text()).not.toContain('kept for the update')
     expect(openRequests).toEqual([])
@@ -654,7 +654,7 @@ test('a client running a cached pre-release shell recovers after reloading to up
     await waitFor(streamReady)
     await alice.send(bobKey.address, 'live after the update', 300)
     await waitFor(() => updated.text().includes('live after the update'))
-    expect(updated.text()).not.toContain('0xChat has been updated')
+    expect(updated.text()).not.toContain('hushhash has been updated')
     expect(refused).toEqual([])
   } finally { reload.mockRestore() }
 })
@@ -692,7 +692,7 @@ test('a server requiring a newer client stops live reconnects and offers a reloa
   const reload = spyOn(window.location, 'reload').mockImplementation(() => {})
   try {
     const view = mount()
-    await waitFor(() => view.text().includes('0xChat has been updated'))
+    await waitFor(() => view.text().includes('hushhash has been updated'))
     // The first reconnect would follow a one-second backoff.
     await Bun.sleep(1_500)
     expect(mints).toBe(1)
@@ -709,7 +709,7 @@ test('a conversation cleared by the partner disappears from the open view live',
   await waitFor(streamReady)
 
   const response = await bunFetch(`${origin}/api/messages/${requireAddress(bobKey.address)}`, {
-    method: 'DELETE', headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'X-0xChat-Delivery-Capability': DELIVERY_CAPABILITY },
+    method: 'DELETE', headers: { Origin: origin, Authorization: `Bearer ${aliceToken}`, 'X-Hushhash-Delivery-Capability': DELIVERY_CAPABILITY },
   })
   expect(response.status).toBe(200)
   await waitFor(() => !view.text().includes('before the clear'))

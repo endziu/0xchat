@@ -41,7 +41,7 @@ function start(path = ':memory:') {
 }
 function request(path: string, identity: string = bob.address, body?: unknown) {
   return fetch(new URL(path, server.url), { method: body === undefined ? 'GET' : 'POST',
-    headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    headers: { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     body: body === undefined ? undefined : JSON.stringify(body) });
 }
 async function send(ttl = 5) {
@@ -98,7 +98,7 @@ test('opening rejects unauthorized and malformed requests and conceals inaccessi
   }
   expect((await request(`/api/messages/${alice.address}/open`, bob.address, { ids: ['a'.repeat(8192)] })).status).toBe(413);
   const invalidJson = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' }, body: '{' });
+    method: 'POST', headers: { Authorization: `Bearer ${bob.address}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' }, body: '{' });
   expect(invalidJson.status).toBe(400);
   const response = await (await open([message.id, absent])).json();
   expect(response.results).toEqual([
@@ -108,7 +108,7 @@ test('opening rejects unauthorized and malformed requests and conceals inaccessi
 });
 
 test('initialization retires pre-upgrade messages that expire on acceptance', async () => {
-  tempDirectory = mkdtempSync(join(tmpdir(), '0xchat-migration-'));
+  tempDirectory = mkdtempSync(join(tmpdir(), 'hushhash-migration-'));
   const path = join(tempDirectory, 'chat.db');
   const envelope = await createSignedMessageEnvelope('old ciphertext', 5, alice, bob.address, bob.publicKey);
   const old = new Database(path);
@@ -135,7 +135,7 @@ test('initialization retires pre-upgrade messages that expire on acceptance', as
 
 async function stream(address: string) {
   const tokenResponse = await fetch(new URL('/api/events/token', server.url), {
-    method: 'POST', headers: { Authorization: `Bearer ${address}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    method: 'POST', headers: { Authorization: `Bearer ${address}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
   });
   expect(tokenResponse.status).toBe(200);
   const { sse_token } = await tokenResponse.json();
@@ -188,7 +188,7 @@ test('opening accepts a pretty-printed batch of 100 distinct IDs', async () => {
   const ids = Array.from({ length: 100 }, (_, n) => `0x${n.toString(16).padStart(32, '0')}`);
   const response = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+    headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
     body: JSON.stringify({ ids }, null, 2),
   });
   expect(response.status).toBe(200);
@@ -228,7 +228,7 @@ test('opening bounds streamed bodies at 8 KiB without Content-Length', async () 
     });
     const response = await fetch(new URL(`/api/messages/${alice.address}/open`, server.url), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' },
+      headers: { Authorization: `Bearer ${bob.address}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' },
       body,
     });
     expect(response.status).toBe(status);

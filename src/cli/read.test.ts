@@ -40,7 +40,7 @@ beforeEach(async () => {
   initDb(':memory:')
   for (const limiter of Object.values(limiters)) limiter.reset()
   clock = spyOn(Date, 'now').mockReturnValue(1_000_000)
-  directory = await mkdtemp(join(tmpdir(), '0xchat-read-'))
+  directory = await mkdtemp(join(tmpdir(), 'hushhash-read-'))
   bobPath = join(directory, 'bob.json')
   const identity = await createIdentity(bobPath)
   openingBodies = []
@@ -184,7 +184,7 @@ test('read reports the update action when the server refuses this client', async
   const output = spyOn(console, 'log').mockImplementation(() => {})
   try {
     await expect(main(['--identity', bobPath, '--server', server.url.origin, 'read', alice.identity.address]))
-      .rejects.toThrow('This 0xChat CLI is out of date')
+      .rejects.toThrow('This hushhash CLI is out of date')
     expect(output).not.toHaveBeenCalled()
   } finally { output.mockRestore() }
 })

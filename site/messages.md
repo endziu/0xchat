@@ -1,6 +1,6 @@
 # Disappearing messages
 
-Every message in 0xChat is deleted eventually. You decide how long yours last once they're
+Every message in hushhash is deleted eventually. You decide how long yours last once they're
 opened.
 
 ## Set the timer
@@ -21,9 +21,9 @@ cannot be paused or extended, and it keeps running after you leave the app.
 
 ## When a message counts as opened
 
-A message is opened when it has loaded in the conversation on screen and the 0xChat window is
+A message is opened when it has loaded in the conversation on screen and the hushhash window is
 in the foreground. You don't have to scroll to it or tap it. That includes messages arriving
 while the conversation is open, and older messages as they load.
 
-Timers don't start while 0xChat is in a background tab, minimized or on a locked phone, or
+Timers don't start while hushhash is in a background tab, minimized or on a locked phone, or
 just because a conversation appears in your list.

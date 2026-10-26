@@ -11,13 +11,13 @@ import { UNSUPPORTED_PUSH_SERVICE_CODE } from '../../shared/api-error'
 // requests heal on the next load instead of needing coordination.
 
 const TIMEOUT_MS = 30_000
-const TIMEOUT_MESSAGE = 'Notifications did not respond within 30 seconds. Check your connection, then reload 0xChat and try again.'
+const TIMEOUT_MESSAGE = 'Notifications did not respond within 30 seconds. Check your connection, then reload hushhash and try again.'
 
 function pushApisAvailable(): boolean {
   return 'serviceWorker' in navigator && typeof window.PushManager !== 'undefined' && typeof Notification !== 'undefined'
 }
 
-const optInKey = (address: Address) => `0xchat.push.${address}`
+const optInKey = (address: Address) => `hushhash_push_${address}`
 
 function isOptedIn(address: Address): boolean {
   try {

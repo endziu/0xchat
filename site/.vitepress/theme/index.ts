@@ -9,7 +9,7 @@ export default {
   // turns /chat into /docs/chat.html. `target` keeps its client router from
   // intercepting the click as a docs page.
   Layout: () => h(DefaultTheme.Layout, null, {
-    'nav-bar-content-after': () => h('a', { class: 'app-link', href: '/chat', target: '_self' }, 'Open 0xChat'),
+    'nav-bar-content-after': () => h('a', { class: 'app-link', href: '/chat', target: '_self' }, 'Open hushhash'),
   }),
   enhanceApp() {
     // Replaces the inline script the config strips: shows ⌘ instead of Ctrl in the search hint.

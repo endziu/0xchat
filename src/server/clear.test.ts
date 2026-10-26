@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 function request(path: string, identity: string, method = 'GET', body?: unknown) {
-  const headers = { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json', 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' };
+  const headers = { Authorization: `Bearer ${identity}`, 'Content-Type': 'application/json', 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' };
   return fetch(new URL(path, server.url), body === undefined ? { method, headers } : { method, headers, body: JSON.stringify(body) });
 }
 async function send(from: typeof alice, to: typeof alice, text = 'hello') {

@@ -30,7 +30,7 @@ export interface MessageEnvelope extends MessageMetadata {
 export const UNOPENED_RETENTION_MS = 24 * 60 * 60 * 1000
 // Sent on every request, separately from the signed envelope version: tells
 // the server this client implements recipient-opening expiry.
-export const DELIVERY_CAPABILITY_HEADER = 'X-0xChat-Delivery-Capability'
+export const DELIVERY_CAPABILITY_HEADER = 'X-Hushhash-Delivery-Capability'
 export const DELIVERY_CAPABILITY = 'recipient-opening-v1'
 // Single-valued, but stays on the wire: deployed clients reject messages without it.
 // Removing it takes two releases: clients that stop requiring it, then a server that stops sending it.
@@ -77,7 +77,7 @@ const DELIVERED_KEYS = [...ENVELOPE_KEYS, 'delivery_policy', 'created_at', 'open
 
 export function canonicalMessageAad(metadata: MessageMetadata): string {
   return [
-    '0xChat message AAD v2',
+    'hushhash message AAD v2',
     `Version: ${metadata.version}`,
     `Message ID: ${metadata.id}`,
     `Sender: ${metadata.sender}`,
@@ -88,7 +88,7 @@ export function canonicalMessageAad(metadata: MessageMetadata): string {
 
 export function canonicalMessageEnvelope(envelope: Omit<MessageEnvelope, 'signature'>): string {
   return [
-    '0xChat signed message envelope v2',
+    'hushhash signed message envelope v2',
     `Version: ${envelope.version}`,
     `Message ID: ${envelope.id}`,
     `Sender: ${envelope.sender}`,

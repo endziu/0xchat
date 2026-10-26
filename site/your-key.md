@@ -17,7 +17,7 @@ this.
 ## Import a key
 
 Importing lets you return to an account or use it on another device. Only import keys created
-by 0xChat.
+by hushhash.
 
 1. Open **Settings → Your key → Import private key**.
 2. Paste the key and select the import button beside the field.
@@ -40,6 +40,6 @@ messages are gone.
 
 ## Inactive addresses
 
-If you don't open 0xChat, send or receive a message for 30 days, your address stops receiving
+If you don't open hushhash, send or receive a message for 30 days, your address stops receiving
 messages and senders see *Recipient not registered*. Open the app with the same key to
 reactivate it.

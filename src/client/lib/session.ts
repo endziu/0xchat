@@ -1,9 +1,6 @@
 import type { Address } from '../../shared/address'
-import { migrateKey } from './storage-migration'
 
-const SESSION_KEY = '0xchat_session_v1'
-const OLD_SESSION_KEY = 'eth_chat_session_v1'
-const LEGACY_TOKEN_KEY = 'eth_chat_token'
+const SESSION_KEY = 'hushhash_session_v1'
 
 interface StoredSession {
   address: Address
@@ -11,15 +8,10 @@ interface StoredSession {
 }
 
 export function saveToken(address: Address, token: string): void {
-  localStorage.removeItem(LEGACY_TOKEN_KEY)
-  localStorage.removeItem(OLD_SESSION_KEY)
   localStorage.setItem(SESSION_KEY, JSON.stringify({ address, token }))
 }
 
 export function getToken(address: Address): string | null {
-  localStorage.removeItem(LEGACY_TOKEN_KEY)
-  migrateKey(OLD_SESSION_KEY, SESSION_KEY)
-
   const raw = localStorage.getItem(SESSION_KEY)
   if (!raw) return null
 
@@ -38,16 +30,12 @@ export function getToken(address: Address): string | null {
 
 export function clearToken(): void {
   localStorage.removeItem(SESSION_KEY)
-  localStorage.removeItem(OLD_SESSION_KEY)
-  localStorage.removeItem(LEGACY_TOKEN_KEY)
 }
 
 // Clear the stored session only if it still matches the given token. Returns
 // true when a matching session was removed. Used on 401 so a stale request
 // from a previous identity cannot wipe out a newer committed session.
 export function clearTokenIfMatches(token: string): boolean {
-  localStorage.removeItem(LEGACY_TOKEN_KEY)
-  migrateKey(OLD_SESSION_KEY, SESSION_KEY)
   const raw = localStorage.getItem(SESSION_KEY)
   if (!raw) return false
 

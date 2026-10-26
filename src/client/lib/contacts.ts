@@ -1,11 +1,7 @@
 import { isCanonicalAddress, type Address } from '../../shared/address'
-import { migrateKey } from './storage-migration'
 
-const STORAGE_KEY = '0xchat_known_contacts_v1'
-const OLD_STORAGE_KEY = 'eth_chat_known_contacts_v1'
-// Removed conversations; the key keeps its old name so existing removals survive.
-const DELETED_KEY = '0xchat_deleted_contacts_v1'
-const OLD_DELETED_KEY = 'eth_chat_deleted_contacts_v1'
+const STORAGE_KEY = 'hushhash_known_contacts_v1'
+const DELETED_KEY = 'hushhash_deleted_contacts_v1'
 const LABELS_KEY = 'conversation_labels'
 
 export interface KnownContact {
@@ -47,12 +43,10 @@ export function subscribeLastSeen(listener: () => void): () => void {
 }
 
 function loadRemoved(): Record<Address, number> {
-  migrateKey(OLD_DELETED_KEY, DELETED_KEY)
   return loadAddressRecord(DELETED_KEY, (value): value is number => typeof value === 'number')
 }
 
 function saveRemoved(removed: Record<Address, number>) {
-  localStorage.removeItem(OLD_DELETED_KEY)
   localStorage.setItem(DELETED_KEY, JSON.stringify(removed))
 }
 
@@ -81,12 +75,10 @@ function isKnownContact(value: unknown): value is KnownContact {
 }
 
 export function loadContacts(): Record<Address, KnownContact> {
-  migrateKey(OLD_STORAGE_KEY, STORAGE_KEY)
   return loadAddressRecord(STORAGE_KEY, isKnownContact)
 }
 
 export function saveContacts(contacts: Record<Address, KnownContact>) {
-  localStorage.removeItem(OLD_STORAGE_KEY)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(contacts))
 }
 

@@ -13,7 +13,7 @@ const publicKey = bytesToHex(secp.getPublicKey(hexToBytes(privateKey), true))
 describe('registration challenge', () => {
   test('canonically binds origin, address, key, and nonce', () => {
     expect(buildRegistrationChallenge('https://chat.example', address, publicKey, 'abc')).toBe(
-      `0xChat key registration v1\nOrigin: https://chat.example\nAddress: ${address}\nPublic key: ${publicKey}\nNonce: abc`,
+      `hushhash key registration v1\nOrigin: https://chat.example\nAddress: ${address}\nPublic key: ${publicKey}\nNonce: abc`,
     )
   })
 })

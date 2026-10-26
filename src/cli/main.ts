@@ -11,7 +11,7 @@ import { createIdentity, loadIdentity } from './identity'
 import { parseLiveEvent } from '../shared/live-events'
 import { isEnvelopeParticipant } from '../shared/message-envelope'
 
-const HELP = `0xChat CLI — encrypted chat with the existing 0xChat server
+const HELP = `hushhash CLI — encrypted chat with the existing hushhash server
 
 Usage: bun run cli [options] <command> [arguments]
 
@@ -28,10 +28,10 @@ Usage: bun run cli [options] <command> [arguments]
 
 Options:
   --server ORIGIN          prod, local, or an explicit origin (HTTPS remotely)
-                           prod = https://chat.endziu.xyz
+                           prod = https://hushhash.org
                            local = http://localhost:3000
-                           Default: OXCHAT_SERVER or local
-  --identity FILE          Default: OXCHAT_IDENTITY or ~/.config/0xchat/identity.json
+                           Default: HUSHHASH_SERVER or local
+  --identity FILE          Default: HUSHHASH_IDENTITY or ~/.config/hushhash/identity.json
   --ttl SECONDS            Message lifetime (default: 300)
   --json                   Machine-readable JSON (watch emits JSON lines)
   --all                    Read all available history
@@ -184,7 +184,7 @@ async function chat(client: ChatClient, partner: Address, ttl: number): Promise<
       .slice(-rows).flatMap(message => Bun.wrapAnsi(displayMessage(message, client.identity.address), width, { hard: true }).split('\n'))
       .slice(-rows)
     process.stdout.write('\x1b[2J\x1b[H' + [
-      `0xChat · ${checksumAddress(partner)}`, `Lifetime: ${ttl}s · /quit /ttl /help`, terminalText(status), '', ...lines, '',
+      `hushhash · ${checksumAddress(partner)}`, `Lifetime: ${ttl}s · /quit /ttl /help`, terminalText(status), '', ...lines, '',
     ].map(line => clipLine(line, width)).join('\n') + '\n')
     rl.setPrompt('> ')
     rl.prompt(true)
@@ -256,8 +256,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const ttl = positiveInteger(values.ttl, 'Lifetime') ?? 300
   if (!MESSAGE_TTLS.includes(ttl)) throw new Error(`Lifetime must be one of: ${MESSAGE_TTLS.join(', ')}`)
   const before = positiveInteger(values.before, 'before')
-  const identityPath = resolve(values.identity ?? process.env.OXCHAT_IDENTITY ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), '0xchat', 'identity.json'))
-  const server = serverOrigin(values.server ?? process.env.OXCHAT_SERVER ?? 'local')
+  const identityPath = resolve(values.identity ?? process.env.HUSHHASH_IDENTITY ?? join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'hushhash', 'identity.json'))
+  const server = serverOrigin(values.server ?? process.env.HUSHHASH_SERVER ?? 'local')
   const output = (value: unknown, text: string) => console.log(values.json ? JSON.stringify(value) : terminalText(text))
   let identity
   if (command === 'init' || command === 'import') {
@@ -348,7 +348,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 
 if (import.meta.main) {
   main().catch(error => {
-    console.error(`0xChat: ${terminalText(error instanceof Error ? error.message : 'Unknown error')}`)
+    console.error(`hushhash: ${terminalText(error instanceof Error ? error.message : 'Unknown error')}`)
     process.exitCode = 1
   })
 }

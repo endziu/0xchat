@@ -1,12 +1,12 @@
-# 0xChat
+# hushhash
 
-0xChat is a chat app with end-to-end encryption and messages that disappear. Your browser encrypts messages before sending them, so the server cannot read their contents. There is no signup, and you don't need an email address or phone number.
+hushhash is a chat app with end-to-end encryption and messages that disappear. Your browser encrypts messages before sending them, so the server cannot read their contents. There is no signup, and you don't need an email address or phone number.
 
 Open the app and it creates an account for you. Share your **address** (a string of letters and numbers starting with `0x`), conversation link or QR code so people can message you. Choose how long each message stays after the other person opens it, from 5 seconds to 24 hours.
 
-> **Keep access to your account:** the app saves a secret code called a **private key** in your browser. Back it up and keep it secret. If you lose every copy, you lose access to the account permanently. Creating a new address is quick and free, so you can also use a throw-away account without backing it up. Use the key 0xChat creates for you; never import a key from a crypto wallet that holds money or anything else of value.
+> **Keep access to your account:** the app saves a secret code called a **private key** in your browser. Back it up and keep it secret. If you lose every copy, you lose access to the account permanently. Creating a new address is quick and free, so you can also use a throw-away account without backing it up. Use the key hushhash creates for you; never import a key from a crypto wallet that holds money or anything else of value.
 
-## What 0xChat does
+## What hushhash does
 
 - Creates an account automatically, with no password to remember.
 - Lets people contact you through your address, conversation link or QR code.
@@ -17,7 +17,7 @@ Open the app and it creates an account for you. Share your **address** (a string
 - Works in your browser and can be installed on your phone or computer.
 - Lets you back up your key, use your account on another device or delete your account.
 
-0xChat uses the same kind of addresses as Ethereum, but you don't need cryptocurrency or a wallet to chat. There are no transaction fees, and chats are not published to a blockchain. You do need an internet connection.
+hushhash uses the same kind of addresses as Ethereum, but you don't need cryptocurrency or a wallet to chat. There are no transaction fees, and chats are not published to a blockchain. You do need an internet connection.
 
 See [Getting started](site/getting-started.md) for a walkthrough, or [Your key](site/your-key.md) to learn how to back up your key.
 
@@ -35,7 +35,7 @@ SQLite is built into Bun; no separate database server is required.
 
 ## Terminal client
 
-Create a CLI identity on `https://chat.endziu.xyz` and open a conversation:
+Create a CLI identity on `https://hushhash.org` and open a conversation:
 
 ```sh
 bun run cli --server prod init
@@ -43,7 +43,7 @@ bun run cli --server prod chat 0xYOUR_CONVERSATION_PARTNERS_ADDRESS
 ```
 
 For local development, start `bun run dev` and use `--server local` (the default,
-`http://localhost:3000`). Set `OXCHAT_SERVER=prod` to use production by default,
+`http://localhost:3000`). Set `HUSHHASH_SERVER=prod` to use production by default,
 or pass `--server ORIGIN` for a custom server. If `init` saved an identity but
 could not connect, retry with `bun run cli --server prod register` or
 `bun run cli --server local register` once the local server is running.
@@ -56,8 +56,8 @@ or `bun run cli --help`.
 ## Install
 
 ```sh
-git clone https://github.com/endziu/0xchat.git
-cd 0xchat
+git clone https://github.com/endziu/hushhash.git
+cd hushhash
 bun install
 cp .env.example .env
 ```

@@ -7,8 +7,8 @@ import { defineConfig } from 'vitepress'
 // and the theme's always-on macOS check moves into theme/index.ts. A server
 // test checks the built pages.
 export default defineConfig({
-  title: '0xChat Docs',
-  description: 'How to use 0xChat: start chatting, back up your account and manage disappearing messages.',
+  title: 'hushhash Docs',
+  description: 'How to use hushhash: start chatting, back up your account and manage disappearing messages.',
   base: '/docs/',
   outDir: '../dist/docs',
   cleanUrls: false,
@@ -20,14 +20,14 @@ export default defineConfig({
     .replace('<html ', '<html class="dark" ')
     .replace(/<script id="check-mac-os">.*?<\/script>/, ''),
   themeConfig: {
-    siteTitle: '0xChat Docs',
+    siteTitle: 'hushhash Docs',
     search: { provider: 'local' },
     notFound: { quote: "That page doesn't exist.", linkText: 'Docs home' },
     sidebar: [
       {
         text: 'Guide',
         items: [
-          { text: 'What is 0xChat?', link: '/' },
+          { text: 'What is hushhash?', link: '/' },
           { text: 'Getting started', link: '/getting-started' },
           { text: 'Disappearing messages', link: '/messages' },
           { text: 'Your key', link: '/your-key' },
@@ -43,6 +43,6 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [{ icon: 'github', link: 'https://github.com/endziu/0xchat' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/endziu/hushhash' }],
   },
 })

@@ -12,7 +12,7 @@ import { canonicalMessageAad, verifyDeliveredMessage } from '../shared/message-e
 import { Database } from 'bun:sqlite'
 
 let directory: string
-beforeAll(async () => { directory = await mkdtemp(join(tmpdir(), '0xchat-cli-test-')) })
+beforeAll(async () => { directory = await mkdtemp(join(tmpdir(), 'hushhash-cli-test-')) })
 afterAll(async () => { await rm(directory, { recursive: true, force: true }) })
 
 describe('local identity and input boundaries', () => {
@@ -41,7 +41,7 @@ describe('local identity and input boundaries', () => {
   })
 
   test('validates server origins and addresses', () => {
-    expect(serverOrigin('prod')).toBe('https://chat.endziu.xyz')
+    expect(serverOrigin('prod')).toBe('https://hushhash.org')
     expect(serverOrigin('local')).toBe('http://localhost:3000')
     expect(serverOrigin('https://example.com/')).toBe('https://example.com')
     expect(serverOrigin('http://localhost:3000')).toBe('http://localhost:3000')
@@ -153,19 +153,19 @@ describe('unchanged server interoperability', () => {
     expect(received.messages.find(message => message.id === sent.id)?.plaintext).toBe('hello from CLI 😛')
     const token = await browserSession(alice)
     try {
-      const rawPage = await fetch(origin + `/api/messages/${bob.identity.address}`, { headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' } }).then(response => response.json()) as { messages: unknown[] }
+      const rawPage = await fetch(origin + `/api/messages/${bob.identity.address}`, { headers: { Authorization: `Bearer ${token}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' } }).then(response => response.json()) as { messages: unknown[] }
       const envelope = await verifyDeliveredMessage(rawPage.messages[0])
       expect(envelope).not.toBeNull()
       expect(await decrypt(envelope!.ct_sender, envelope!.ephemeral_pub_sender, envelope!.iv_sender, alice.identity.privateKey, canonicalMessageAad(envelope!))).toBe('hello from CLI 😛')
       const browserMessage = await createSignedMessageEnvelope('hello from browser', 300, alice.identity, bob.identity.address, bob.identity.publicKey)
-      const response = await fetch(origin + '/api/messages', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1', 'Content-Type': 'application/json' }, body: JSON.stringify(browserMessage) })
+      const response = await fetch(origin + '/api/messages', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1', 'Content-Type': 'application/json' }, body: JSON.stringify(browserMessage) })
       expect(response.status).toBe(201)
       const delivered = await response.json()
       expect((await bob.decode(delivered, alice.identity.address))?.plaintext).toBe('hello from browser')
       await expect(bob.decode({ ...delivered, sender: requireAddress(bob.identity.address) }, alice.identity.address)).rejects.toThrow()
       await expect(bob.decode(delivered, parsePrivateKey('22'.repeat(32)).address)).rejects.toThrow()
     } finally {
-      await fetch(origin + '/api/session', { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'X-0xChat-Delivery-Capability': 'recipient-opening-v1' } })
+      await fetch(origin + '/api/session', { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, 'X-Hushhash-Delivery-Capability': 'recipient-opening-v1' } })
     }
     expect((await bob.conversations()).conversations.some(conversation => conversation.address === requireAddress(alice.identity.address))).toBe(true)
   })
@@ -242,7 +242,7 @@ describe('unchanged server interoperability', () => {
     const identity = await createIdentity(identityPath)
     const run = async (args: string[], server: string) => {
       const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, 'main.ts'), '--identity', identityPath, ...args, 'register', '--json'], {
-        env: { ...process.env, OXCHAT_SERVER: server }, stdout: 'pipe', stderr: 'pipe',
+        env: { ...process.env, HUSHHASH_SERVER: server }, stdout: 'pipe', stderr: 'pipe',
       })
       const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
       expect(stderr).toBe('')

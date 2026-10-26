@@ -4,7 +4,7 @@
 ;(function () {
   var colors = { light: '#fbfaf8', dark: '#1c1b19' }
   var stored = null
-  try { stored = localStorage.getItem('0xchat_theme_v1') } catch (e) {}
+  try { stored = localStorage.getItem('hushhash_theme_v1') } catch (e) {}
   var theme = stored === 'light' || stored === 'dark'
     ? stored
     : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
